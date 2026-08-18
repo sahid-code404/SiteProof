@@ -29,12 +29,21 @@ class CameraCaptureManager(private val context: Context) {
     )
 
     private var provider: ProcessCameraProvider? = null
+    private var previewUseCase: Preview? = null
     private var videoCapture: VideoCapture<Recorder>? = null
     private var recording: Recording? = null
     private var completion: CompletableDeferred<RecordingResult>? = null
     private var startNs: Long = 0L
 
     suspend fun bind(previewView: PreviewView, lifecycleOwner: LifecycleOwner) {
+        // Compose may replace PreviewView when READY becomes CAPTURING. Retarget the existing
+        // Preview surface instead of unbinding the VideoCapture use case mid-recording.
+        val existingPreview = previewUseCase
+        if (provider != null && videoCapture != null && existingPreview != null) {
+            existingPreview.surfaceProvider = previewView.surfaceProvider
+            return
+        }
+
         val cameraProvider = awaitProvider()
         val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
         val qualitySelector = QualitySelector.fromOrderedList(
@@ -51,6 +60,7 @@ class CameraCaptureManager(private val context: Context) {
         }
         cameraProvider.bindToLifecycle(lifecycleOwner, selector, preview, capture)
         provider = cameraProvider
+        previewUseCase = preview
         videoCapture = capture
     }
 
@@ -101,6 +111,7 @@ class CameraCaptureManager(private val context: Context) {
         abortRecording()
         provider?.unbindAll()
         provider = null
+        previewUseCase = null
         videoCapture = null
     }
 
