@@ -1,20 +1,24 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from jose import jwt
-from passlib.context import CryptContext
+import jwt
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 from app.core.config import get_settings
 
-pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+_password_hasher = PasswordHasher()
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return _password_hasher.hash(password)
 
 
 def verify_password(password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(password, hashed_password)
+    try:
+        return _password_hasher.verify(hashed_password, password)
+    except (VerifyMismatchError, InvalidHashError):
+        return False
 
 
 def create_access_token(subject: str, extra: dict[str, Any] | None = None) -> str:
@@ -28,3 +32,8 @@ def create_access_token(subject: str, extra: dict[str, Any] | None = None) -> st
     if extra:
         payload.update(extra)
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def decode_access_token(token: str) -> dict[str, Any]:
+    settings = get_settings()
+    return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
