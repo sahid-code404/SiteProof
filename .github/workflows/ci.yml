@@ -7,16 +7,41 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: siteproof_test
+          POSTGRES_USER: siteproof
+          POSTGRES_PASSWORD: siteproof_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U siteproof -d siteproof_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
+    env:
+      DATABASE_URL: postgresql+psycopg://siteproof:siteproof_test_password@localhost:5432/siteproof_test
+      SITEPROOF_TEST_DATABASE_URL: postgresql+psycopg://siteproof:siteproof_test_password@localhost:5432/siteproof_test
+      JWT_SECRET: ci-only-siteproof-secret-key-at-least-32-bytes
+      ENVIRONMENT: test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install -e '.[dev]'
-      - run: ruff check app tests
+      - name: Verify fresh migration
+        run: alembic upgrade head
+      - name: Verify Phase 2 downgrade and re-upgrade
+        run: |
+          alembic downgrade 0001_phase1_baseline
+          alembic upgrade head
+      - run: ruff check app tests alembic
       - run: pytest -q
 
   web:
@@ -30,5 +55,22 @@ jobs:
         with:
           node-version: '22'
       - run: npm install
+      - run: npm test
       - run: npm run lint
       - run: npm run build
+
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - run: gradle :app:testDebugUnitTest :app:assembleDebug --stacktrace

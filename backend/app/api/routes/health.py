@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 
-router = APIRouter(tags=["system"])
+router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "service": "siteproof-backend"}
+    return {"status": "ok", "service": "siteproof-api"}

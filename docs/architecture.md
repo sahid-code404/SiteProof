@@ -1,71 +1,76 @@
-# SiteProof Architecture — Phase 1
+# SiteProof Architecture — through Phase 2
 
-## Component boundaries
+## Boundaries
 
-### Android capture application
-Owns inspector-facing workflow, device permissions, future live CameraX capture, sensors, location, local secure session storage, and reliable upload orchestration. It must never calculate the authoritative verification verdict.
+SiteProof remains a monorepo with three user-facing/runtime components and shared infrastructure:
 
-### Backend API
-Owns authentication, authorization, inspection state transitions, challenge issuance, evidence metadata, verification orchestration, audit records, and the final trust decision.
+```text
+Admin browser                    Inspector Android
+     │                                  │
+     └──────── HTTPS/REST ──────────────┘
+                    │
+                FastAPI API
+                    │
+       service/domain transaction layer
+                    │
+            SQLAlchemy repositories
+                    │
+                PostgreSQL
+```
 
-### Web dashboard
-Owns administrator/reviewer workflows and presentation only. Business-critical authorization and transitions remain server-side.
+MinIO remains available in local infrastructure for later evidence phases but Phase 2 does not upload evidence.
 
-### PostgreSQL
-System of record for relational business and verification metadata.
+## Backend
 
-### MinIO / S3-compatible storage
-Stores future evidence objects. Database rows reference objects and integrity metadata; raw evidence is not placed in relational columns.
+FastAPI route handlers are deliberately thin. Authentication/authorization is resolved through dependencies, then domain operations are delegated to services:
 
-## Phase 1 database entities
+- `InspectionService` functions own lifecycle rules, organization scoping, pagination and dashboard counts.
+- assignment operations execute in one database transaction and lock the inspection row before changing assignment state;
+- `InspectorService` owns organization-scoped inspector lookup/listing/creation;
+- `AuditService` writes server-side audit records in the same transaction as the business event;
+- Pydantic API schemas are separate from SQLAlchemy persistence models;
+- Alembic owns database schema evolution. Runtime `create_all()` bootstrapping was removed.
 
-Implemented now:
-- `users`
-- `organizations`
+The database-level partial unique index on `inspection_assignments.inspection_id` where status is `ACTIVE` prevents more than one active assignment per inspection.
 
-Reserved for Phase 2+:
-- inspectors
-- inspections
-- inspection_assignments
-- verification_sessions
-- challenges
-- challenge_results
-- sensor_packages
-- location_samples
-- evidence_files
-- verification_results
-- verification_signals
-- device_attestations
-- audit_logs
-- review_decisions
-- signed_receipts
+## Multi-organization isolation
 
-## API boundary
+`users`, `inspectors`, `inspections`, `inspection_assignments` and `audit_logs` all carry `organization_id` where required. Backend queries always scope records by the authenticated user's organization. Inspectors receive an additional active-assignment predicate, so knowing another inspection UUID is not sufficient to read it.
 
-Implemented:
-- `GET /health`
-- `POST /api/v1/auth/login`
+## Authentication
 
-Phase 2 starts inspection CRUD and assignment APIs.
+Passwords use Argon2. Access tokens are JWTs signed by the backend and include the user ID, role and organization ID. The backend reloads the user from the database on authenticated requests rather than trusting role/organization claims alone.
 
-## Android architecture direction
+The Android app stores its access token encrypted with an Android Keystore AES-GCM key. The browser stores the session token in local storage for the Phase 2 prototype; production hardening should move browser auth toward a protected HttpOnly cookie/refresh-token design.
 
-Use feature-oriented packages with explicit interfaces around camera, location, sensor capture, attestation, secure storage, networking, and upload scheduling. Compose UI observes state from ViewModels; device APIs stay behind repositories/services so challenge verification logic can be tested independently.
+## Web dashboard
 
-## Web architecture direction
+React + TypeScript + TanStack Query + React Router implement:
 
-Use React + TypeScript. TanStack Query owns server-state caching. UI pages never become a source of truth for permissions, trust score, or inspection transitions.
+- authenticated admin/reviewer shell;
+- real dashboard summary;
+- inspection list with search, status, priority, inspector filters and pagination;
+- create/edit forms;
+- Leaflet/OpenStreetMap coordinate picker and site preview;
+- assignment/reassignment/cancellation controls for admins;
+- read-only compatibility for reviewer accounts.
 
-## Local Docker architecture
+All mutations invalidate affected TanStack Query caches rather than requiring a full-page reload.
 
-Browser -> web container -> backend API -> PostgreSQL
-                                      -> MinIO (Phase 3 evidence)
-Android/emulator -> backend API
+## Android
 
-## Security baseline
+The inspector app follows:
 
-- Secrets only through environment configuration.
-- JWT access tokens are created server-side.
-- Passwords use Argon2 hashing.
-- CORS origins are configured explicitly.
-- The client never sends a trusted role or verification score.
+```text
+Compose UI → ViewModel/StateFlow → InspectionRepository → Retrofit API
+                                      │
+                                      └→ local assignment cache
+```
+
+The local cache is a small private SharedPreferences/Moshi store because Room did not exist in Phase 1. Phase 2 only needs cached assignment metadata; introducing a second persistence architecture solely for this milestone would add unnecessary complexity. The cache is cleared on sign-out/login so one inspector cannot inherit another inspector's offline list.
+
+The UI provides loading, empty, error and offline states plus pull-to-refresh. Offline data is read-only. Status-changing operations require network connectivity.
+
+## Explicit Phase 2 boundary
+
+There is no CameraX capture, sensor acquisition, challenge generation, evidence upload, OpenCV, device attestation, Wi-Fi fingerprinting or trust scoring in this architecture yet.
