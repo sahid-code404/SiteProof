@@ -1,16 +1,37 @@
 # Project State
 
-Current phase: **Phase 2 — Inspection Management & Assignment Workflow**
+Current development branch: **Phase 3 — Live Capture, Location & Multi-Sensor Evidence Collection**
 
-Implementation status: **code complete on the Phase 2 branch; automated CI and real-device acceptance determine merge/readiness.**
+Phase 3 is stacked on the tested Phase 2 branch. Phase 2 automated CI is green, but its physical-device acceptance remains a separate prerequisite before either milestone should be called fully accepted.
 
-Phase 2 scope is intentionally limited to organization-aware inspection CRUD, inspector assignment/reassignment, lifecycle transitions through `READY`, audit events, the admin dashboard, and Android assignment viewing/acknowledgement/readiness.
+## Phase 3 implementation status
 
-Phase 3 camera and sensor acquisition must not begin until Phase 2 acceptance is complete.
+Implemented in code:
+
+- verification-session state machine and persistence;
+- evidence-file metadata and object-storage abstraction;
+- authenticated, idempotent upload pipeline with independent SHA-256 verification;
+- Android runtime permission flow for camera and fine location;
+- CameraX rear-camera preview and video capture without microphone/audio;
+- accelerometer, gyroscope, rotation-vector and optional magnetometer capture;
+- Fused Location Provider freshness, accuracy and radius checks;
+- common monotonic capture timeline;
+- app-private evidence packaging and manifest generation;
+- Room pending-upload tracking;
+- WorkManager network-constrained retry;
+- admin evidence/session status and authenticated video preview;
+- automated backend/web/Android checks in GitHub CI.
+
+Not yet accepted until a real Android device successfully sends an actual CameraX video plus real sensor/location packages and manifest to the backend. Never fill in or claim real-device results without performing that test.
+
+## Phase boundary
+
+Phase 3 does **not** implement randomized movement challenges, OpenCV optical flow, visual-inertial verification, replay detection, trust scoring, authenticity verdicts or AI anomaly detection.
 
 Source of truth:
-1. `docs/project-spec.md`
-2. `docs/inspection-lifecycle.md`
-3. current repository code and passing tests
 
-Never claim a phase is complete unless its acceptance criteria have actually been tested.
+1. `docs/project-spec.md`
+2. `docs/live-capture.md`
+3. `docs/evidence-format.md`
+4. `docs/session-lifecycle.md`
+5. current repository code and passing tests
