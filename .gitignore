@@ -30,3 +30,4 @@ local.properties
 # Runtime data
 .minio/
 postgres-data/
+backend/siteproof-evidence/
