@@ -113,6 +113,27 @@ def complete_capture(
     if expire_if_needed(db, session, actor_user_id=current_user.id):
         db.commit()
         raise SiteProofError(409, "SESSION_EXPIRED", "Verification session expired.")
+
+    completed_states = {
+        VerificationSessionStatus.CAPTURE_COMPLETED,
+        VerificationSessionStatus.UPLOADING,
+        VerificationSessionStatus.UPLOAD_FAILED,
+        VerificationSessionStatus.UPLOADED,
+    }
+    if session.status in completed_states:
+        same_payload = (
+            session.capture_duration_ms == payload.capture_duration_ms
+            and (session.sensor_summary or {}) == payload.sensor_summary.model_dump()
+            and (session.location_summary or {}) == payload.location_summary.model_dump()
+        )
+        if same_payload:
+            return session_response(db, session)
+        raise SiteProofError(
+            409,
+            "CAPTURE_SUMMARY_CONFLICT",
+            "Capture completion was already recorded with different metadata.",
+        )
+
     if session.status != VerificationSessionStatus.CAPTURING:
         raise SiteProofError(409, "INVALID_STATUS_TRANSITION", "Only CAPTURING sessions can complete capture.")
     if payload.capture_duration_ms < settings.capture_min_seconds * 1000:
