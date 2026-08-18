@@ -5,6 +5,17 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import com.siteproof.app.BuildConfig
+import com.siteproof.app.verification.model.AbortRequest
+import com.siteproof.app.verification.model.CaptureCompleteRequest
+import com.siteproof.app.verification.model.EvidenceCompleteRequest
+import com.siteproof.app.verification.model.EvidenceFileResponse
+import com.siteproof.app.verification.model.EvidenceInitiateRequest
+import com.siteproof.app.verification.model.EvidenceInitiateResponse
+import com.siteproof.app.verification.model.EvidenceListResponse
+import com.siteproof.app.verification.model.SessionCreateRequest
+import com.siteproof.app.verification.model.SessionCreateResponse
+import com.siteproof.app.verification.model.StartCaptureRequest
+import com.siteproof.app.verification.model.VerificationSession
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import java.nio.ByteBuffer
@@ -15,13 +26,16 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Url
 
 interface SiteProofApi {
     @POST("auth/login")
@@ -41,6 +55,54 @@ interface SiteProofApi {
 
     @POST("inspections/{id}/ready")
     suspend fun markReady(@Path("id") id: String): InspectionSummary
+
+    @POST("inspections/{id}/sessions")
+    suspend fun createVerificationSession(
+        @Path("id") inspectionId: String,
+        @Body request: SessionCreateRequest,
+    ): SessionCreateResponse
+
+    @GET("inspections/{id}/sessions/latest")
+    suspend fun latestVerificationSession(@Path("id") inspectionId: String): VerificationSession?
+
+    @GET("sessions/{id}")
+    suspend fun verificationSession(@Path("id") sessionId: String): VerificationSession
+
+    @POST("sessions/{id}/start-capture")
+    suspend fun startCapture(
+        @Path("id") sessionId: String,
+        @Body request: StartCaptureRequest,
+    ): VerificationSession
+
+    @POST("sessions/{id}/capture-complete")
+    suspend fun captureComplete(
+        @Path("id") sessionId: String,
+        @Body request: CaptureCompleteRequest,
+    ): VerificationSession
+
+    @POST("sessions/{id}/abort")
+    suspend fun abortSession(
+        @Path("id") sessionId: String,
+        @Body request: AbortRequest,
+    ): VerificationSession
+
+    @POST("sessions/{id}/evidence/initiate")
+    suspend fun initiateEvidence(
+        @Path("id") sessionId: String,
+        @Body request: EvidenceInitiateRequest,
+    ): EvidenceInitiateResponse
+
+    @PUT
+    suspend fun uploadEvidence(@Url relativeUrl: String, @Body body: RequestBody): EvidenceFileResponse
+
+    @POST("sessions/{id}/evidence/complete")
+    suspend fun completeEvidence(
+        @Path("id") sessionId: String,
+        @Body request: EvidenceCompleteRequest,
+    ): VerificationSession
+
+    @GET("sessions/{id}/evidence")
+    suspend fun evidence(@Path("id") sessionId: String): EvidenceListResponse
 }
 
 class TokenStore(context: Context) : SessionStore {

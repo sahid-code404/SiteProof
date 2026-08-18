@@ -16,17 +16,27 @@ import com.siteproof.app.data.InspectionCache
 import com.siteproof.app.data.InspectionRepository
 import com.siteproof.app.data.TokenStore
 import com.siteproof.app.data.createApi
+import com.siteproof.app.verification.VerificationCaptureCoordinator
+import com.siteproof.app.verification.VerificationRepository
+import com.siteproof.app.verification.VerificationScreen
+import com.siteproof.app.verification.VerificationViewModel
+import com.siteproof.app.verification.db.PendingEvidenceDatabase
+import com.siteproof.app.verification.upload.EvidenceUploadWorker
 
 @Composable
 fun SiteProofApp() {
     val context = LocalContext.current.applicationContext
     val tokenStore = remember(context) { TokenStore(context) }
-    val repository = remember(context, tokenStore) {
+    val api = remember(context, tokenStore) { createApi(context, tokenStore) }
+    val repository = remember(context, tokenStore, api) {
         InspectionRepository(
-            api = createApi(context, tokenStore),
+            api = api,
             tokenStore = tokenStore,
             cache = InspectionCache(context),
         )
+    }
+    val verificationRepository = remember(context, api) {
+        VerificationRepository(api, PendingEvidenceDatabase.get(context).pendingEvidenceDao())
     }
     val authViewModel: AuthViewModel = viewModel(
         factory = SiteProofViewModelFactory { AuthViewModel(repository) },
@@ -68,6 +78,29 @@ fun SiteProofApp() {
                         onRetry = detailViewModel::load,
                         onAcknowledge = detailViewModel::acknowledge,
                         onReady = detailViewModel::markReady,
+                        onStartVerification = { navController.navigate("verification/$id") },
+                    )
+                }
+                composable(
+                    route = "verification/{id}",
+                    arguments = listOf(navArgument("id") { type = NavType.StringType }),
+                ) { backStackEntry ->
+                    val id = requireNotNull(backStackEntry.arguments?.getString("id"))
+                    val verificationViewModel: VerificationViewModel = viewModel(
+                        key = "verification-$id",
+                        factory = SiteProofViewModelFactory {
+                            val coordinator = VerificationCaptureCoordinator(context, verificationRepository)
+                            VerificationViewModel(
+                                inspectionId = id,
+                                coordinator = coordinator,
+                                repository = verificationRepository,
+                                enqueueUpload = { sessionId -> EvidenceUploadWorker.enqueue(context, sessionId) },
+                            )
+                        },
+                    )
+                    VerificationScreen(
+                        viewModel = verificationViewModel,
+                        onBack = { navController.popBackStack() },
                     )
                 }
             }
