@@ -5,7 +5,6 @@ import androidx.camera.view.PreviewView
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.siteproof.app.verification.upload.EvidenceUploadWorker
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -62,8 +61,23 @@ class VerificationViewModel(
             try {
                 coordinator.bindCamera(previewView, lifecycleOwner)
             } catch (error: Exception) {
+                val ready = _state.value as? VerificationUiState.Ready
+                if (ready != null) coordinator.abandonPrepared(ready.prepared, "CAMERA_ERROR")
                 _state.value = VerificationUiState.Error(error.message ?: "Camera is unavailable.")
             }
+        }
+    }
+
+    fun cancelPrepared(onComplete: () -> Unit) {
+        val ready = _state.value as? VerificationUiState.Ready
+        if (ready == null) {
+            onComplete()
+            return
+        }
+        _state.value = VerificationUiState.Preparing
+        viewModelScope.launch {
+            coordinator.abandonPrepared(ready.prepared)
+            onComplete()
         }
     }
 
@@ -80,6 +94,10 @@ class VerificationViewModel(
                         val current = _state.value as? VerificationUiState.Capturing ?: break
                         val elapsed = (SystemClock.elapsedRealtimeNanos() - captureStartedNs) / 1_000_000L
                         _state.value = current.copy(elapsedMs = elapsed)
+                        if (elapsed >= 60_000L) {
+                            stopCapture()
+                            break
+                        }
                         delay(250)
                     }
                 }
@@ -93,17 +111,20 @@ class VerificationViewModel(
         val capturing = _state.value as? VerificationUiState.Capturing ?: return
         if (capturing.elapsedMs < 8_000L) return
         timerJob?.cancel()
+        _state.value = VerificationUiState.Captured(
+            capturing.prepared.session.sessionId,
+            "PACKAGING",
+            "Finalizing secure evidence…",
+        )
         viewModelScope.launch {
-            _state.value = VerificationUiState.Captured(
-                capturing.prepared.session.sessionId,
-                "PACKAGING",
-                "Finalizing secure evidence…",
-            )
             try {
                 coordinator.stop()
                 monitorUpload(capturing.prepared.session.sessionId)
             } catch (error: Exception) {
-                _state.value = VerificationUiState.Error(error.message ?: "Unable to finalize evidence.", canRetry = false)
+                _state.value = VerificationUiState.Error(
+                    error.message ?: "Unable to finalize evidence.",
+                    canRetry = false,
+                )
             }
         }
     }
