@@ -83,6 +83,7 @@ fun VerificationScreen(
         ),
     )
 
+    BackHandler(enabled = state is VerificationUiState.Ready) { viewModel.cancelPrepared(onBack) }
     BackHandler(enabled = state is VerificationUiState.Capturing) { showAbortDialog = true }
     if (showAbortDialog) {
         AlertDialog(
@@ -108,7 +109,7 @@ fun VerificationScreen(
                     lifecycleOwner,
                     viewModel::bindCamera,
                     viewModel::startCapture,
-                    onBack,
+                    { viewModel.cancelPrepared(onBack) },
                 )
                 is VerificationUiState.Capturing -> LiveCapture(
                     current,
@@ -162,7 +163,7 @@ private fun ReadyCapture(
         StatusRow("Accelerometer", if (prepared.capabilities.accelerometer) "Ready" else "Unavailable")
         StatusRow("Gyroscope", if (prepared.capabilities.gyroscope) "Ready" else "Unavailable · reduced strength")
         StatusRow("Rotation vector", if (prepared.capabilities.rotationVector) "Ready" else "Unavailable · reduced strength")
-        Text("Estimated capture: 15–30 seconds", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 12.dp))
+        Text("Estimated capture: 15–30 seconds · maximum 60 seconds", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 12.dp))
         Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text("START LIVE CAPTURE") }
         TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Back") }
     }
@@ -189,6 +190,7 @@ private fun LiveCapture(
             enabled = state.elapsedMs >= 8_000L,
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         ) { Text(if (state.elapsedMs < 8_000L) "CAPTURE AT LEAST 8 SECONDS" else "STOP CAPTURE") }
+        Text("Capture stops automatically at 60 seconds.", style = MaterialTheme.typography.bodySmall)
         TextButton(onClick = onAbort, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Abort") }
     }
 }
