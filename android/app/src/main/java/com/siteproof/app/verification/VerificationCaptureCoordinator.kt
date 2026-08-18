@@ -65,6 +65,13 @@ class VerificationCaptureCoordinator(
         cameraManager.bind(previewView, lifecycleOwner)
     }
 
+    suspend fun abandonPrepared(prepared: Prepared, reason: String = "USER_CANCELLED") {
+        if (active == null) {
+            repository.abort(prepared.session.sessionId, reason)
+            cameraManager.release()
+        }
+    }
+
     suspend fun start(prepared: Prepared) {
         check(active == null) { "Capture is already active." }
         val fresh = locationRecorder.freshLocation(
@@ -105,17 +112,17 @@ class VerificationCaptureCoordinator(
             val cameraResult = cameraManager.stopRecording()
             val sensorCounts = sensorRecorder.stop()
             val locations = locationRecorder.stopCapture()
-            val captureEndNs = SystemClock.elapsedRealtimeNanos()
-            val durationMs = (captureEndNs - capture.captureStartNs) / 1_000_000L
+            val durationMs =
+                (cameraResult.videoEndMonotonicNs - cameraResult.videoStartMonotonicNs) / 1_000_000L
             require(durationMs >= 8_000L) { "Capture must be at least 8 seconds." }
-            require(durationMs <= 60_000L) { "Capture exceeded the 60 second maximum." }
+            require(durationMs <= 61_000L) { "Capture exceeded the 60 second maximum." }
             require(locations.isNotEmpty()) { "No GPS samples were recorded during capture." }
             val locationSummary = locationRecorder.writePackage(
                 File(capture.directory, "locations.json.gz"),
                 locations,
             )
             val complete = com.siteproof.app.verification.model.CaptureCompleteRequest(
-                captureDurationMs = durationMs,
+                captureDurationMs = durationMs.coerceAtMost(60_000L),
                 sensorSummary = sensorCounts.toApi(),
                 locationSummary = locationSummary,
             )
