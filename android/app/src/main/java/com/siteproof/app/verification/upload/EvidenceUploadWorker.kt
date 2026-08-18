@@ -21,6 +21,7 @@ import com.siteproof.app.verification.model.EvidenceInitiateRequest
 import com.siteproof.app.verification.model.LocationSummary
 import com.siteproof.app.verification.model.SensorSummary
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -73,9 +74,14 @@ class EvidenceUploadWorker(
         } catch (error: HttpException) {
             dao.updateUploadStatus(sessionId, "FAILED", System.currentTimeMillis())
             if (UploadRetryPolicy.shouldRetry(error.code())) Result.retry() else Result.failure()
-        } catch (error: Exception) {
+        } catch (error: IOException) {
             dao.updateUploadStatus(sessionId, "FAILED", System.currentTimeMillis())
             Result.retry()
+        } catch (error: Exception) {
+            // Missing/corrupt local files or malformed metadata cannot be repaired by retrying
+            // the same package forever. Keep the evidence record for diagnostics and stop.
+            dao.updateUploadStatus(sessionId, "FAILED", System.currentTimeMillis())
+            Result.failure()
         }
     }
 
