@@ -33,3 +33,7 @@ pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["alembic*", "tests*"]
