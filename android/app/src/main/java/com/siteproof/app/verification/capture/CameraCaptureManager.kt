@@ -26,6 +26,7 @@ class CameraCaptureManager(private val context: Context) {
     data class RecordingResult(
         val videoStartMonotonicNs: Long,
         val videoEndMonotonicNs: Long,
+        val recordedDurationNs: Long,
         val fileSizeBytes: Long,
     )
 
@@ -86,6 +87,7 @@ class CameraCaptureManager(private val context: Context) {
                             RecordingResult(
                                 videoStartMonotonicNs = startNs,
                                 videoEndMonotonicNs = SystemClock.elapsedRealtimeNanos(),
+                                recordedDurationNs = event.recordingStats.recordedDurationNanos,
                                 fileSizeBytes = outputFile.length(),
                             ),
                         )
