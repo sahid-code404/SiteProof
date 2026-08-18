@@ -110,9 +110,6 @@ def complete_capture(
 ) -> VerificationSessionResponse:
     settings = get_settings()
     session = owned_session(db, current_user, session_id)
-    if expire_if_needed(db, session, actor_user_id=current_user.id):
-        db.commit()
-        raise SiteProofError(409, "SESSION_EXPIRED", "Verification session expired.")
 
     completed_states = {
         VerificationSessionStatus.CAPTURE_COMPLETED,
@@ -135,11 +132,40 @@ def complete_capture(
         )
 
     if session.status != VerificationSessionStatus.CAPTURING:
+        if expire_if_needed(db, session, actor_user_id=current_user.id):
+            db.commit()
+            raise SiteProofError(409, "SESSION_EXPIRED", "Verification session expired.")
         raise SiteProofError(409, "INVALID_STATUS_TRANSITION", "Only CAPTURING sessions can complete capture.")
+
     if payload.capture_duration_ms < settings.capture_min_seconds * 1000:
         raise SiteProofError(422, "CAPTURE_TOO_SHORT", f"Capture must be at least {settings.capture_min_seconds} seconds.")
     if payload.capture_duration_ms > settings.capture_max_seconds * 1000:
         raise SiteProofError(422, "CAPTURE_TOO_LONG", f"Capture cannot exceed {settings.capture_max_seconds} seconds.")
+
+    # A recording that began while the short-lived session was valid may be reported later
+    # after connectivity returns. Infer its end from the authoritative server start receipt
+    # plus the bounded duration instead of expiring a valid captured package solely because
+    # the completion request arrived late.
+    if session.capture_started_at is None:
+        raise SiteProofError(409, "CAPTURE_START_MISSING", "Capture start was not recorded.")
+    inferred_end = aware(session.capture_started_at) + timedelta(milliseconds=payload.capture_duration_ms)
+    if inferred_end > aware(session.expires_at):
+        session.status = VerificationSessionStatus.EXPIRED
+        inspection = db.get(Inspection, session.inspection_id)
+        if inspection is not None and inspection.status != InspectionStatus.CANCELLED:
+            inspection.status = InspectionStatus.READY
+        record_audit(
+            db,
+            organization_id=current_user.organization_id,
+            actor_user_id=current_user.id,
+            entity_type="VERIFICATION_SESSION",
+            entity_id=session.id,
+            action="SESSION_EXPIRED",
+            metadata={"reason": "CAPTURE_EXCEEDED_SESSION_LIFETIME"},
+        )
+        db.commit()
+        raise SiteProofError(409, "SESSION_EXPIRED", "Capture exceeded the verification session lifetime.")
+
     if payload.video_file_count != 1:
         raise SiteProofError(422, "VIDEO_REQUIRED", "Exactly one live video capture is required.")
     if payload.sensor_summary.accelerometer_samples <= 0:
@@ -153,7 +179,7 @@ def complete_capture(
         raise SiteProofError(422, "LOCATION_DATA_REQUIRED", "At least one location sample is required.")
 
     session.status = VerificationSessionStatus.CAPTURE_COMPLETED
-    session.capture_ended_at = utc_now()
+    session.capture_ended_at = inferred_end
     session.capture_duration_ms = payload.capture_duration_ms
     session.sensor_summary = payload.sensor_summary.model_dump()
     session.location_summary = payload.location_summary.model_dump()
