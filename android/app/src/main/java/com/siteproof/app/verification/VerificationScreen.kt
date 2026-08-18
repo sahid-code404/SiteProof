@@ -17,17 +17,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,12 +34,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.math.roundToInt
 
 @Composable
@@ -76,7 +77,11 @@ fun VerificationScreen(
         if (camera && fine) viewModel.permissionsGranted()
     }
     fun requestPermissions() = launcher.launch(
-        arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+        arrayOf(
+            Manifest.permission.CAMERA,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        ),
     )
 
     BackHandler(enabled = state is VerificationUiState.Capturing) { showAbortDialog = true }
@@ -85,8 +90,12 @@ fun VerificationScreen(
             onDismissRequest = { showAbortDialog = false },
             title = { Text("Cancel verification?") },
             text = { Text("The current live capture will be discarded and this session will be marked aborted.") },
-            confirmButton = { TextButton(onClick = { showAbortDialog = false; viewModel.abortByUser() }) { Text("Abort") } },
-            dismissButton = { TextButton(onClick = { showAbortDialog = false }) { Text("Continue capture") } },
+            confirmButton = {
+                TextButton(onClick = { showAbortDialog = false; viewModel.abortByUser() }) { Text("Abort") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAbortDialog = false }) { Text("Continue capture") }
+            },
         )
     }
 
@@ -138,8 +147,8 @@ private fun PermissionIntro(onBack: () -> Unit, onContinue: () -> Unit) {
 @Composable
 private fun ReadyCapture(
     prepared: VerificationCaptureCoordinator.Prepared,
-    lifecycleOwner: androidx.lifecycle.LifecycleOwner,
-    bindCamera: (PreviewView, androidx.lifecycle.LifecycleOwner) -> Unit,
+    lifecycleOwner: LifecycleOwner,
+    bindCamera: (PreviewView, LifecycleOwner) -> Unit,
     onStart: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -163,8 +172,8 @@ private fun ReadyCapture(
 @Composable
 private fun LiveCapture(
     state: VerificationUiState.Capturing,
-    lifecycleOwner: androidx.lifecycle.LifecycleOwner,
-    bindCamera: (PreviewView, androidx.lifecycle.LifecycleOwner) -> Unit,
+    lifecycleOwner: LifecycleOwner,
+    bindCamera: (PreviewView, LifecycleOwner) -> Unit,
     onStop: () -> Unit,
     onAbort: () -> Unit,
 ) {
@@ -172,7 +181,10 @@ private fun LiveCapture(
         Text("LIVE VERIFICATION", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         CameraPreview(lifecycleOwner, bindCamera, Modifier.fillMaxWidth().weight(1f))
         Text("GPS ✓    Sensors ✓    Session ACTIVE", modifier = Modifier.padding(top = 12.dp))
-        Text("%02d:%02d".format((state.elapsedMs / 1000) / 60, (state.elapsedMs / 1000) % 60), style = MaterialTheme.typography.headlineMedium)
+        Text(
+            "%02d:%02d".format((state.elapsedMs / 1000) / 60, (state.elapsedMs / 1000) % 60),
+            style = MaterialTheme.typography.headlineMedium,
+        )
         Button(
             onClick = onStop,
             enabled = state.elapsedMs >= 8_000L,
@@ -184,8 +196,8 @@ private fun LiveCapture(
 
 @Composable
 private fun CameraPreview(
-    lifecycleOwner: androidx.lifecycle.LifecycleOwner,
-    bindCamera: (PreviewView, androidx.lifecycle.LifecycleOwner) -> Unit,
+    lifecycleOwner: LifecycleOwner,
+    bindCamera: (PreviewView, LifecycleOwner) -> Unit,
     modifier: Modifier,
 ) {
     AndroidView(
@@ -201,7 +213,9 @@ private fun CaptureResult(state: VerificationUiState.Captured, retry: (String) -
         Text(state.message, modifier = Modifier.padding(vertical = 16.dp))
         Text("Verification has not been analyzed yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (state.uploadStatus == "FAILED") {
-            Button(onClick = { retry(state.sessionId) }, modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) { Text("RETRY NOW") }
+            Button(onClick = { retry(state.sessionId) }, modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
+                Text("RETRY NOW")
+            }
         }
         if (state.uploadStatus == "UPLOADED") {
             Button(onClick = onBack, modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) { Text("DONE") }
@@ -221,7 +235,11 @@ private fun ErrorState(message: String, canRetry: Boolean, retry: () -> Unit, on
 
 @Composable
 private fun Loading(message: String) {
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         CircularProgressIndicator()
         Text(message, modifier = Modifier.padding(20.dp))
     }
