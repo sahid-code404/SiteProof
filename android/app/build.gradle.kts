@@ -10,7 +10,7 @@ val siteProofApiBaseUrl = providers.gradleProperty("SITEPROOF_API_BASE_URL")
 
 android {
     namespace = "com.siteproof.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.siteproof.app"
