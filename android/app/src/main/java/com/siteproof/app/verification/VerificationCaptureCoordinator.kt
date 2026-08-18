@@ -112,17 +112,16 @@ class VerificationCaptureCoordinator(
             val cameraResult = cameraManager.stopRecording()
             val sensorCounts = sensorRecorder.stop()
             val locations = locationRecorder.stopCapture()
-            val durationMs =
-                (cameraResult.videoEndMonotonicNs - cameraResult.videoStartMonotonicNs) / 1_000_000L
+            val durationMs = cameraResult.recordedDurationNs / 1_000_000L
             require(durationMs >= 8_000L) { "Capture must be at least 8 seconds." }
-            require(durationMs <= 61_000L) { "Capture exceeded the 60 second maximum." }
+            require(durationMs <= 60_000L) { "Capture exceeded the 60 second maximum." }
             require(locations.isNotEmpty()) { "No GPS samples were recorded during capture." }
             val locationSummary = locationRecorder.writePackage(
                 File(capture.directory, "locations.json.gz"),
                 locations,
             )
             val complete = com.siteproof.app.verification.model.CaptureCompleteRequest(
-                captureDurationMs = durationMs.coerceAtMost(60_000L),
+                captureDurationMs = durationMs,
                 sensorSummary = sensorCounts.toApi(),
                 locationSummary = locationSummary,
             )
