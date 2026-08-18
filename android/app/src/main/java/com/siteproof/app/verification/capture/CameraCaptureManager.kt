@@ -25,6 +25,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 class CameraCaptureManager(private val context: Context) {
     data class RecordingResult(
         val videoStartMonotonicNs: Long,
+        val videoEndMonotonicNs: Long,
         val fileSizeBytes: Long,
     )
 
@@ -84,6 +85,7 @@ class CameraCaptureManager(private val context: Context) {
                         activeCompletion.complete(
                             RecordingResult(
                                 videoStartMonotonicNs = startNs,
+                                videoEndMonotonicNs = SystemClock.elapsedRealtimeNanos(),
                                 fileSizeBytes = outputFile.length(),
                             ),
                         )
