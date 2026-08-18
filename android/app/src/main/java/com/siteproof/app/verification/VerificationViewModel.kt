@@ -94,7 +94,9 @@ class VerificationViewModel(
                         val current = _state.value as? VerificationUiState.Capturing ?: break
                         val elapsed = (SystemClock.elapsedRealtimeNanos() - captureStartedNs) / 1_000_000L
                         _state.value = current.copy(elapsedMs = elapsed)
-                        if (elapsed >= 60_000L) {
+                        // Stop slightly before the server's hard 60-second ceiling so CameraX
+                        // finalization latency cannot turn a valid recording into an over-limit one.
+                        if (elapsed >= 59_500L) {
                             stopCapture()
                             break
                         }
