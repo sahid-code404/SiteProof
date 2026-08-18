@@ -93,6 +93,47 @@ def test_location_boundary_and_capture_state_transitions(client, db):
     assert completed.json()["status"] == "CAPTURE_COMPLETED"
 
 
+def test_capture_completion_is_idempotent_for_worker_retry(client, db):
+    identities = seed_identities(db)
+    admin_headers = login(client, identities["admin"])
+    inspector_headers = login(client, identities["inspector"])
+    inspection_id = create_ready_inspection(
+        client, admin_headers, inspector_headers, identities["profile"].id
+    )
+    session_id = create_session(client, inspector_headers, inspection_id).json()["sessionId"]
+    assert start_capture(client, inspector_headers, session_id).status_code == 200
+
+    first = finish_capture(client, inspector_headers, session_id)
+    second = finish_capture(client, inspector_headers, session_id)
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert second.json()["status"] == "CAPTURE_COMPLETED"
+    assert second.json()["captureDurationMs"] == first.json()["captureDurationMs"]
+
+
+def test_delayed_capture_completion_survives_offline_gap_if_capture_finished_in_time(client, db):
+    identities = seed_identities(db)
+    admin_headers = login(client, identities["admin"])
+    inspector_headers = login(client, identities["inspector"])
+    inspection_id = create_ready_inspection(
+        client, admin_headers, inspector_headers, identities["profile"].id
+    )
+    session_id = create_session(client, inspector_headers, inspection_id).json()["sessionId"]
+    assert start_capture(client, inspector_headers, session_id).status_code == 200
+
+    row = db.get(VerificationSession, uuid.UUID(session_id))
+    simulated_start = datetime.now(timezone.utc) - timedelta(minutes=30)
+    row.capture_started_at = simulated_start
+    row.expires_at = simulated_start + timedelta(minutes=15)
+    db.commit()
+
+    delayed = finish_capture(client, inspector_headers, session_id)
+    assert delayed.status_code == 200, delayed.text
+    assert delayed.json()["status"] == "CAPTURE_COMPLETED"
+    db.refresh(row)
+    assert row.status == VerificationSessionStatus.CAPTURE_COMPLETED
+
+
 def test_session_expiration_and_abort_are_terminal(client, db):
     identities = seed_identities(db)
     admin_headers = login(client, identities["admin"])
