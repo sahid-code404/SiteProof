@@ -4,7 +4,7 @@ This document records **actual physical-device results only**. Never replace mis
 
 ## Phase 2.12 — Inspection Assignment End-to-End Acceptance
 
-Status: **PARTIAL — MANUAL CREATE AND ACKNOWLEDGE PASSED; FINAL CHECKS REMAIN**
+Status: **PARTIAL — ACKNOWLEDGED PERSISTENCE PASSED; FINAL CHECKS REMAIN**
 
 ### Device / environment
 
@@ -89,9 +89,9 @@ Record PASS / FAIL and notes for every item after actually performing it.
 | Assigned inspection appears on Android | PASS | Both the seeded `Verify repaired pothole` and manually created `Phase 2 Final Test` appeared on the physical Android device for Inspector One. |
 | Unrelated inspector work is not visible | PASS | On the replacement isolation-fix APK, Inspector Two's physical-device list showed `No inspections assigned.` after the Inspector One -> sign out -> Inspector Two account switch. The prior Inspector One card was no longer visible. |
 | **ACKNOWLEDGE** succeeds | PASS | The manually created `Phase 2 Final Test` was shown as `ASSIGNED` with an `ACKNOWLEDGE` action, then a physical-device screenshot immediately after the action showed status `ACKNOWLEDGED` and the `MARK READY` action. |
-| Web/backend persist `ACKNOWLEDGED` | NOT TESTED | The Android device directly showed `ACKNOWLEDGED`, but no separate web/API observation has yet confirmed that persisted server state while the inspection remains specifically in `ACKNOWLEDGED`. |
+| Web/backend persist `ACKNOWLEDGED` | PASS | After the Android acknowledgement, the refreshed admin web inspection list showed `Phase 2 Final Test` with status `ACKNOWLEDGED`, confirming the state persisted through the backend/database rather than existing only in Android UI memory. |
 | **MARK READY** succeeds | PASS | Physical-device screenshot shows the earlier `Verify repaired pothole` inspection in `READY` with `Verification ready`. |
-| `READY` persists after refresh/restart | NOT TESTED | Restart/refresh persistence has not yet been explicitly observed. |
+| `READY` persists after refresh/restart | NOT TESTED | Restart/refresh persistence has not yet been explicitly observed for `Phase 2 Final Test`. |
 | Assignment history is correct | NOT TESTED | |
 | Audit records are present and correct | NOT TESTED | |
 
@@ -124,18 +124,17 @@ Physical-device screenshots on 2026-08-19 show:
 - Inspector One's list containing the manually created `Phase 2 Final Test` in `ASSIGNED` state.
 - The detail screen for `Phase 2 Final Test` in `ASSIGNED` state with the `ACKNOWLEDGE` control.
 - The same inspection immediately afterward in `ACKNOWLEDGED` state with the `MARK READY` control.
-
-This closes the manual admin-create and Android acknowledge checks. A separate web/API observation is still required to close the server-persistence check for the `ACKNOWLEDGED` state.
+- A subsequent refreshed admin web screenshot shows `Phase 2 Final Test` as `ACKNOWLEDGED`, closing the server/database persistence check for this transition.
 
 ### Acceptance result
 
 Overall result:
-**PARTIAL — MANUAL CREATE, ASSIGNMENT, ISOLATION, AND ANDROID ACKNOWLEDGE PASSED; FINAL ACCEPTANCE CHECKS REMAIN**
+**PARTIAL — MANUAL CREATE, ASSIGNMENT, ISOLATION, AND ACKNOWLEDGED PERSISTENCE PASSED; FINAL ACCEPTANCE CHECKS REMAIN**
 
 Blocking defect(s):
 - RESOLVED AND RETESTED — former `@siteproof.local` seed addresses were rejected by login validation. The seed now migrates legacy demo identities to `@siteproof.example.com`; local reseeding succeeded and admin login returned HTTP 200.
 - RESOLVED AND RETESTED — stale Inspector One list state was visible after switching to Inspector Two. Backend authorization had already blocked detail access; the Android session-scoped UI state fix now passes physical retest, with Inspector Two showing no unrelated inspection.
-- OPEN ACCEPTANCE ITEMS — direct web/API `ACKNOWLEDGED` persistence observation, `READY` persistence after refresh/restart, assignment history, and audit verification.
+- OPEN ACCEPTANCE ITEMS — `READY` persistence after refresh/restart, assignment history, and audit verification.
 
 Evidence recorded by:
 User-observed local acceptance setup, user-provided web/Android screenshots, direct backend login result, and repository/CI verification
