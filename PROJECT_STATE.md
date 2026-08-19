@@ -2,7 +2,7 @@
 
 Current development branch: **Phase 3 — Live Capture, Location & Multi-Sensor Evidence Collection**
 
-Phase 3 is stacked on the tested Phase 2 branch. Phase 2 automated CI is green, but its physical-device acceptance remains a separate prerequisite before either milestone should be called fully accepted.
+Phase 2 prerequisite: **PASS — physical-device acceptance completed on 2026-08-19.** The Phase 2 seed/login fixes and Android account-switch isolation fix have been carried forward into this Phase 3 branch before Phase 3 hardware testing.
 
 ## Phase 3 implementation status
 
@@ -22,7 +22,20 @@ Implemented in code:
 - admin evidence/session status and authenticated video preview;
 - automated backend/web/Android checks in GitHub CI.
 
-Not yet accepted until a real Android device successfully sends an actual CameraX video plus real sensor/location packages and manifest to the backend. Never fill in or claim real-device results without performing that test.
+## Current acceptance gate
+
+**Phase 3 real-device acceptance — NOT TESTED YET on the updated branch.**
+
+Phase 3 is not complete until a physical Android phone successfully creates one actual CameraX recording plus real sensor/location packages and manifest from the same live session, survives the required temporary-offline retention/retry test, uploads the evidence to the backend, and shows the received evidence in the admin dashboard.
+
+Do not fabricate device model, Android version, sensor availability, sample behavior, upload behavior or timing results. Record only observed values from the physical run.
+
+## Carry-forward fixes from accepted Phase 2
+
+- demo seed addresses use/migrate to `@siteproof.example.com` so the real login schema accepts them;
+- legacy demo identities are migrated in place without duplicate inspector employee-code collisions;
+- Android authenticated navigation/ViewModel state is session-scoped so an Inspector One → logout → Inspector Two switch cannot retain Inspector One's in-memory inspection list;
+- regression coverage for those fixes is carried forward.
 
 ## Phase boundary
 
@@ -34,4 +47,7 @@ Source of truth:
 2. `docs/live-capture.md`
 3. `docs/evidence-format.md`
 4. `docs/session-lifecycle.md`
-5. current repository code and passing tests
+5. `docs/testing.md`
+6. current repository code and passing tests
+
+Next task: run the exact real-device Phase 3 acceptance flow in `docs/testing.md` after the updated branch passes CI.
