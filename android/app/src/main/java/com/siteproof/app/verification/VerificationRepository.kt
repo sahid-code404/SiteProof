@@ -63,6 +63,9 @@ class VerificationRepository(
 
     suspend fun issueChallenge(sessionId: String): ChallengeIssue {
         val issue = api.nextChallenge(sessionId)
+        // Room intentionally keeps only the current server-issued challenge. Future challenges
+        // are never preloaded, and stale nonce/idempotency state cannot leak into the next one.
+        challengeDao.clearSession(sessionId)
         challengeDao.upsert(
             ActiveChallengeEntity(
                 challengeId = issue.challengeId,
@@ -97,16 +100,10 @@ class VerificationRepository(
         )
     }
 
-    suspend fun submitChallenge(issue: ChallengeIssue, request: ChallengeSubmitRequest): ChallengeValidationResult {
-        challengeDao.updateSubmission(issue.challengeId, "STARTED", "SUBMITTING", null)
-        return try {
-            api.submitChallenge(issue.challengeId, request).also {
-                challengeDao.updateSubmission(issue.challengeId, it.result, "SUBMITTED", null)
-            }
-        } catch (error: Exception) {
-            throw error
+    suspend fun submitChallenge(issue: ChallengeIssue, request: ChallengeSubmitRequest): ChallengeValidationResult =
+        api.submitChallenge(issue.challengeId, request).also {
+            challengeDao.updateSubmission(issue.challengeId, it.result, "SUBMITTED", null)
         }
-    }
 
     suspend fun challengeIdempotencyKey(sessionId: String): String =
         challengeDao.forSession(sessionId)?.idempotencyKey ?: UUID.randomUUID().toString()
