@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - build/phase4-ux-apk-192-168-1-102
+  pull_request:
+    branches:
+      - phase4/challenge-engine
 
 jobs:
   android-device-apk:
@@ -27,5 +30,3 @@ jobs:
           name: siteproof-phase4-ux-192-168-1-102
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-
-# Triggered after workflow creation so the physical-device artifact is produced from this branch.
