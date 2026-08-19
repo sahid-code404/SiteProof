@@ -36,7 +36,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -44,7 +43,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.siteproof.app.verification.model.ChallengeIssue
 import com.siteproof.app.verification.model.ChallengeValidationResult
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -150,10 +148,16 @@ fun VerificationScreen(
                     current.result,
                     lifecycleOwner,
                     viewModel::bindCamera,
+                    viewModel::retryChallenge,
                     { showAbortDialog = true },
                 )
                 is VerificationUiState.Captured -> CaptureResult(current, viewModel::retryUpload, onBack)
-                is VerificationUiState.Error -> ErrorState(current.message, current.canRetry, viewModel::prepare, onBack)
+                is VerificationUiState.Error -> ErrorState(
+                    current.message,
+                    current.canRetry,
+                    viewModel::retryVerification,
+                    onBack,
+                )
             }
         }
     }
@@ -171,7 +175,7 @@ private fun PermissionIntro(onBack: () -> Unit, onContinue: () -> Unit) {
         Text("Checks that capture starts near the assigned inspection site.")
         Spacer(Modifier.height(16.dp))
         Text("Motion challenges", style = MaterialTheme.typography.titleMedium)
-        Text("The server will issue one unpredictable phone movement at a time while motion sensors are recorded.")
+        Text("Follow the animated phone and arrow. You do not need to estimate an exact angle; move until the guide turns green.")
         Spacer(Modifier.height(28.dp))
         Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) { Text("CONTINUE") }
         TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Back") }
@@ -197,7 +201,7 @@ private fun ReadyCapture(
         StatusRow("Accelerometer", if (prepared.capabilities.accelerometer) "Ready" else "Unavailable")
         StatusRow("Gyroscope", if (prepared.capabilities.gyroscope) "Ready" else "Unavailable")
         StatusRow("Rotation vector", if (prepared.capabilities.rotationVector) "Ready" else "Unavailable · reduced confidence")
-        Text("Keep the site visible while following three short movement challenges.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 12.dp))
+        Text("Keep the site visible while following three short animated movement challenges.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 12.dp))
         Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text("START LIVE VERIFICATION") }
         TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Back") }
     }
@@ -210,32 +214,31 @@ private fun ChallengeActiveScreen(
     bindCamera: (PreviewView, LifecycleOwner) -> Unit,
     onAbort: () -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             "CHALLENGE ${state.challenge.sequenceNumber} OF ${state.challenge.totalChallenges}",
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
         )
-        CameraPreview(lifecycleOwner, bindCamera, Modifier.fillMaxWidth().weight(1f))
-        Spacer(Modifier.height(12.dp))
-        Text(challengeSymbol(state.challenge), fontSize = 44.sp)
         Text(
-            challengeTitle(state.challenge),
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
+            "Keep the inspection site visible while moving the phone.",
+            style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center,
         )
-        Text("Keep the inspection site visible in the camera.", textAlign = TextAlign.Center)
+        CameraPreview(lifecycleOwner, bindCamera, Modifier.fillMaxWidth().height(205.dp))
+        Spacer(Modifier.height(10.dp))
+        ChallengeMovementGuide(state.challenge, state.guidance)
         Text(
-            "Approximately ${state.challenge.parameters.targetDegrees.roundToInt()}°",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(top = 8.dp),
+            state.feedback,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 5.dp),
         )
-        Text(state.feedback, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
         Text(
             "${ceil(state.remainingMs / 1000.0).toInt()} sec remaining",
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(top = 6.dp),
+            modifier = Modifier.padding(top = 5.dp),
         )
         TextButton(onClick = onAbort) { Text("Abort verification") }
     }
@@ -283,6 +286,7 @@ private fun ChallengeResultScreen(
     result: ChallengeValidationResult,
     lifecycleOwner: LifecycleOwner,
     bindCamera: (PreviewView, LifecycleOwner) -> Unit,
+    retryChallenge: () -> Unit,
     onAbort: () -> Unit,
 ) {
     val title = when (result.result) {
@@ -292,8 +296,11 @@ private fun ChallengeResultScreen(
     }
     val detail = when (result.result) {
         "PASS" -> "Movement verified. Preparing the next challenge…"
-        "FAIL" -> "The requested movement did not match the recorded device motion. Continuing securely…"
-        else -> if (result.retryAllowed) "A new challenge will be issued." else "Continuing with the recorded result."
+        else -> if (result.retryAllowed) {
+            "You can retry with a fresh server challenge. The completed sensor window and nonce will never be reused."
+        } else {
+            "No challenge retry remains. Continuing with the recorded result."
+        }
     }
     Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text("LIVE VERIFICATION", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
@@ -301,24 +308,13 @@ private fun ChallengeResultScreen(
         CameraPreview(lifecycleOwner, bindCamera, Modifier.fillMaxWidth().weight(1f))
         Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp))
         Text(detail, textAlign = TextAlign.Center, modifier = Modifier.padding(8.dp))
+        if (result.result != "PASS" && result.retryAllowed) {
+            Button(onClick = retryChallenge, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Text("RETRY CHALLENGE")
+            }
+        }
         TextButton(onClick = onAbort) { Text("Abort verification") }
     }
-}
-
-private fun challengeTitle(challenge: ChallengeIssue): String = when (challenge.type) {
-    "ROTATE_RIGHT" -> "ROTATE YOUR PHONE TO THE RIGHT"
-    "ROTATE_LEFT" -> "ROTATE YOUR PHONE TO THE LEFT"
-    "TILT_UP" -> "TILT THE TOP OF YOUR PHONE UP"
-    "TILT_DOWN" -> "TILT THE TOP OF YOUR PHONE DOWN"
-    else -> challenge.instruction.uppercase()
-}
-
-private fun challengeSymbol(challenge: ChallengeIssue): String = when (challenge.type) {
-    "ROTATE_RIGHT" -> "↻"
-    "ROTATE_LEFT" -> "↺"
-    "TILT_UP" -> "↑"
-    "TILT_DOWN" -> "↓"
-    else -> "◆"
 }
 
 private fun isLiveState(state: VerificationUiState): Boolean = when (state) {
@@ -351,7 +347,7 @@ private fun CaptureResult(state: VerificationUiState.Captured, retry: (String) -
         Text("Final SiteProof authenticity has not been calculated yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (state.uploadStatus == "FAILED") {
             Button(onClick = { retry(state.sessionId) }, modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
-                Text("RETRY NOW")
+                Text("RETRY UPLOAD")
             }
         }
         if (state.uploadStatus == "UPLOADED") {
@@ -365,7 +361,7 @@ private fun ErrorState(message: String, canRetry: Boolean, retry: () -> Unit, on
     Column(Modifier.fillMaxSize().padding(28.dp), verticalArrangement = Arrangement.Center) {
         Text("Verification unavailable", style = MaterialTheme.typography.headlineSmall)
         Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 16.dp))
-        if (canRetry) Button(onClick = retry, modifier = Modifier.fillMaxWidth()) { Text("TRY AGAIN") }
+        if (canRetry) Button(onClick = retry, modifier = Modifier.fillMaxWidth()) { Text("RETRY VERIFICATION") }
         TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Back") }
     }
 }
@@ -378,7 +374,7 @@ private fun Loading(message: String) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         CircularProgressIndicator()
-        Text(message, modifier = Modifier.padding(20.dp))
+        Text(message, modifier = Modifier.padding(20.dp), textAlign = TextAlign.Center)
     }
 }
 
