@@ -1,37 +1,60 @@
 # Project State
 
-Current development branch: **Phase 3 — Live Capture, Location & Multi-Sensor Evidence Collection**
+Current development branch: **Phase 4 — Active Challenge-Response Engine & Sensor-Based Liveness Verification**
 
-Phase 3 is stacked on the tested Phase 2 branch. Phase 2 automated CI is green, but its physical-device acceptance remains a separate prerequisite before either milestone should be called fully accepted.
+Phase 4 is stacked on `phase3/live-capture`; Phase 3's mandatory physical-device acceptance remains a prerequisite. Automated success must never be described as proof that real CameraX/sensor behavior passed on a phone.
 
-## Phase 3 implementation status
+## Phase 4 implementation status
 
 Implemented in code:
 
-- verification-session state machine and persistence;
-- evidence-file metadata and object-storage abstraction;
-- authenticated, idempotent upload pipeline with independent SHA-256 verification;
-- Android runtime permission flow for camera and fine location;
-- CameraX rear-camera preview and video capture without microphone/audio;
-- accelerometer, gyroscope, rotation-vector and optional magnetometer capture;
-- Fused Location Provider freshness, accuracy and radius checks;
-- common monotonic capture timeline;
-- app-private evidence packaging and manifest generation;
-- Room pending-upload tracking;
-- WorkManager network-constrained retry;
-- admin evidence/session status and authenticated video preview;
-- automated backend/web/Android checks in GitHub CI.
+- dedicated `verification_challenges` persistence and indexes;
+- server-generated ROTATE_LEFT, ROTATE_RIGHT, TILT_UP and TILT_DOWN challenges;
+- randomized comfortable target/acceptable angles;
+- high-entropy nonce, expiry, one-current-challenge and replay/idempotency protection;
+- challenge session states and server-validated state transitions;
+- gyroscope integration with rotation-vector orientation cross-check;
+- PASS / FAIL / INCONCLUSIVE per-challenge results and explainable metrics;
+- controlled inconclusive retry and multiple-failure challenge state;
+- challenge audit events without raw sensor logging;
+- Android one-at-a-time challenge UI and server-aligned countdown;
+- bounded sensor-window extraction from the existing common monotonic timeline;
+- Room persistence for the active challenge/current reconnect evidence;
+- one continuous CameraX recording through the entire challenge sequence;
+- challenge timing/results added to final evidence metadata;
+- admin challenge timeline and sensor-derived diagnostic view;
+- synthetic/API challenge tests and GitHub CI coverage;
+- Phase 4 documentation.
 
-Not yet accepted until a real Android device successfully sends an actual CameraX video plus real sensor/location packages and manifest to the backend. Never fill in or claim real-device results without performing that test.
+## Acceptance status
 
-## Phase boundary
+**NOT YET ACCEPTED ON REAL HARDWARE.**
 
-Phase 3 does **not** implement randomized movement challenges, OpenCV optical flow, visual-inertial verification, replay detection, trust scoring, authenticity verdicts or AI anomaly detection.
+`docs/testing.md` deliberately leaves the required Android model/version, real sensor sample rate, legitimate-attempt pass rates, wrong-motion rejection rates and final synchronized evidence observations as `NOT TESTED YET` until a physical phone performs them.
 
-Source of truth:
+## Security boundary
+
+Phase 4 validates requested **phone movement from sensors**. It does not yet prove that external camera-scene motion matches that movement. A user could theoretically rotate the phone while filming prerecorded content.
+
+Therefore this branch intentionally does not include:
+
+- OpenCV optical flow;
+- camera motion estimation;
+- feature matching/homography;
+- visual-inertial sensor fusion;
+- screen/replay detection;
+- overall SiteProof trust score;
+- final verified/flagged authenticity verdict;
+- anomaly-detection ML.
+
+Those remain later phases, with visual motion consistency beginning in Phase 5.
+
+## Source of truth
 
 1. `docs/project-spec.md`
-2. `docs/live-capture.md`
-3. `docs/evidence-format.md`
+2. `docs/challenge-engine.md`
+3. `docs/live-capture.md`
 4. `docs/session-lifecycle.md`
-5. current repository code and passing tests
+5. `docs/api.md`
+6. `docs/testing.md`
+7. current repository code and actual CI/device results
