@@ -73,4 +73,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-      - run: gradle :app:testDebugUnitTest :app:assembleDebug --stacktrace
+      - name: Build physical-device APK
+        run: gradle :app:testDebugUnitTest :app:assembleDebug --stacktrace -PSITEPROOF_API_BASE_URL=http://192.168.1.102:8000/api/v1/
+      - name: Upload physical-device APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: siteproof-phase2-isolation-fix-192.168.1.102
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
