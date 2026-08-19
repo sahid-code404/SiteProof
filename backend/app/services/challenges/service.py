@@ -40,6 +40,7 @@ TERMINAL_CHALLENGE_STATES = {
     ChallengeStatus.EXPIRED,
     ChallengeStatus.CANCELLED,
 }
+RETRYABLE_CHALLENGE_RESULTS = {ChallengeResult.FAIL, ChallengeResult.INCONCLUSIVE}
 
 
 def _challenge_rows(db: Session, session_id: uuid.UUID) -> list[VerificationChallenge]:
@@ -178,7 +179,7 @@ def issue_next_challenge(
     previous = rows[-1] if rows else None
     retries_used = _retry_count(rows)
 
-    if previous and previous.result == ChallengeResult.INCONCLUSIVE and retries_used < settings.challenge_max_retries:
+    if previous and previous.result in RETRYABLE_CHALLENGE_RESULTS and retries_used < settings.challenge_max_retries:
         sequence_number = previous.sequence_number
         attempt_number = previous.attempt_number + 1
         audit_action = "CHALLENGE_RETRY_ISSUED"
@@ -338,7 +339,7 @@ def _result_response(
     settings = get_settings()
     rows = _challenge_rows(db, session.id)
     retry_allowed = (
-        challenge.result == ChallengeResult.INCONCLUSIVE
+        challenge.result in RETRYABLE_CHALLENGE_RESULTS
         and _retry_count(rows) < settings.challenge_max_retries
         and challenge.sequence_number <= settings.challenge_count
     )
@@ -463,7 +464,7 @@ def submit_challenge(
 
     rows = _challenge_rows(db, session.id)
     retry_allowed = (
-        outcome.result == ChallengeResult.INCONCLUSIVE
+        outcome.result in RETRYABLE_CHALLENGE_RESULTS
         and _retry_count(rows) < settings.challenge_max_retries
     )
     if challenge.sequence_number >= settings.challenge_count and not retry_allowed:
