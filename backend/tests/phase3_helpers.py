@@ -156,9 +156,9 @@ def finish_capture(client, headers, session_id):
             "captureDurationMs": 9000,
             "videoFileCount": 1,
             "sensorSummary": {
-                "accelerometerSamples": 450,
-                "gyroscopeSamples": 450,
-                "rotationVectorSamples": 450,
+                "accelerometerSamples": 3,
+                "gyroscopeSamples": 2,
+                "rotationVectorSamples": 2,
                 "magnetometerSamples": 0,
             },
             "locationSummary": {
