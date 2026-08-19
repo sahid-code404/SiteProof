@@ -129,3 +129,28 @@ Acceptance impact:
 
 Current acceptance status:
 - **PARTIAL — MANUAL CREATE, ASSIGNMENT, ISOLATION, AND ANDROID ACKNOWLEDGE PASSED; FINAL ACCEPTANCE CHECKS REMAIN**.
+
+## 2026-08-19 — Phase 2.12 final physical acceptance
+
+Final observations:
+- The admin web dashboard showed `Phase 2 Final Test` as `ACKNOWLEDGED` after the Android acknowledge action, confirming backend/database persistence.
+- Inspector One marked `Phase 2 Final Test` as `READY` on the physical Android device.
+- SiteProof was fully closed and reopened; the inspection still showed `READY` with `Verification ready`, confirming restart persistence.
+- The admin inspection detail showed `Inspector One` in `ASSIGNMENT HISTORY` as the active assignment with the recorded assignment timestamp.
+- A direct query through the running backend against the real local PostgreSQL database found exactly four audit records for inspection `bfa76c9d-898e-443a-ab96-065f37c16627`, in chronological order:
+  - `INSPECTION_CREATED`
+  - `INSPECTION_ASSIGNED`
+  - `INSPECTION_ACKNOWLEDGED`
+  - `INSPECTION_READY`
+- The `INSPECTION_ASSIGNED` audit metadata identified the assigned inspector as `e7d63042-b8b3-479a-9973-14da6d11a177`.
+
+Final acceptance result:
+- **PASS — Phase 2.12 complete.**
+- **PASS — Phase 2 Inspection Management complete under the execution-controller acceptance rule.**
+
+Next earliest incomplete gate:
+- **Phase 3 — Live Capture, Location & Multi-Sensor Evidence Collection real-device acceptance** on branch `phase3/live-capture`.
+- Phase 3 must next prove one real CameraX capture, real sensor/location evidence, app-private packaging, temporary-offline retention/retry, backend upload, and admin evidence display.
+- Phase 4 and later real-device acceptance remain blocked behind Phase 3.
+
+No handset model or Android-version value is invented; those remain NOT RECORDED for this Phase 2 acceptance run.
