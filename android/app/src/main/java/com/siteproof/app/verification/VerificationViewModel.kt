@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.siteproof.app.verification.model.ChallengeIssue
 import com.siteproof.app.verification.model.ChallengeValidationResult
+import java.io.IOException
 import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.Job
@@ -154,12 +155,19 @@ class VerificationViewModel(
             val challenge = coordinator.beginNextChallenge()
             runChallengeWindow(prepared, challenge)
         } catch (error: Exception) {
-            _state.value = VerificationUiState.ChallengeNetworkWait(
-                prepared = prepared,
-                challenge = placeholderChallenge(),
-                elapsedMs = coordinator.captureElapsedMs(),
-                message = "Connection is required to receive the next unpredictable challenge.",
-            )
+            if (error is IOException) {
+                _state.value = VerificationUiState.ChallengeNetworkWait(
+                    prepared = prepared,
+                    challenge = placeholderChallenge(),
+                    elapsedMs = coordinator.captureElapsedMs(),
+                    message = "Connection is required to receive the next unpredictable challenge.",
+                )
+            } else {
+                failChallengeProtocol(
+                    error,
+                    "The server could not start the next challenge. This live proof was aborted for safety.",
+                )
+            }
         }
     }
 
@@ -218,12 +226,19 @@ class VerificationViewModel(
         try {
             handleChallengeResult(prepared, coordinator.submitCurrentChallenge())
         } catch (error: Exception) {
-            _state.value = VerificationUiState.ChallengeNetworkWait(
-                prepared = prepared,
-                challenge = challenge,
-                elapsedMs = coordinator.captureElapsedMs(),
-                message = "Connection lost. Your current challenge evidence has been saved. Reconnect to continue verification.",
-            )
+            if (error is IOException) {
+                _state.value = VerificationUiState.ChallengeNetworkWait(
+                    prepared = prepared,
+                    challenge = challenge,
+                    elapsedMs = coordinator.captureElapsedMs(),
+                    message = "Connection lost. Your current challenge evidence has been saved. Reconnect to continue verification.",
+                )
+            } else {
+                failChallengeProtocol(
+                    error,
+                    "Challenge evidence was rejected by the server. This live proof was aborted rather than reusing stale evidence.",
+                )
+            }
         }
     }
 
@@ -243,10 +258,17 @@ class VerificationViewModel(
             try {
                 handleChallengeResult(waiting.prepared, coordinator.retryCurrentChallengeSubmission())
             } catch (error: Exception) {
-                _state.value = waiting.copy(
-                    elapsedMs = coordinator.captureElapsedMs(),
-                    message = "Still offline. Challenge evidence remains saved on this device.",
-                )
+                if (error is IOException) {
+                    _state.value = waiting.copy(
+                        elapsedMs = coordinator.captureElapsedMs(),
+                        message = "Still offline. Challenge evidence remains saved on this device.",
+                    )
+                } else {
+                    failChallengeProtocol(
+                        error,
+                        "The saved challenge can no longer be accepted by the server. Start a new live verification.",
+                    )
+                }
             }
         }
     }
@@ -266,6 +288,16 @@ class VerificationViewModel(
         } else {
             issueNextChallenge(prepared)
         }
+    }
+
+    private suspend fun failChallengeProtocol(error: Exception, fallback: String) {
+        captureLimitJob?.cancel()
+        coordinator.abort("UNKNOWN")
+        val detail = error.message?.takeIf { it.isNotBlank() }
+        _state.value = VerificationUiState.Error(
+            message = if (detail == null) fallback else "$fallback\n\n$detail",
+            canRetry = false,
+        )
     }
 
     private suspend fun finishAfterChallenges(prepared: VerificationCaptureCoordinator.Prepared) {
