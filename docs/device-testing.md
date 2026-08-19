@@ -4,24 +4,24 @@ This document records **actual physical-device results only**. Never replace mis
 
 ## Phase 2.12 — Inspection Assignment End-to-End Acceptance
 
-Status: **NOT TESTED YET**
+Status: **PARTIAL — REAL DEVICE TEST IN PROGRESS**
 
 ### Device / environment
 
 Device:
-NOT RECORDED
+Physical Android handset — model NOT RECORDED
 
 Android version:
 NOT RECORDED
 
 SiteProof APK/build:
-NOT RECORDED
+Phase 2 debug APK built by GitHub CI run #268 for `http://192.168.1.102:8000/api/v1/`
 
 Host machine LAN IP:
 192.168.1.102 — observed during the 2026-08-19 acceptance setup
 
 Phone and host on same network:
-NOT RECORDED
+PASS — the installed Android app authenticated against the host backend and loaded the assigned inspection.
 
 Backend health before test:
 PASS — local backend was reachable on port 8000 during acceptance setup
@@ -81,29 +81,30 @@ Record PASS / FAIL and notes for every item after actually performing it.
 |---|---|---|
 | Docker/PostgreSQL/backend/web stack starts | PASS | Web, backend, PostgreSQL, and MinIO containers observed running on 2026-08-19. |
 | Backend `/health` is reachable | PASS | Local backend health endpoint responded during setup. |
-| Admin can log into web dashboard | NOT TESTED | Initial attempt exposed the invalid `.local` seed-email defect; fix committed, retest pending. |
-| Admin can create an inspection | NOT TESTED | |
-| Admin can assign Inspector One | NOT TESTED | |
-| Physical Android device can log in as assigned inspector | NOT TESTED | |
-| Assigned inspection appears on Android | NOT TESTED | |
+| Admin can log into web dashboard | PASS | Corrected seeded admin authenticated successfully; direct API login returned HTTP 200 and the admin inspection dashboard was subsequently displayed. |
+| Admin can create an inspection | NOT TESTED | The current `Verify repaired pothole` inspection originated from the development seed; manual create flow has not yet been demonstrated. |
+| Admin can assign Inspector One | PASS | Web screenshot showed `Verify repaired pothole` in `ASSIGNED` state with active assignment `Inspector One`. |
+| Physical Android device can log in as assigned inspector | PASS | Physical-device screenshot shows authenticated inspection detail from the real backend. |
+| Assigned inspection appears on Android | PASS | `Verify repaired pothole` appeared on the physical Android device. |
 | Unrelated inspector work is not visible | NOT TESTED | |
-| **ACKNOWLEDGE** succeeds | NOT TESTED | |
-| Web/backend persist `ACKNOWLEDGED` | NOT TESTED | |
-| **MARK READY** succeeds | NOT TESTED | |
-| `READY` persists after refresh/restart | NOT TESTED | |
+| **ACKNOWLEDGE** succeeds | PASS | The device later reached `READY`; backend transition rules require `ASSIGNED -> ACKNOWLEDGED` before `READY`, so the acknowledge action necessarily succeeded during this flow. |
+| Web/backend persist `ACKNOWLEDGED` | NOT TESTED | No direct web screenshot/API observation was recorded while the inspection was specifically in `ACKNOWLEDGED`. |
+| **MARK READY** succeeds | PASS | Physical-device screenshot shows `READY` and `Verification ready`. |
+| `READY` persists after refresh/restart | NOT TESTED | Restart/refresh persistence has not yet been explicitly observed. |
 | Assignment history is correct | NOT TESTED | |
 | Audit records are present and correct | NOT TESTED | |
 
 ### Acceptance result
 
 Overall result:
-**NOT TESTED YET**
+**PARTIAL — REAL DEVICE FLOW REACHED READY; FINAL ACCEPTANCE CHECKS REMAIN**
 
 Blocking defect(s):
-- RESOLVED IN CODE, RETEST PENDING — Phase 2 seed accounts previously used `@siteproof.local`; the login `EmailStr` schema rejects that special-use domain with HTTP 422. Seed addresses now use `@siteproof.example.com`, with an automated contract test preventing recurrence.
+- RESOLVED AND RETESTED — former `@siteproof.local` seed addresses were rejected by login validation. The seed now migrates legacy demo identities to `@siteproof.example.com`; local reseeding succeeded and admin login returned HTTP 200.
+- OPEN ACCEPTANCE ITEMS — manual admin-create flow, unrelated-inspector isolation, direct ACKNOWLEDGED observation, READY persistence after refresh/restart, assignment history, and audit verification.
 
 Evidence recorded by:
-User-observed local acceptance setup plus repository/CI verification
+User-observed local acceptance setup, user-provided web/Android screenshots, direct backend login result, and repository/CI verification
 
 Test date/time:
 2026-08-19
