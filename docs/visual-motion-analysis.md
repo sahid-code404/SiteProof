@@ -90,14 +90,16 @@ Preprocessing is intentionally conservative:
 
 No aggressive denoising or enhancement is applied because it could remove real trackable features.
 
-## Feature detection and spatial coverage
+## Feature detection, matching and spatial coverage
 
-Two classical OpenCV feature methods are used for different purposes:
+Two classical OpenCV feature families are used for complementary jobs:
 
-- ORB gives an explainable feature-count quality signal;
-- Shi-Tomasi corners provide stable points for sparse optical flow.
+- ORB provides an explainable feature-count quality signal and descriptor-based start/end feature matching;
+- Shi-Tomasi corners provide stable points for temporally ordered sparse optical flow.
 
 Tracking points are selected across a configurable 4×4 image grid. This reduces the risk of estimating global motion from one small textured region while the rest of the scene is unsupported.
+
+For the independent start/end cross-check, ORB descriptors are matched with Hamming distance using a ratio test. The surviving matches are passed through `cv2.estimateAffinePartial2D(..., RANSAC)`. This descriptor path does not replace the frame-to-frame optical-flow pipeline; it provides a second correspondence mechanism that can remain useful even when one particular track does not survive every intermediate frame.
 
 Low-texture scenes are not forced into a movement result. If there are too few stable visual features the challenge returns `INCONCLUSIVE`.
 
@@ -160,7 +162,7 @@ For tilt challenges, vertical image translation gives an approximate pitch direc
 
 For synthetic or unusual motion where image-plane affine rotation clearly dominates translation, a labelled affine-rotation fallback is retained. Diagnostics state which signal produced the direction so it cannot be silently confused with the normal yaw model.
 
-## Approximate magnitude
+## Approximate magnitude and temporal outlier filtering
 
 For the primary translation model, a rough angular displacement is estimated using an assumed horizontal field of view:
 
@@ -171,7 +173,9 @@ angle ≈ atan2(sceneTranslationPx, f_px)
 
 The default HFOV is a configurable prototype assumption. This is a useful approximate visual magnitude, not camera calibration ground truth.
 
-Frame-pair estimates are accumulated across the challenge. A direct start/end affine estimate is also attempted as a diagnostic cross-check when tracking remains stable.
+Frame-pair estimates are accumulated across the challenge. Before accumulation, isolated temporal angle estimates are filtered with a robust median / median-absolute-deviation rule using SciPy. This is separate from RANSAC: RANSAC rejects bad feature correspondences *within* one frame pair, while the MAD filter rejects an isolated bad frame-pair estimate *across time*.
+
+A direct start/end optical-flow affine estimate and an independent ORB descriptor-matching affine estimate are stored as diagnostic cross-checks where enough correspondences survive.
 
 ## Visual confidence
 
@@ -254,9 +258,13 @@ video metadata + timeline validation
 per-challenge OpenCV analysis
    ↓
 visual_motion_results
+   ↓
+UPLOADED
 ```
 
 FastAPI `BackgroundTasks` is intentionally used for the prototype because the repository did not already contain Redis/Celery/RQ infrastructure. This avoids adding infrastructure only for appearance. The analysis service itself is isolated so it can later move behind a dedicated worker without changing the visual domain pipeline.
+
+`PROCESSING` is transient. A visual-processing failure must not erase the durable fact that the evidence was successfully uploaded or leave the verification session stuck indefinitely. The per-challenge versioned visual rows carry the final `SUCCESS`, `INCONCLUSIVE` or `FAILED` analysis state.
 
 Temporary storage/network failures are marked separately from permanent malformed-media failures. An authorized admin/reviewer retry endpoint can re-run the current algorithm version.
 
@@ -307,13 +315,16 @@ Automated tests cover:
 - challenge/video timeline mapping;
 - horizontal and vertical visual direction;
 - synthetic affine rotation;
+- ORB descriptor feature matching;
 - low-feature scenes;
 - RANSAC foreground outliers;
 - scene cuts;
 - duplicate/frozen frames;
 - corrupted media;
 - video metadata inspection;
-- sampled-frame timestamp retention.
+- sampled-frame timestamp retention;
+- versioned result idempotency and reviewer authorization;
+- stored-video background analysis service behavior.
 
 Synthetic tests prove implementation behavior, not real-world accuracy.
 
