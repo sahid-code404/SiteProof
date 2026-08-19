@@ -49,3 +49,39 @@ Current acceptance status:
 - **IMPLEMENTED — HARDWARE TEST PENDING**.
 - Seed/login defect: fixed in code, user retest pending.
 - Physical Android admin → inspector → ACKNOWLEDGE → READY acceptance: not completed yet.
+
+## 2026-08-19 — Phase 2.12 seed migration fix and real-device progress
+
+Additional defect found during retest:
+- After changing demo emails from `.local` to `.example.com`, rerunning the seed against an already-seeded PostgreSQL volume attempted to create new inspector users while reusing existing employee codes such as `SP-I001`.
+- PostgreSQL correctly raised the `uq_inspector_employee_code` unique constraint and rolled back the seed transaction.
+
+Fix implemented:
+- Updated the Phase 2 seed to migrate existing legacy demo users in place instead of creating duplicate identities.
+- Existing inspector profile IDs and employee codes are preserved.
+- Demo passwords are refreshed during reseeding.
+- Added regression coverage for migration from a legacy `.local` seed state and repeated idempotent execution.
+
+Automated verification:
+- Backend CI passed with **16 tests** after the migration fix.
+- Generic full CI run #271 on restored workflow head `3a9e5c1530aa2a50077f47201b155dc0061f299f` passed backend migration/downgrade, Ruff, pytest, web tests/lint/build, and Android unit-test/debug assembly.
+- CI run #268 produced a debug APK configured specifically for the acceptance host `http://192.168.1.102:8000/api/v1/`; the temporary workflow customization was removed afterward.
+
+Observed real-device acceptance progress:
+- Corrected seed rerun completed successfully against the user's existing PostgreSQL volume.
+- Direct admin login returned HTTP 200 with an ADMIN token.
+- Web UI showed `Verify repaired pothole` assigned to Inspector One in `ASSIGNED` state.
+- The physical Android app authenticated against the real local backend and displayed the assigned inspection.
+- The physical Android screenshot showed the inspection in `READY` state with `Verification ready`.
+- Because the backend only permits `mark_ready` from `ACKNOWLEDGED`, the successful `READY` state confirms that the acknowledge transition succeeded during the real flow.
+
+Still required before closing Phase 2.12:
+- Demonstrate manual admin inspection creation rather than relying only on the seeded inspection.
+- Verify unrelated inspector work is not visible.
+- Capture a direct web/API observation of `ACKNOWLEDGED` if required by the acceptance checklist.
+- Restart/refresh and confirm `READY` persists.
+- Verify assignment history.
+- Verify audit records for assignment, acknowledgement, and ready transitions.
+
+Current acceptance status:
+- **PARTIAL — REAL DEVICE FLOW REACHED READY; FINAL ACCEPTANCE CHECKS REMAIN**.
