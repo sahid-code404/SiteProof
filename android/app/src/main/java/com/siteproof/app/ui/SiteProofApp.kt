@@ -3,6 +3,7 @@ package com.siteproof.app.ui
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -32,43 +33,47 @@ fun SiteProofApp() {
         factory = SiteProofViewModelFactory { AuthViewModel(repository) },
     )
     val authState by authViewModel.state.collectAsStateWithLifecycle()
-    val navController = rememberNavController()
 
     MaterialTheme {
         if (authState !is AuthState.Authenticated) {
             LoginScreen(state = authState, onLogin = authViewModel::login)
         } else {
-            NavHost(navController = navController, startDestination = "inspections") {
-                composable("inspections") {
-                    val inspectionsViewModel: InspectionsViewModel = viewModel(
-                        factory = SiteProofViewModelFactory { InspectionsViewModel(repository) },
-                    )
-                    val state by inspectionsViewModel.state.collectAsStateWithLifecycle()
-                    InspectionListScreen(
-                        inspectorName = repository.inspectorName(),
-                        state = state,
-                        onRefresh = inspectionsViewModel::refresh,
-                        onOpen = { id -> navController.navigate("inspection/$id") },
-                        onSignOut = authViewModel::signOut,
-                    )
-                }
-                composable(
-                    route = "inspection/{id}",
-                    arguments = listOf(navArgument("id") { type = NavType.StringType }),
-                ) { backStackEntry ->
-                    val id = requireNotNull(backStackEntry.arguments?.getString("id"))
-                    val detailViewModel: InspectionDetailViewModel = viewModel(
-                        key = "inspection-$id",
-                        factory = SiteProofViewModelFactory { InspectionDetailViewModel(repository, id) },
-                    )
-                    val state by detailViewModel.state.collectAsStateWithLifecycle()
-                    InspectionDetailScreen(
-                        state = state,
-                        onBack = { navController.popBackStack() },
-                        onRetry = detailViewModel::load,
-                        onAcknowledge = detailViewModel::acknowledge,
-                        onReady = detailViewModel::markReady,
-                    )
+            val sessionScopeKey = repository.sessionScopeKey()
+            key(sessionScopeKey) {
+                val navController = rememberNavController()
+                NavHost(navController = navController, startDestination = "inspections") {
+                    composable("inspections") {
+                        val inspectionsViewModel: InspectionsViewModel = viewModel(
+                            key = "inspections-$sessionScopeKey",
+                            factory = SiteProofViewModelFactory { InspectionsViewModel(repository) },
+                        )
+                        val state by inspectionsViewModel.state.collectAsStateWithLifecycle()
+                        InspectionListScreen(
+                            inspectorName = repository.inspectorName(),
+                            state = state,
+                            onRefresh = inspectionsViewModel::refresh,
+                            onOpen = { id -> navController.navigate("inspection/$id") },
+                            onSignOut = authViewModel::signOut,
+                        )
+                    }
+                    composable(
+                        route = "inspection/{id}",
+                        arguments = listOf(navArgument("id") { type = NavType.StringType }),
+                    ) { backStackEntry ->
+                        val id = requireNotNull(backStackEntry.arguments?.getString("id"))
+                        val detailViewModel: InspectionDetailViewModel = viewModel(
+                            key = "inspection-$sessionScopeKey-$id",
+                            factory = SiteProofViewModelFactory { InspectionDetailViewModel(repository, id) },
+                        )
+                        val state by detailViewModel.state.collectAsStateWithLifecycle()
+                        InspectionDetailScreen(
+                            state = state,
+                            onBack = { navController.popBackStack() },
+                            onRetry = detailViewModel::load,
+                            onAcknowledge = detailViewModel::acknowledge,
+                            onReady = detailViewModel::markReady,
+                        )
+                    }
                 }
             }
         }
