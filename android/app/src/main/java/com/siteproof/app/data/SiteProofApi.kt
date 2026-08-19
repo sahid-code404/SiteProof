@@ -73,6 +73,9 @@ interface SiteProofApi {
     @GET("sessions/{id}")
     suspend fun verificationSession(@Path("id") sessionId: String): VerificationSession
 
+    @GET("sessions/{id}/verification")
+    suspend fun inspectorVerification(@Path("id") sessionId: String): InspectorVerificationResponse
+
     @POST("sessions/{id}/start-capture")
     suspend fun startCapture(
         @Path("id") sessionId: String,
@@ -116,7 +119,10 @@ interface SiteProofApi {
     ): EvidenceInitiateResponse
 
     @PUT
-    suspend fun uploadEvidence(@Url relativeUrl: String, @Body body: RequestBody): EvidenceFileResponse
+    suspend fun uploadEvidence(
+        @Url relativeUrl: String,
+        @Body body: RequestBody,
+    ): EvidenceFileResponse
 
     @POST("sessions/{id}/evidence/complete")
     suspend fun completeEvidence(
@@ -135,7 +141,10 @@ class TokenStore(context: Context) : SessionStore {
     private fun secretKey(): SecretKey {
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (keyStore.getKey(alias, null) as? SecretKey)?.let { return it }
-        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        val generator = KeyGenerator.getInstance(
+            KeyProperties.KEY_ALGORITHM_AES,
+            "AndroidKeyStore",
+        )
         generator.init(
             KeyGenParameterSpec.Builder(
                 alias,
@@ -198,9 +207,13 @@ fun createApi(context: Context, tokenStore: SessionStore): SiteProofApi {
         .addInterceptor { chain ->
             val original = chain.request()
             val token = tokenStore.accessToken
-            val request: Request = if (token.isNullOrBlank()) original else original.newBuilder()
-                .header("Authorization", "Bearer $token")
-                .build()
+            val request: Request = if (token.isNullOrBlank()) {
+                original
+            } else {
+                original.newBuilder()
+                    .header("Authorization", "Bearer $token")
+                    .build()
+            }
             chain.proceed(request)
         }
         .build()

@@ -1,87 +1,82 @@
 # Project State
 
-Current development branch: **Phase 6 — Visual–Inertial Sensor Fusion & Cross-Signal Consistency**
+Current development branch: **Phase 7 — Explainable Verification & Trust Engine**
 
-Working branch: `phase6-visual-inertial-fusion`
+Working branch: `phase7-verification-trust-engine`
 
-Base: Phase 5 head `f1db48923247993611fe445b147ef5896a164d4f`
+Base: Phase 6 head `fd1bbaf1b871540e49710b46af4a97980873ea06`
 
-Phase 6 extends the existing Phase 4 sensor and Phase 5 visual pipelines; it does not rebuild them.
+Draft PR: **#6 — Phase 7: explainable verification and trust engine**
 
-## Existing inputs
+## Existing upstream evidence
 
-Phase 4 provides backend-derived sensor movement for randomized rotate/tilt challenges:
+Phase 7 consumes, but does not rebuild: Phase 3 location/session/capture evidence, Phase 4 randomized challenge + sensor results, Phase 5 camera visual-motion + scene continuity results, and Phase 6 visual–inertial consistency results.
 
-- gyroscope integrated angle;
-- rotation-vector angle delta;
-- semantic challenge direction;
-- sensor confidence and quality;
-- server/client timing metadata;
-- complete hashed sensor evidence on the common capture timeline.
+## Phase 7 implemented in code
 
-Phase 5 provides camera-side visual movement:
+- common seven-signal `VerificationSignal` abstraction;
+- persisted/configurable verification policies with validation;
+- default 100-point Infrastructure Field Verification v1.0 policy;
+- separate signal score and confidence;
+- optional-weight re-normalization;
+- required-signal completeness rules;
+- deterministic hard contradiction rules;
+- `VERIFIED`, `REVIEW_REQUIRED`, `FLAGGED`, `INCONCLUSIVE` verdicts;
+- transparent score plus separate policy override codes;
+- deterministic non-LLM explanation generation;
+- `verification-engine-v1.0` versioning;
+- historical calculation revisions rather than overwrite;
+- verification result + per-signal breakdown persistence;
+- human `APPROVED` / `REJECTED` / `RECAPTURE_REQUIRED` decisions stored separately;
+- automatic Phase 6 → Phase 7 processing;
+- detailed admin/reviewer API and masked inspector response;
+- reviewer score/report/review UI;
+- simplified Android inspector verification result refresh;
+- Phase 7 unit/integration/web tests;
+- `docs/verification-engine.md`.
 
-- physical-camera semantic direction;
-- approximate visual angle;
-- movement start/end;
-- visual confidence and quality;
-- RANSAC/continuity diagnostics;
-- visual motion curve on the common session timeline.
+## Default score policy
 
-## Phase 6 implemented in code
+```text
+Location                         15
+Session / Time                    5
+Random Challenges               20
+Sensor Evidence                 15
+Visual Evidence                 10
+Scene Continuity                10
+Visual–Inertial Consistency     25
+                                ──
+Total                           100
+```
 
-The Phase 6 branch adds:
-
-- a common `MotionEstimate` representation for sensor and vision;
-- centralized coordinate/direction normalization;
-- secure extraction of the missing high-rate gyroscope timing curve from verified `sensors.ndjson.gz`;
-- direction, magnitude, start/end timing and duration comparators;
-- independent motion-curve normalization and configurable 20 Hz resampling;
-- Pearson correlation plus limited-lag cross-correlation;
-- confidence-aware deterministic aggregation;
-- `CONSISTENT`, `PARTIALLY_CONSISTENT`, `MISMATCH`, `INCONCLUSIVE` states;
-- structured mismatch reasons including opposite direction, visual-without-sensor motion and sensor-without-visual motion;
-- `visual_inertial_results` persistence keyed by challenge + `fusion-v1.0`;
-- automatic fusion after Phase 5 completes;
-- ADMIN/REVIEWER fusion API and reanalysis endpoint;
-- reviewer side-by-side sensor/camera comparison and lightweight normalized timeline graph;
-- fusion audit events;
-- deterministic synthetic and integration tests;
-- `docs/visual-inertial-fusion.md`.
+Thresholds: VERIFIED >=85, REVIEW_REQUIRED >=65, otherwise FLAGGED. Required unavailable/inconclusive evidence yields INCONCLUSIVE. Overall confidence must be >=0.70 for automatic VERIFIED. Hard rules can restrict the verdict without secretly rewriting the score.
 
 ## Phase boundary
 
-Phase 6 produces **cross-signal consistency only**.
+Phase 7 produces a stable, reproducible score/verdict/signal breakdown **in code**, but does not cryptographically seal it. Server signing keys, signed receipts, canonical signed report/manifest, C2PA, Play Integrity/Wi-Fi scoring, advanced replay classification and anomaly-detection ML belong to Phase 8 and later.
 
-It does not produce:
+## Automated validation state
 
-- overall SiteProof trust score;
-- final `VERIFIED`, `FLAGGED`, `AUTHENTIC`, or `REVIEW REQUIRED` verdict;
-- signed final verification report;
-- Play Integrity scoring;
-- Wi-Fi fingerprint scoring;
-- anomaly-detection ML;
-- final replay/screen classification.
+Use the latest GitHub Actions run on the exact Phase 7 PR head as the source of truth. Do not copy counts from an earlier commit after the branch changes.
 
-Those belong to Phase 7 and later.
+## Real-world acceptance state
 
-## Validation state
+**NOT TESTED YET / NOT ACCEPTED YET.**
 
-Automated validation must come from the current Phase 6 GitHub Actions run; do not claim it green until the exact head passes backend, web and Android jobs.
+```text
+legitimate full Android → score/verdict:             NOT TESTED YET
+controlled basic replay/mismatch → policy behavior:  NOT TESTED YET
+wrong-location / geofence-block behavior:            NOT TESTED YET
+poor visual evidence → inconclusive/review behavior: NOT TESTED YET
+real score/confidence distributions:                 NOT TESTED YET
+real trust calculation runtime:                      NOT TESTED YET
+```
 
-Real-device Phase 6 acceptance is still pending. CI and synthetic evidence cannot satisfy the required genuine-device and controlled-screen experiments.
+No real score, false-positive rate, attack result or performance measurement is to be fabricated.
 
-Required measured work still includes:
+## Phase 8 readiness condition
 
-- a genuine SiteProof Android challenge producing defensible real sensor/video consistency;
-- a controlled video-on-screen scenario producing detectable cross-signal inconsistency where expected;
-- legitimate angle-error, timing-offset and correlation distributions;
-- threshold tuning from those real measurements;
-- device/camera/sensor metadata;
-- actual fusion processing time;
-- repeated rotate/tilt trials and multiple Android devices where practical.
-
-No real-device or attack result is to be fabricated.
+Phase 8 must not start until Phase 7 has real end-to-end acceptance evidence. At that point SiteProof must have a stable persisted verification result containing score, verdict, signal breakdown, policy version and engine version suitable for later cryptographic sealing.
 
 ## Source of truth
 
@@ -89,7 +84,6 @@ No real-device or attack result is to be fabricated.
 2. `docs/challenge-engine.md`
 3. `docs/visual-motion-analysis.md`
 4. `docs/visual-inertial-fusion.md`
-5. `docs/session-lifecycle.md`
-6. `docs/api.md`
-7. `docs/testing.md`
-8. current repository code and actual CI/device results
+5. `docs/verification-engine.md`
+6. current repository code
+7. actual CI and real-device results

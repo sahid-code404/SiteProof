@@ -63,6 +63,11 @@ class InspectionRepository(
         }
     }
 
+    suspend fun loadInspectorVerification(inspectionId: String): InspectorVerificationResponse? {
+        val session = api.latestVerificationSession(inspectionId) ?: return null
+        return runCatching { api.inspectorVerification(session.id) }.getOrNull()
+    }
+
     suspend fun acknowledge(id: String): InspectionSummary {
         val updated = api.acknowledge(id)
         cache.update(updated)

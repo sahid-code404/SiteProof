@@ -32,7 +32,9 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private fun detailDeadline(value: String): String = runCatching {
-    OffsetDateTime.parse(value).format(DateTimeFormatter.ofPattern("dd MMM yyyy, h:mm a", Locale.getDefault()))
+    OffsetDateTime.parse(value).format(
+        DateTimeFormatter.ofPattern("dd MMM yyyy, h:mm a", Locale.getDefault()),
+    )
 }.getOrDefault(value)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,7 +51,14 @@ fun InspectionDetailScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Inspection details") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                        )
+                    }
+                },
             )
         },
     ) { padding ->
@@ -64,31 +73,66 @@ fun InspectionDetailScreen(
                 verticalArrangement = Arrangement.Center,
             ) {
                 Text("Unable to load inspection.", style = MaterialTheme.typography.headlineSmall)
-                Text(state.error ?: "Unknown error", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 12.dp))
+                Text(
+                    state.error ?: "Unknown error",
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(vertical = 12.dp),
+                )
                 Button(onClick = onRetry) { Text("Retry") }
             }
             else -> {
                 val item = state.item
                 Column(
-                    modifier = Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+                    modifier = Modifier
+                        .padding(padding)
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(20.dp),
                 ) {
                     if (state.offline) {
-                        Text("Offline — showing last synced data", color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            "Offline — showing last synced data",
+                            color = MaterialTheme.colorScheme.tertiary,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
                         Spacer(Modifier.height(12.dp))
                     }
-                    Text(item.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-                    Row(modifier = Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(item.status, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                        Text(item.priority, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
+                    Text(
+                        item.title,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Row(
+                        modifier = Modifier.padding(top = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            item.status,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            item.priority,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
                     HorizontalDivider(Modifier.padding(vertical = 20.dp))
-                    DetailField("Location", item.locationName ?: item.locationAddress ?: "${item.expectedLatitude}, ${item.expectedLongitude}")
+                    DetailField(
+                        "Location",
+                        item.locationName ?: item.locationAddress
+                            ?: "${item.expectedLatitude}, ${item.expectedLongitude}",
+                    )
                     DetailField("Allowed verification radius", "${item.allowedRadiusMeters} m")
                     DetailField("Deadline", detailDeadline(item.deadline))
                     DetailField("Inspection type", item.inspectionType.replace('_', ' '))
                     DetailField("Instructions", item.instructions ?: "No additional instructions.")
                     if (state.error != null) {
-                        Text(state.error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 12.dp))
+                        Text(
+                            state.error,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(vertical = 12.dp),
+                        )
                     }
                     Spacer(Modifier.height(20.dp))
                     when (item.status) {
@@ -112,15 +156,14 @@ fun InspectionDetailScreen(
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary,
                         )
-                        "PROCESSING" -> Text(
-                            "Evidence uploaded — awaiting verification analysis",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary,
+                        "PROCESSING" -> InspectorVerificationSummary(
+                            state = state,
+                            onRefresh = onRetry,
                         )
                     }
                     Spacer(Modifier.height(24.dp))
                     Text(
-                        "SiteProof records live camera, location and motion-sensor evidence. Phase 3 does not make an authenticity verdict.",
+                        "SiteProof records live camera, location and motion-sensor evidence. The inspector view shows only a simplified operational result; detailed trust scores and anti-spoofing diagnostics remain reviewer-only.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -131,7 +174,52 @@ fun InspectionDetailScreen(
 }
 
 @Composable
+private fun InspectorVerificationSummary(
+    state: InspectionDetailState,
+    onRefresh: () -> Unit,
+) {
+    val verification = state.verification
+    if (verification?.status == "COMPLETED") {
+        Text(
+            "Verification completed",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            verification.summary ?: "Verification is under review.",
+            modifier = Modifier.padding(top = 6.dp, bottom = 12.dp),
+        )
+    } else {
+        Text(
+            "Evidence uploaded — verification analysis in progress",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            "The server is combining location, challenge, sensor, camera and consistency evidence.",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 6.dp, bottom = 12.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    Button(
+        onClick = onRefresh,
+        enabled = !state.offline,
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text("REFRESH VERIFICATION RESULT") }
+}
+
+@Composable
 private fun DetailField(label: String, value: String) {
-    Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Text(value, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 3.dp, bottom = 16.dp))
+    Text(
+        label,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Text(
+        value,
+        style = MaterialTheme.typography.bodyLarge,
+        modifier = Modifier.padding(top = 3.dp, bottom = 16.dp),
+    )
 }

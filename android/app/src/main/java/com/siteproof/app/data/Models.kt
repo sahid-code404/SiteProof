@@ -84,3 +84,12 @@ data class InspectionPage(
 )
 
 data class LoadedInspections(val items: List<InspectionSummary>, val offline: Boolean)
+
+// Inspector-facing Phase 7 response intentionally models only the fields needed for a
+// simple operational status. The backend withholds score breakdowns and hard-rule details.
+data class InspectorVerificationResponse(
+    val status: String,
+    val verdict: String? = null,
+    val summary: String? = null,
+    val detailed: Boolean = false,
+)
