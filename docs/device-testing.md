@@ -18,16 +18,16 @@ SiteProof APK/build:
 NOT RECORDED
 
 Host machine LAN IP:
-NOT RECORDED
+192.168.1.102 — observed during the 2026-08-19 acceptance setup
 
 Phone and host on same network:
 NOT RECORDED
 
 Backend health before test:
-NOT RECORDED
+PASS — local backend was reachable on port 8000 during acceptance setup
 
 PostgreSQL/Docker stack status:
-NOT RECORDED
+PASS — web, backend, PostgreSQL 16, and MinIO containers were observed running; backend and PostgreSQL reported healthy
 
 ### Setup
 
@@ -43,14 +43,25 @@ cp .env.example .env
 docker compose up --build
 ```
 
-3. Seed Phase 2 development accounts using local passwords:
+3. Seed Phase 2 development accounts inside the backend container. Demo passwords must be at least 12 characters:
 
 ```bash
-export SITEPROOF_DEMO_ADMIN_PASSWORD='choose-a-local-password'
-export SITEPROOF_DEMO_INSPECTOR_PASSWORD='choose-another-password'
-cd backend
-python ../scripts/seed_phase2.py
+docker compose cp scripts/seed_phase2.py backend:/tmp/seed_phase2.py
+
+docker compose exec \
+  -e SITEPROOF_DEMO_ADMIN_PASSWORD='choose-a-local-password-12+' \
+  -e SITEPROOF_DEMO_INSPECTOR_PASSWORD='choose-another-password-12+' \
+  backend python /tmp/seed_phase2.py
 ```
+
+The current seed accounts use login-schema-compatible example-domain addresses:
+
+- Admin: `admin@siteproof.example.com`
+- Inspector One: `inspector1@siteproof.example.com`
+- Inspector Two: `inspector2@siteproof.example.com`
+- Inspector Three: `inspector3@siteproof.example.com`
+
+Do not use the former `@siteproof.local` seed addresses. Current `email-validator` releases reject `.local` as a special-use domain before password authentication.
 
 4. Determine the development host's LAN address and build/install the Android debug app with the physical-device API URL, for example:
 
@@ -68,9 +79,9 @@ Record PASS / FAIL and notes for every item after actually performing it.
 
 | Check | Result | Actual observation |
 |---|---|---|
-| Docker/PostgreSQL/backend/web stack starts | NOT TESTED | |
-| Backend `/health` is reachable | NOT TESTED | |
-| Admin can log into web dashboard | NOT TESTED | |
+| Docker/PostgreSQL/backend/web stack starts | PASS | Web, backend, PostgreSQL, and MinIO containers observed running on 2026-08-19. |
+| Backend `/health` is reachable | PASS | Local backend health endpoint responded during setup. |
+| Admin can log into web dashboard | NOT TESTED | Initial attempt exposed the invalid `.local` seed-email defect; fix committed, retest pending. |
 | Admin can create an inspection | NOT TESTED | |
 | Admin can assign Inspector One | NOT TESTED | |
 | Physical Android device can log in as assigned inspector | NOT TESTED | |
@@ -89,13 +100,13 @@ Overall result:
 **NOT TESTED YET**
 
 Blocking defect(s):
-NOT RECORDED
+- RESOLVED IN CODE, RETEST PENDING — Phase 2 seed accounts previously used `@siteproof.local`; the login `EmailStr` schema rejects that special-use domain with HTTP 422. Seed addresses now use `@siteproof.example.com`, with an automated contract test preventing recurrence.
 
 Evidence recorded by:
-NOT RECORDED
+User-observed local acceptance setup plus repository/CI verification
 
 Test date/time:
-NOT RECORDED
+2026-08-19
 
 ### Rule for closing Phase 2.12
 
