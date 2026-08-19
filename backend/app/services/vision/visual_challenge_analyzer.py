@@ -73,6 +73,25 @@ def _empty_outcome(
     )
 
 
+def _direct_start_end_estimate(
+    first_gray: np.ndarray,
+    last_gray: np.ndarray,
+    timestamp_ms: int,
+    settings: Settings,
+) -> MotionEstimate | None:
+    if first_gray.shape != last_gray.shape:
+        return None
+    points = detect_tracking_points(first_gray, settings)
+    tracks = track_points(first_gray, last_gray, points, settings)
+    return estimate_global_motion(
+        tracks,
+        timestamp_ms=timestamp_ms,
+        frame_width=first_gray.shape[1],
+        frame_height=first_gray.shape[0],
+        settings=settings,
+    )
+
+
 def analyze_visual_challenge(
     frames: list[VisualFrame],
     *,
@@ -161,7 +180,7 @@ def analyze_visual_challenge(
         )
 
     frame_height, frame_width = grays[0].shape[:2]
-    signed_angles = [
+    translation_angles = [
         physical_angle_from_translation(
             item,
             frame_width=frame_width,
@@ -171,14 +190,31 @@ def analyze_visual_challenge(
         )
         for item in usable
     ]
-    total_signed_angle = float(sum(signed_angles))
+    translation_total = float(sum(translation_angles))
+    affine_rotation_total = float(sum(item.rotation_degrees for item in usable))
+
+    # Phase 4 left/right challenges are portrait yaw movements, so coherent horizontal
+    # scene translation is the primary visual signal. A pure image-plane rotation is kept
+    # as a fallback for transform sanity tests and unusual camera motion; it is explicitly
+    # labelled in diagnostics so Phase 6 will not confuse the two motion models.
+    direction_signal = "HORIZONTAL_TRANSLATION" if horizontal else "VERTICAL_TRANSLATION"
+    signed_angles = translation_angles
+    total_signed_angle = translation_total
+    if horizontal and abs(translation_total) < 1.5 and abs(affine_rotation_total) >= 1.5:
+        signed_angles = [item.rotation_degrees for item in usable]
+        total_signed_angle = affine_rotation_total
+        direction_signal = "AFFINE_ROTATION_FALLBACK"
+
     direction = _direction_from_angle(total_signed_angle, horizontal)
 
     dominant_sign = 1.0 if total_signed_angle >= 0 else -1.0
+    meaningful_angles = [value for value in signed_angles if abs(value) >= 0.05]
     sign_support = [
-        value for value in signed_angles if abs(value) >= 0.05 and math.copysign(1.0, value) == dominant_sign
+        value
+        for value in meaningful_angles
+        if math.copysign(1.0, value) == dominant_sign
     ]
-    consistency = len(sign_support) / float(max(1, len([v for v in signed_angles if abs(v) >= 0.05])))
+    consistency = len(sign_support) / float(max(1, len(meaningful_angles)))
     inlier_ratio = float(np.mean([item.inlier_ratio for item in usable]))
     coverage = float(np.mean([item.feature_coverage for item in usable]))
     feature_quality = min(1.0, feature_count / float(max(1, settings.vision_min_features * 2)))
@@ -199,6 +235,13 @@ def analyze_visual_challenge(
     translation_x = float(sum(item.translation_x for item in usable))
     translation_y = float(sum(item.translation_y for item in usable))
     scale_product = float(np.prod([item.scale for item in usable]))
+
+    direct_estimate = _direct_start_end_estimate(
+        grays[0],
+        grays[-1],
+        frames[-1].session_time_ms,
+        settings,
+    )
 
     reasons: list[str] = []
     status = VisualAnalysisStatus.SUCCESS
@@ -253,10 +296,24 @@ def analyze_visual_challenge(
         "meanSharpness": round(continuity.mean_sharpness, 3),
         "motionCurve": motion_curve,
         "pairEstimates": pair_diagnostics,
+        "directionSignal": direction_signal,
+        "translationAngleDegrees": round(translation_total, 3),
+        "accumulatedAffineRotationDegrees": round(affine_rotation_total, 3),
+        "directStartEnd": (
+            {
+                "affineRotationDegrees": round(direct_estimate.rotation_degrees, 3),
+                "translationX": round(direct_estimate.translation_x, 3),
+                "translationY": round(direct_estimate.translation_y, 3),
+                "inlierRatio": round(direct_estimate.inlier_ratio, 4),
+            }
+            if direct_estimate is not None
+            else None
+        ),
         "rawTrackingPointMedian": int(round(median(raw_tracked_counts))) if raw_tracked_counts else 0,
         "coordinateConvention": (
-            "RIGHT/LEFT infer physical camera yaw opposite horizontal image translation; "
-            "UP/DOWN infer physical pitch from vertical image translation."
+            "RIGHT/LEFT primarily infer physical camera yaw opposite horizontal image translation; "
+            "UP/DOWN infer physical pitch from vertical image translation. Pure image-plane affine "
+            "rotation is a labelled fallback, not a Phase 6 sensor comparison."
         ),
     }
 
