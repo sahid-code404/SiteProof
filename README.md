@@ -2,23 +2,27 @@
 
 **SiteProof — Active Multi-Sensor Proof-of-Physical-Presence and Tamper-Resistant Field Verification System**
 
-SiteProof is a final-year B.Tech project that builds stronger field-verification evidence from multiple independent signals. Development is intentionally incremental. **Phase 2 implements inspection management and assignment only; live camera capture, sensors, challenge-response, computer vision and verification scoring are not part of this phase.**
+SiteProof is a full-stack field-inspection platform with a React admin dashboard, FastAPI/PostgreSQL backend, and a native Android inspector app. Development is incremental and every phase has an explicit security boundary.
 
-## Phase 2 capability
+## Current Phase 3 capability
 
-A real end-to-end data flow now exists:
+The current branch extends the Phase 2 inspection workflow with live Android evidence collection:
 
 ```text
-Admin login
-  → create inspection + site/radius/deadline
-  → assign or reassign an organization inspector
-  → inspector logs into Android
-  → assigned inspection appears
-  → inspector acknowledges
-  → inspector explicitly marks READY
+Admin creates + assigns inspection
+  → Inspector ACKNOWLEDGES
+  → Inspector marks READY
+  → Android checks fresh GPS + device sensors
+  → Server creates short-lived verification session
+  → CameraX records rear-camera video
+  → accelerometer/gyroscope/rotation-vector + GPS record on one monotonic timeline
+  → app builds and SHA-256 hashes an evidence package
+  → WorkManager reliably uploads evidence
+  → backend independently hashes + structurally validates files
+  → admin sees Evidence Uploaded / Awaiting Verification
 ```
 
-The backend enforces organization isolation and state transitions. Assignment history and server-side audit events are preserved.
+**Phase 3 does not claim that evidence is verified or authentic.** Random challenges, optical flow, replay detection and trust scoring belong to later phases.
 
 ## Repository structure
 
@@ -38,43 +42,22 @@ siteproof/
 
 ## Quick start
 
-1. Create your local environment file:
-
 ```bash
 cp .env.example .env
-```
-
-2. Change `JWT_SECRET` and any local passwords in `.env`.
-
-3. Start PostgreSQL, the backend, web dashboard and MinIO:
-
-```bash
+# Change JWT_SECRET and local passwords.
 docker compose up --build
 ```
 
-The backend container runs `alembic upgrade head` before starting FastAPI.
-
-4. Open:
+Open:
 
 - Admin dashboard: `http://localhost:5173`
 - OpenAPI: `http://localhost:8000/docs`
 - Backend health: `http://localhost:8000/health`
-- MinIO console: `http://localhost:9001`
+- Optional MinIO console: `http://localhost:9001`
 
-## Create local users
+The default development storage backend writes evidence outside PostgreSQL into the `evidence_data` Docker volume. An S3-compatible/MinIO adapter is also available by setting `STORAGE_BACKEND=s3`.
 
-Create one administrator after migrations:
-
-```bash
-cd backend
-python ../scripts/seed_admin.py \
-  "SiteProof Demo Authority" \
-  admin@example.com \
-  "Demo Admin" \
-  "your-local-password"
-```
-
-Or seed the optional Phase 2 demo dataset. Passwords are supplied via environment variables and are never embedded in application code:
+## Seed local users
 
 ```bash
 export SITEPROOF_DEMO_ADMIN_PASSWORD='choose-a-local-password'
@@ -94,7 +77,7 @@ alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-Tests and lint:
+Checks:
 
 ```bash
 pytest -q
@@ -106,55 +89,47 @@ ruff check app tests alembic
 ```bash
 cd web
 npm install
-npm run dev
-```
-
-Checks:
-
-```bash
 npm test
 npm run lint
 npm run build
+npm run dev
 ```
-
-The inspection form uses Leaflet/OpenStreetMap. Clicking the map updates latitude/longitude without a paid map API.
 
 ## Android development
 
-Open `android/` in Android Studio, or use a compatible Gradle installation. The default **debug** API URL is the Android emulator host alias:
-
-```text
-http://10.0.2.2:8000/api/v1/
-```
-
-Override it for a physical device on your LAN:
+Open `android/` in Android Studio. For a physical phone, put the phone and development machine on the same LAN and build with the machine's LAN address:
 
 ```bash
 gradle :app:assembleDebug \
   -PSITEPROOF_API_BASE_URL=http://192.168.1.20:8000/api/v1/
 ```
 
-The debug manifest permits cleartext HTTP for local development. The main/release manifest disables cleartext traffic. JWTs stored by the Android app are encrypted using Android Keystore AES-GCM.
+The debug manifest permits cleartext HTTP only for local development. Release configuration keeps cleartext disabled. The app requests `CAMERA` and fine/coarse location only when the inspector enters live verification; it does **not** request microphone permission and CameraX recording is created without audio.
 
-## Phase 2 demo
+Live evidence stays in app-private storage. It is not written to Gallery, Downloads or DCIM. Pending evidence remains local across temporary network failures and WorkManager retries it when connectivity returns. Successfully uploaded local evidence is removed after backend confirmation.
 
-1. Sign into the web dashboard as an admin.
-2. Create **Verify repaired pothole** with coordinates, radius, deadline and priority.
-3. Open the inspection and assign an active inspector.
-4. Sign into the Android app as that inspector.
-5. Confirm only that inspector's assignments appear.
-6. Open the inspection and tap **ACKNOWLEDGE**.
-7. Tap **MARK READY**.
-8. Refresh the web dashboard and confirm the persisted `READY` state and assignment history.
+## Phase 3 real-device test
+
+Phase 3 is not complete on emulator/CI alone. Use at least one real Android phone and execute:
+
+1. Admin creates and assigns an inspection with the phone physically inside the configured radius.
+2. Inspector logs into Android, taps **ACKNOWLEDGE**, then **MARK READY**.
+3. Tap **START LIVE VERIFICATION**, grant camera/location permissions, and confirm fresh GPS/capability status.
+4. Record at least 8 seconds (15–30 seconds recommended) while moving the phone naturally.
+5. Stop capture and confirm the app reports evidence saved/uploading.
+6. Temporarily disconnect the phone after capture; confirm evidence remains pending locally, then restore network and allow WorkManager to finish.
+7. On the admin inspection page confirm Video, Motion sensors, Location data and Manifest are received and the message says **Awaiting verification analysis**.
+8. Inspect the development evidence package and confirm sensor/location values are real and varying.
+
+Record the actual device/Android version and pass/fail observations in `docs/testing.md`. Never fabricate this report.
 
 ## Documentation
 
 - `docs/architecture.md`
 - `docs/api.md`
 - `docs/inspection-lifecycle.md`
+- `docs/live-capture.md`
+- `docs/evidence-format.md`
+- `docs/session-lifecycle.md`
 - `docs/testing.md`
 - `docs/project-spec.md`
-
-## Development rule
-
-Do not begin live camera/sensor work until Phase 2 acceptance is complete. See `PROJECT_STATE.md`.

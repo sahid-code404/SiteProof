@@ -3,7 +3,15 @@ import { clearSession, getToken, type AuthUser } from './auth'
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1'
 const BACKEND_BASE_URL = API_BASE_URL.replace(/\/api\/v1\/?$/, '')
 
-export type InspectionStatus = 'DRAFT' | 'ASSIGNED' | 'ACKNOWLEDGED' | 'READY' | 'CANCELLED'
+export type InspectionStatus =
+  | 'DRAFT'
+  | 'ASSIGNED'
+  | 'ACKNOWLEDGED'
+  | 'READY'
+  | 'SESSION_STARTED'
+  | 'EVIDENCE_UPLOADING'
+  | 'PROCESSING'
+  | 'CANCELLED'
 export type InspectionPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 export type InspectionType = 'ROAD_REPAIR' | 'INFRASTRUCTURE' | 'CONSTRUCTION' | 'UTILITY' | 'GENERAL'
 
@@ -84,6 +92,69 @@ export type InspectionPayload = {
   instructions?: string
 }
 
+export type VerificationSessionStatus =
+  | 'CREATED'
+  | 'CAPTURING'
+  | 'CAPTURE_COMPLETED'
+  | 'UPLOADING'
+  | 'UPLOADED'
+  | 'PROCESSING'
+  | 'ABORTED'
+  | 'EXPIRED'
+  | 'UPLOAD_FAILED'
+
+export type SensorSummary = {
+  accelerometerSamples: number
+  gyroscopeSamples: number
+  rotationVectorSamples: number
+  magnetometerSamples: number
+}
+
+export type LocationSummary = {
+  locationSamples: number
+  bestAccuracyMeters?: number | null
+  firstRelativeTimestampNs?: number | null
+  lastRelativeTimestampNs?: number | null
+}
+
+export type EvidencePresence = {
+  video: boolean
+  sensorData: boolean
+  locationData: boolean
+  sessionMetadata: boolean
+  manifest: boolean
+}
+
+export type VerificationSession = {
+  id: string
+  inspectionId: string
+  inspectorId: string
+  status: VerificationSessionStatus
+  createdAt: string
+  captureStartedAt?: string | null
+  captureEndedAt?: string | null
+  uploadedAt?: string | null
+  expiresAt: string
+  captureDurationMs?: number | null
+  manifestSha256?: string | null
+  sensorSummary?: SensorSummary | null
+  locationSummary?: LocationSummary | null
+  evidence: EvidencePresence
+}
+
+export type EvidenceFile = {
+  id: string
+  type: 'VIDEO' | 'SENSOR_DATA' | 'LOCATION_DATA' | 'SESSION_METADATA' | 'MANIFEST' | 'THUMBNAIL'
+  filename: string
+  mimeType: string
+  sizeBytes: number
+  sha256: string
+  uploadStatus: 'PENDING' | 'UPLOADING' | 'UPLOADED' | 'FAILED'
+  hashVerified: boolean
+  uploadedAt?: string | null
+  downloadPath?: string | null
+}
+
 type ErrorBody = { error?: { code?: string; message?: string } }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -162,6 +233,24 @@ export function getInspectors(search = ''): Promise<Page<Inspector>> {
   const params = new URLSearchParams({ page: '1', pageSize: '100', active: 'true' })
   if (search) params.set('search', search)
   return request(`/inspectors?${params.toString()}`)
+}
+
+export function getLatestVerificationSession(inspectionId: string): Promise<VerificationSession | null> {
+  return request(`/inspections/${inspectionId}/sessions/latest`)
+}
+
+export function getSessionEvidence(sessionId: string): Promise<{ sessionId: string; items: EvidenceFile[] }> {
+  return request(`/sessions/${sessionId}/evidence`)
+}
+
+export async function fetchEvidenceBlob(downloadPath: string): Promise<Blob> {
+  const token = getToken()
+  const normalized = downloadPath.replace(/^\/+/, '')
+  const response = await fetch(`${API_BASE_URL}/${normalized}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!response.ok) throw new Error(`Unable to load evidence (${response.status})`)
+  return response.blob()
 }
 
 export { API_BASE_URL }

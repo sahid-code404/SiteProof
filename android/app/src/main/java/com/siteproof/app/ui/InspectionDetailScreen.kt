@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,12 +43,13 @@ fun InspectionDetailScreen(
     onRetry: () -> Unit,
     onAcknowledge: () -> Unit,
     onReady: () -> Unit,
+    onStartVerification: () -> Unit,
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Inspection details") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back") } },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
             )
         },
     ) { padding ->
@@ -82,7 +83,6 @@ fun InspectionDetailScreen(
                     }
                     HorizontalDivider(Modifier.padding(vertical = 20.dp))
                     DetailField("Location", item.locationName ?: item.locationAddress ?: "${item.expectedLatitude}, ${item.expectedLongitude}")
-                    DetailField("Distance", "Distance unavailable")
                     DetailField("Allowed verification radius", "${item.allowedRadiusMeters} m")
                     DetailField("Deadline", detailDeadline(item.deadline))
                     DetailField("Inspection type", item.inspectionType.replace('_', ' '))
@@ -102,15 +102,25 @@ fun InspectionDetailScreen(
                             enabled = !state.actionInProgress && !state.offline,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text(if (state.actionInProgress) "UPDATING…" else "MARK READY") }
-                        "READY" -> Text(
-                            "Verification ready",
+                        "READY" -> Button(
+                            onClick = onStartVerification,
+                            enabled = !state.offline,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("START LIVE VERIFICATION") }
+                        "SESSION_STARTED", "EVIDENCE_UPLOADING" -> Text(
+                            "Live evidence session in progress",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        "PROCESSING" -> Text(
+                            "Evidence uploaded — awaiting verification analysis",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary,
                         )
                     }
                     Spacer(Modifier.height(24.dp))
                     Text(
-                        "Live verification is intentionally not available in Phase 2.",
+                        "SiteProof records live camera, location and motion-sensor evidence. Phase 3 does not make an authenticity verdict.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

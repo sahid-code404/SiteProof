@@ -1,57 +1,53 @@
-# SiteProof Project State
+# Project State
 
-Current Phase:
-Phase 2 — Inspection Management
+Current development branch: **Phase 3 — Live Capture, Location & Multi-Sensor Evidence Collection**
 
-Current Milestone:
-2.12 End-to-End Acceptance — COMPLETE
+Phase 2 prerequisite: **PASS — physical-device acceptance completed on 2026-08-19.** The Phase 2 seed/login fixes and Android account-switch isolation fix have been carried forward into this Phase 3 branch before Phase 3 hardware testing.
 
-Last Completed:
-2.12 End-to-End Acceptance — physical Android + real local backend/PostgreSQL acceptance passed on 2026-08-19
+## Phase 3 implementation status
 
-Build Status:
+Implemented in code:
 
-Backend:
-PASS — CI run #283 passed fresh PostgreSQL migration, Phase 2 downgrade/re-upgrade, Ruff, and pytest after the Android isolation fix.
+- verification-session state machine and persistence;
+- evidence-file metadata and object-storage abstraction;
+- authenticated, idempotent upload pipeline with independent SHA-256 verification;
+- Android runtime permission flow for camera and fine location;
+- CameraX rear-camera preview and video capture without microphone/audio;
+- accelerometer, gyroscope, rotation-vector and optional magnetometer capture;
+- Fused Location Provider freshness, accuracy and radius checks;
+- common monotonic capture timeline;
+- app-private evidence packaging and manifest generation;
+- Room pending-upload tracking;
+- WorkManager network-constrained retry;
+- admin evidence/session status and authenticated video preview;
+- automated backend/web/Android checks in GitHub CI.
 
-Web:
-PASS — CI run #283 passed tests, lint, and production build.
+## Current acceptance gate
 
-Android:
-PASS — CI run #283 passed Android unit tests and debug APK assembly. CI run #285 built the replacement physical-device APK configured for `192.168.1.102`; the real-device acceptance flow completed successfully.
+**Phase 3 real-device acceptance — NOT TESTED YET on the updated branch.**
 
-Infrastructure:
-PASS (LOCAL SETUP OBSERVED) — web, backend, PostgreSQL 16, and MinIO were observed running on 2026-08-19; backend and PostgreSQL reported healthy.
+Phase 3 is not complete until a physical Android phone successfully creates one actual CameraX recording plus real sensor/location packages and manifest from the same live session, survives the required temporary-offline retention/retry test, uploads the evidence to the backend, and shows the received evidence in the admin dashboard.
 
-Database:
-PASS — PostgreSQL-backed Phase 2 migrations are covered by CI; the local acceptance PostgreSQL container was observed healthy and the real acceptance audit trail was queried successfully.
+Do not fabricate device model, Android version, sensor availability, sample behavior, upload behavior or timing results. Record only observed values from the physical run.
 
-Acceptance Status:
-**PASS — PHASE 2 COMPLETE**
+## Carry-forward fixes from accepted Phase 2
 
-Observed real acceptance:
-- corrected seed migration completed successfully against the existing PostgreSQL volume;
-- direct admin login returned HTTP 200;
-- admin manually created `Phase 2 Final Test` and assigned Inspector One;
-- the physical Android device authenticated and received the assignment;
-- Inspector One changed the inspection from `ASSIGNED` → `ACKNOWLEDGED` → `READY`;
-- the refreshed web dashboard persisted `ACKNOWLEDGED`;
-- `READY` persisted after fully closing and reopening the Android app;
-- Inspector Two account-switch isolation passed on the fixed APK with `No inspections assigned.`;
-- admin assignment history showed Inspector One as the active assignment;
-- direct backend/PostgreSQL audit query returned, in order, `INSPECTION_CREATED`, `INSPECTION_ASSIGNED`, `INSPECTION_ACKNOWLEDGED`, and `INSPECTION_READY` for inspection `bfa76c9d-898e-443a-ab96-065f37c16627`.
+- demo seed addresses use/migrate to `@siteproof.example.com` so the real login schema accepts them;
+- legacy demo identities are migrated in place without duplicate inspector employee-code collisions;
+- Android authenticated navigation/ViewModel state is session-scoped so an Inspector One → logout → Inspector Two switch cannot retain Inspector One's in-memory inspection list;
+- regression coverage for those fixes is carried forward.
 
-Resolved acceptance defects:
-- `@siteproof.local` demo addresses conflicted with the real email-validation contract; migrated to `@siteproof.example.com`.
-- reseeding an existing database initially collided with inspector employee-code uniqueness; the seed now migrates legacy identities in place and is idempotent.
-- Android account switching retained the prior inspector's in-memory list; authenticated navigation/ViewModel state is now session-scoped and the physical retest passed.
+## Phase boundary
 
-Known non-blocking information:
-- physical handset model: NOT RECORDED;
-- Android version: NOT RECORDED;
-- no values are inferred or fabricated for those fields.
+Phase 3 does **not** implement randomized movement challenges, OpenCV optical flow, visual-inertial verification, replay detection, trust scoring, authenticity verdicts or AI anomaly detection.
 
-Next earliest incomplete gate:
-**Phase 3 — Live Capture, Location & Multi-Sensor Evidence Collection: real-device acceptance on branch `phase3/live-capture`.**
+Source of truth:
 
-Phase 3 automated code already exists in a stacked draft PR, but its real-device acceptance remains open. The next acceptance must prove one real CameraX capture plus real sensor/location evidence, app-private evidence packaging, offline retention/retry, upload to the backend, and admin evidence display. Do not treat Phase 4+ acceptance as complete until the earlier physical gates are closed.
+1. `docs/project-spec.md`
+2. `docs/live-capture.md`
+3. `docs/evidence-format.md`
+4. `docs/session-lifecycle.md`
+5. `docs/testing.md`
+6. current repository code and passing tests
+
+Next task: run the exact real-device Phase 3 acceptance flow in `docs/testing.md` after the updated branch passes CI.

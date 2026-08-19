@@ -37,9 +37,9 @@ jobs:
       - run: pip install -e '.[dev]'
       - name: Verify fresh migration
         run: alembic upgrade head
-      - name: Verify Phase 2 downgrade and re-upgrade
+      - name: Verify Phase 3 downgrade and re-upgrade
         run: |
-          alembic downgrade 0001_phase1_baseline
+          alembic downgrade 0002_phase2_inspections
           alembic upgrade head
       - run: ruff check app tests alembic
       - run: pytest -q
@@ -66,11 +66,11 @@ jobs:
         working-directory: android
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.10.2'
+          gradle-version: '8.13'
       - run: gradle :app:testDebugUnitTest :app:assembleDebug --stacktrace

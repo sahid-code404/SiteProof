@@ -12,7 +12,19 @@ import com.siteproof.app.data.LoginRequest
 import com.siteproof.app.data.LoginResponse
 import com.siteproof.app.data.SessionStore
 import com.siteproof.app.data.SiteProofApi
+import com.siteproof.app.verification.model.AbortRequest
+import com.siteproof.app.verification.model.CaptureCompleteRequest
+import com.siteproof.app.verification.model.EvidenceCompleteRequest
+import com.siteproof.app.verification.model.EvidenceFileResponse
+import com.siteproof.app.verification.model.EvidenceInitiateRequest
+import com.siteproof.app.verification.model.EvidenceInitiateResponse
+import com.siteproof.app.verification.model.EvidenceListResponse
+import com.siteproof.app.verification.model.SessionCreateRequest
+import com.siteproof.app.verification.model.SessionCreateResponse
+import com.siteproof.app.verification.model.StartCaptureRequest
+import com.siteproof.app.verification.model.VerificationSession
 import kotlinx.coroutines.test.runTest
+import okhttp3.RequestBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -120,6 +132,52 @@ private class FakeApi(
         items = listOf(updated)
         return updated
     }
+
+    // Phase 2 repository tests never call live-verification APIs. Explicit stubs keep this
+    // test double honest as SiteProofApi grows without hiding unexpected calls.
+    override suspend fun createVerificationSession(
+        inspectionId: String,
+        request: SessionCreateRequest,
+    ): SessionCreateResponse = error("unused in Phase 2 repository tests")
+
+    override suspend fun latestVerificationSession(inspectionId: String): VerificationSession? =
+        error("unused in Phase 2 repository tests")
+
+    override suspend fun verificationSession(sessionId: String): VerificationSession =
+        error("unused in Phase 2 repository tests")
+
+    override suspend fun startCapture(
+        sessionId: String,
+        request: StartCaptureRequest,
+    ): VerificationSession = error("unused in Phase 2 repository tests")
+
+    override suspend fun captureComplete(
+        sessionId: String,
+        request: CaptureCompleteRequest,
+    ): VerificationSession = error("unused in Phase 2 repository tests")
+
+    override suspend fun abortSession(
+        sessionId: String,
+        request: AbortRequest,
+    ): VerificationSession = error("unused in Phase 2 repository tests")
+
+    override suspend fun initiateEvidence(
+        sessionId: String,
+        request: EvidenceInitiateRequest,
+    ): EvidenceInitiateResponse = error("unused in Phase 2 repository tests")
+
+    override suspend fun uploadEvidence(
+        relativeUrl: String,
+        body: RequestBody,
+    ): EvidenceFileResponse = error("unused in Phase 2 repository tests")
+
+    override suspend fun completeEvidence(
+        sessionId: String,
+        request: EvidenceCompleteRequest,
+    ): VerificationSession = error("unused in Phase 2 repository tests")
+
+    override suspend fun evidence(sessionId: String): EvidenceListResponse =
+        error("unused in Phase 2 repository tests")
 }
 
 class InspectionRepositoryTest {
