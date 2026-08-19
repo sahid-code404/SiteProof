@@ -7,6 +7,11 @@ import android.util.Base64
 import com.siteproof.app.BuildConfig
 import com.siteproof.app.verification.model.AbortRequest
 import com.siteproof.app.verification.model.CaptureCompleteRequest
+import com.siteproof.app.verification.model.ChallengeIssue
+import com.siteproof.app.verification.model.ChallengeListResponse
+import com.siteproof.app.verification.model.ChallengeStartRequest
+import com.siteproof.app.verification.model.ChallengeSubmitRequest
+import com.siteproof.app.verification.model.ChallengeValidationResult
 import com.siteproof.app.verification.model.EvidenceCompleteRequest
 import com.siteproof.app.verification.model.EvidenceFileResponse
 import com.siteproof.app.verification.model.EvidenceInitiateRequest
@@ -73,6 +78,24 @@ interface SiteProofApi {
         @Path("id") sessionId: String,
         @Body request: StartCaptureRequest,
     ): VerificationSession
+
+    @POST("sessions/{id}/challenges/next")
+    suspend fun nextChallenge(@Path("id") sessionId: String): ChallengeIssue
+
+    @POST("challenges/{id}/start")
+    suspend fun startChallenge(
+        @Path("id") challengeId: String,
+        @Body request: ChallengeStartRequest,
+    ): ChallengeIssue
+
+    @POST("challenges/{id}/submit")
+    suspend fun submitChallenge(
+        @Path("id") challengeId: String,
+        @Body request: ChallengeSubmitRequest,
+    ): ChallengeValidationResult
+
+    @GET("sessions/{id}/challenges")
+    suspend fun challenges(@Path("id") sessionId: String): ChallengeListResponse
 
     @POST("sessions/{id}/capture-complete")
     suspend fun captureComplete(
