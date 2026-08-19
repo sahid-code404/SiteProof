@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     vision_duplicate_mean_absdiff: float = 1.5
     vision_motion_threshold_px: float = 1.5
     vision_timeline_tolerance_ms: int = 300
+    vision_video_duration_tolerance_ms: int = 1500
     vision_assumed_horizontal_fov_degrees: float = 65.0
     vision_max_duration_seconds: int = 90
     vision_max_frame_count: int = 5000
