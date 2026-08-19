@@ -4,7 +4,7 @@ This document records **actual physical-device results only**. Never replace mis
 
 ## Phase 2.12 — Inspection Assignment End-to-End Acceptance
 
-Status: **PARTIAL — ACKNOWLEDGED PERSISTENCE PASSED; FINAL CHECKS REMAIN**
+Status: **PASS — PHASE 2 PHYSICAL-DEVICE ACCEPTANCE COMPLETE**
 
 ### Device / environment
 
@@ -22,7 +22,7 @@ Host machine LAN IP:
 192.168.1.102 — observed during the 2026-08-19 acceptance setup
 
 Phone and host on same network:
-PASS — the installed Android app authenticated against the host backend and loaded the assigned inspection.
+PASS — the installed Android app authenticated against the host backend and loaded assigned inspections.
 
 Backend health before test:
 PASS — local backend was reachable on port 8000 during acceptance setup
@@ -76,72 +76,104 @@ Use the actual reachable LAN IP. Do not use the emulator-only `10.0.2.2` address
 
 ### Acceptance checklist
 
-Record PASS / FAIL and notes for every item after actually performing it.
-
 | Check | Result | Actual observation |
 |---|---|---|
 | Docker/PostgreSQL/backend/web stack starts | PASS | Web, backend, PostgreSQL, and MinIO containers observed running on 2026-08-19. |
 | Backend `/health` is reachable | PASS | Local backend health endpoint responded during setup. |
-| Admin can log into web dashboard | PASS | Corrected seeded admin authenticated successfully; direct API login returned HTTP 200 and the admin inspection dashboard was subsequently displayed. |
-| Admin can create an inspection | PASS | A fresh inspection named `Phase 2 Final Test` was manually created through the admin flow and subsequently appeared on the real Android device with its configured coordinates, radius, deadline, type, and priority. |
-| Admin can assign Inspector One | PASS | Web screenshot showed `Verify repaired pothole` in `ASSIGNED` state with active assignment `Inspector One`; the manually created `Phase 2 Final Test` also appeared under Inspector One as `ASSIGNED`. |
+| Admin can log into web dashboard | PASS | Corrected seeded admin authenticated successfully; direct API login returned HTTP 200 and the admin inspection dashboard was displayed. |
+| Admin can create an inspection | PASS | A fresh inspection named `Phase 2 Final Test` was manually created through the admin flow and appeared on the real Android device with its configured coordinates, radius, deadline, type, and priority. |
+| Admin can assign Inspector One | PASS | `Phase 2 Final Test` appeared under Inspector One as `ASSIGNED`. |
 | Physical Android device can log in as assigned inspector | PASS | Physical-device screenshots show Inspector One authenticated against the real backend. |
-| Assigned inspection appears on Android | PASS | Both the seeded `Verify repaired pothole` and manually created `Phase 2 Final Test` appeared on the physical Android device for Inspector One. |
-| Unrelated inspector work is not visible | PASS | On the replacement isolation-fix APK, Inspector Two's physical-device list showed `No inspections assigned.` after the Inspector One -> sign out -> Inspector Two account switch. The prior Inspector One card was no longer visible. |
-| **ACKNOWLEDGE** succeeds | PASS | The manually created `Phase 2 Final Test` was shown as `ASSIGNED` with an `ACKNOWLEDGE` action, then a physical-device screenshot immediately after the action showed status `ACKNOWLEDGED` and the `MARK READY` action. |
-| Web/backend persist `ACKNOWLEDGED` | PASS | After the Android acknowledgement, the refreshed admin web inspection list showed `Phase 2 Final Test` with status `ACKNOWLEDGED`, confirming the state persisted through the backend/database rather than existing only in Android UI memory. |
-| **MARK READY** succeeds | PASS | Physical-device screenshot shows the earlier `Verify repaired pothole` inspection in `READY` with `Verification ready`. |
-| `READY` persists after refresh/restart | NOT TESTED | Restart/refresh persistence has not yet been explicitly observed for `Phase 2 Final Test`. |
-| Assignment history is correct | NOT TESTED | |
-| Audit records are present and correct | NOT TESTED | |
+| Assigned inspection appears on Android | PASS | `Phase 2 Final Test` appeared on the physical Android device for Inspector One. |
+| Unrelated inspector work is not visible | PASS | On the isolation-fix APK, Inspector Two showed `No inspections assigned.` after the Inspector One → sign out → Inspector Two account switch. |
+| **ACKNOWLEDGE** succeeds | PASS | `Phase 2 Final Test` changed from `ASSIGNED` to `ACKNOWLEDGED` on the physical Android device and exposed `MARK READY`. |
+| Web/backend persist `ACKNOWLEDGED` | PASS | The refreshed admin web dashboard showed `Phase 2 Final Test` as `ACKNOWLEDGED`. |
+| **MARK READY** succeeds | PASS | `Phase 2 Final Test` reached `READY` on the physical Android device. |
+| `READY` persists after refresh/restart | PASS | After fully closing and reopening SiteProof, the physical-device detail screen still showed `Phase 2 Final Test` as `READY` with `Verification ready`. |
+| Assignment history is correct | PASS | Admin web detail showed `Inspector One` in `ASSIGNMENT HISTORY` as the active assignment with the recorded 2026-08-19 assignment timestamp. |
+| Audit records are present and correct | PASS | Direct query against the real local PostgreSQL-backed backend returned exactly four lifecycle records for `Phase 2 Final Test`: `INSPECTION_CREATED`, `INSPECTION_ASSIGNED`, `INSPECTION_ACKNOWLEDGED`, and `INSPECTION_READY`, in chronological order. |
 
-### Account-switch isolation defect
+### Defects found and closed during acceptance
+
+#### Seed email validation mismatch
+
+Observed behavior:
+- The original `@siteproof.local` demo addresses were rejected by the real login schema before password authentication.
+
+Fix / retest:
+- Seed identities now use or migrate to `@siteproof.example.com`.
+- Reseeding succeeded against the existing PostgreSQL volume.
+- Direct admin login returned HTTP 200.
+
+#### Seed migration / duplicate employee-code collision
+
+Observed behavior:
+- After the demo email correction, an already-seeded database attempted to create duplicate inspector identities and PostgreSQL rejected duplicate employee codes such as `SP-I001`.
+
+Fix / retest:
+- The seed now migrates legacy identities in place, preserves inspector profile IDs and employee codes, refreshes passwords, and is idempotent.
+- Reseeding the existing database completed successfully.
+
+#### Android account-switch stale-list isolation defect
 
 Observed behavior before fix:
-- Inspector Two's list showed an inspection that belonged to Inspector One.
-- The detail request returned HTTP 404 for Inspector Two.
-
-Interpretation:
-- Server-side tenant/assignee scoping remained effective; unauthorized detail access was blocked.
-- The Android Compose navigation/view-model graph retained the previous inspector's in-memory list state after logout/login.
+- Inspector Two's list displayed Inspector One's prior inspection card after logout/login.
+- Opening the stale card returned HTTP 404, proving server-side authorization was already blocking access.
 
 Fix implemented:
-- Added a per-authentication session scope key derived from a SHA-256 fingerprint of the active access token; the token itself is not logged or persisted by this mechanism.
-- Recreated the authenticated navigation graph and list/detail ViewModels when the inspector session changes.
-- Existing persisted inspection cache clearing on login/logout remains in place.
-- Added Android unit coverage proving account logins create different session scopes and that logout clears session/cache state.
+- The authenticated Compose navigation/ViewModel graph is now scoped to the current authentication session.
+- Existing persisted inspection-cache clearing remains in place.
+- Android regression coverage was added.
 
 Automated verification:
-- Full CI run #283 passed backend, web, Android unit tests, and Android debug APK assembly after the isolation fix.
-- Physical-device replacement APK build #285 passed Android tests/build and uploaded the host-specific APK.
+- Full CI run #283 passed backend migration/downgrade, Ruff, pytest, web tests/lint/build, Android unit tests, and debug APK assembly.
+- CI run #285 built the replacement host-specific APK.
 
 Physical retest:
-- PASS — user-provided physical-device screenshot on 2026-08-19 shows Inspector Two with an empty inspection list and the message `No inspections assigned.` after the account-switch sequence.
+- PASS — Inspector Two showed `No inspections assigned.` and no Inspector One card after the account switch.
 
-### Manual-create / acknowledge observation
+### Final manual-flow evidence
 
-Physical-device screenshots on 2026-08-19 show:
-- Inspector One's list containing the manually created `Phase 2 Final Test` in `ASSIGNED` state.
-- The detail screen for `Phase 2 Final Test` in `ASSIGNED` state with the `ACKNOWLEDGE` control.
-- The same inspection immediately afterward in `ACKNOWLEDGED` state with the `MARK READY` control.
-- A subsequent refreshed admin web screenshot shows `Phase 2 Final Test` as `ACKNOWLEDGED`, closing the server/database persistence check for this transition.
+The manually created `Phase 2 Final Test` was observed through the complete lifecycle on the real stack:
+
+```text
+ADMIN CREATE
+    ↓
+ASSIGNED to Inspector One
+    ↓
+Android ACKNOWLEDGE
+    ↓
+Web/backend ACKNOWLEDGED
+    ↓
+Android MARK READY
+    ↓
+READY
+    ↓
+Full app close/reopen
+    ↓
+READY persists
+```
+
+Assignment history was visible in the admin web detail view.
+
+Direct audit query for inspection ID `bfa76c9d-898e-443a-ab96-065f37c16627` returned:
+
+```text
+2026-08-19 15:04:36.585657+00:00 INSPECTION_CREATED {}
+2026-08-19 15:04:54.032812+00:00 INSPECTION_ASSIGNED {'inspectorId': 'e7d63042-b8b3-479a-9973-14da6d11a177'}
+2026-08-19 15:05:57.031008+00:00 INSPECTION_ACKNOWLEDGED {}
+2026-08-19 15:16:05.683707+00:00 INSPECTION_READY {}
+```
 
 ### Acceptance result
 
 Overall result:
-**PARTIAL — MANUAL CREATE, ASSIGNMENT, ISOLATION, AND ACKNOWLEDGED PERSISTENCE PASSED; FINAL ACCEPTANCE CHECKS REMAIN**
-
-Blocking defect(s):
-- RESOLVED AND RETESTED — former `@siteproof.local` seed addresses were rejected by login validation. The seed now migrates legacy demo identities to `@siteproof.example.com`; local reseeding succeeded and admin login returned HTTP 200.
-- RESOLVED AND RETESTED — stale Inspector One list state was visible after switching to Inspector Two. Backend authorization had already blocked detail access; the Android session-scoped UI state fix now passes physical retest, with Inspector Two showing no unrelated inspection.
-- OPEN ACCEPTANCE ITEMS — `READY` persistence after refresh/restart, assignment history, and audit verification.
+**PASS — ALL REQUIRED PHASE 2.12 ACCEPTANCE OBSERVATIONS COMPLETED ON THE REAL LOCAL BACKEND/POSTGRESQL STACK AND PHYSICAL ANDROID DEVICE.**
 
 Evidence recorded by:
-User-observed local acceptance setup, user-provided web/Android screenshots, direct backend login result, and repository/CI verification
+User-observed local acceptance setup, user-provided web/Android screenshots, direct backend login result, direct PostgreSQL-backed audit query, and repository/CI verification
 
-Test date/time:
+Test date:
 2026-08-19
 
-### Rule for closing Phase 2.12
-
-Only change the overall result to PASS after the complete physical-device flow has been run against the real backend/PostgreSQL stack and every required observation above has been recorded. If any required step fails, keep the milestone open, record the exact failure, fix it, rerun the relevant tests, and repeat the device flow.
+The physical handset model and Android version remain **NOT RECORDED**; no values are inferred or fabricated.
