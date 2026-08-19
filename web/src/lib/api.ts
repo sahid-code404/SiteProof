@@ -174,6 +174,42 @@ export type ChallengeListResponse = {
   items: ChallengeTimelineItem[]
 }
 
+export type VisualAnalysisStatus = 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'INCONCLUSIVE' | 'FAILED'
+export type VisualDirection = 'LEFT' | 'RIGHT' | 'UP' | 'DOWN' | 'MIXED' | 'NONE'
+export type VisualQuality = 'GOOD' | 'FAIR' | 'POOR'
+
+export type VisualChallengeAnalysis = {
+  challengeId: string
+  challengeType: ChallengeType
+  analysisVersion: string
+  status: VisualAnalysisStatus
+  visualDirection: VisualDirection
+  estimatedRotationDegrees?: number | null
+  translationX?: number | null
+  translationY?: number | null
+  scaleChange?: number | null
+  motionStartMs?: number | null
+  motionEndMs?: number | null
+  featureCount: number
+  trackedFeatureCount: number
+  inlierRatio: number
+  confidence: number
+  sceneContinuityScore: number
+  duplicateFrameRatio: number
+  freezeDurationMs: number
+  invalidFrameRatio: number
+  visualQuality: VisualQuality
+  reasons: string[]
+  diagnostics: Record<string, unknown>
+}
+
+export type VisualAnalysisResponse = {
+  sessionId: string
+  status: VisualAnalysisStatus
+  analysisVersion: string
+  challenges: VisualChallengeAnalysis[]
+}
+
 export type EvidenceFile = {
   id: string
   type: 'VIDEO' | 'SENSOR_DATA' | 'LOCATION_DATA' | 'SESSION_METADATA' | 'MANIFEST' | 'THUMBNAIL'
@@ -273,6 +309,14 @@ export function getLatestVerificationSession(inspectionId: string): Promise<Veri
 
 export function getSessionChallenges(sessionId: string): Promise<ChallengeListResponse> {
   return request(`/sessions/${sessionId}/challenges`)
+}
+
+export function getSessionVisualAnalysis(sessionId: string): Promise<VisualAnalysisResponse> {
+  return request(`/sessions/${sessionId}/visual-analysis`)
+}
+
+export function retrySessionVisualAnalysis(sessionId: string): Promise<VisualAnalysisResponse> {
+  return request(`/sessions/${sessionId}/visual-analysis/retry`, { method: 'POST' })
 }
 
 export function getSessionEvidence(sessionId: string): Promise<{ sessionId: string; items: EvidenceFile[] }> {
