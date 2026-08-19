@@ -18,10 +18,18 @@ class ChallengeDefinition:
 
 def instruction_for(challenge_type: ChallengeType) -> str:
     return {
-        ChallengeType.ROTATE_LEFT: "Rotate your phone to the left.",
-        ChallengeType.ROTATE_RIGHT: "Rotate your phone to the right.",
-        ChallengeType.TILT_UP: "Tilt the top of your phone upward.",
-        ChallengeType.TILT_DOWN: "Tilt the top of your phone downward.",
+        ChallengeType.ROTATE_LEFT: (
+            "Rotate your phone slowly to the left. Keep the site visible and move smoothly."
+        ),
+        ChallengeType.ROTATE_RIGHT: (
+            "Rotate your phone slowly to the right. Keep the site visible and move smoothly."
+        ),
+        ChallengeType.TILT_UP: (
+            "Tilt the top of your phone slowly upward. Keep the site visible and move smoothly."
+        ),
+        ChallengeType.TILT_DOWN: (
+            "Tilt the top of your phone slowly downward. Keep the site visible and move smoothly."
+        ),
     }[challenge_type]
 
 
