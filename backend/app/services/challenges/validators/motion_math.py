@@ -265,18 +265,21 @@ def validate_axis_motion(
     }
 
     # Weighted scoring is useful near the requested range, but it must never let a tiny
-    # movement pass merely because timing and sensor agreement look clean.
+    # movement pass merely because timing and sensor agreement look clean. Sensor conflict
+    # is evaluated first so contradictory strong sensors remain INCONCLUSIVE rather than
+    # being misreported as a simple magnitude failure.
     minimum_clear_motion = minimum * 0.65
     if direction_score == 0.0:
         result = ChallengeResult.FAIL
         failure_reason = "WRONG_DIRECTION"
+    elif signed_rotation is not None and abs(signed_gyro - signed_rotation) > settings.challenge_sensor_conflict_degrees:
+        result = ChallengeResult.INCONCLUSIVE
+        failure_reason = "SENSOR_CONFLICT"
+        reasons.append("Gyroscope and rotation-vector evidence conflict beyond the configured tolerance.")
     elif max(0.0, observed) < minimum_clear_motion:
         result = ChallengeResult.FAIL
         failure_reason = "INSUFFICIENT_MOVEMENT"
         reasons.append("Observed movement was clearly below the minimum challenge magnitude.")
-    elif signed_rotation is not None and abs(signed_gyro - signed_rotation) > settings.challenge_sensor_conflict_degrees:
-        result = ChallengeResult.INCONCLUSIVE
-        failure_reason = "SENSOR_CONFLICT"
     elif score >= settings.challenge_pass_threshold:
         result = ChallengeResult.PASS
         failure_reason = None
