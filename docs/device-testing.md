@@ -4,7 +4,7 @@ This document records **actual physical-device results only**. Never replace mis
 
 ## Phase 2.12 — Inspection Assignment End-to-End Acceptance
 
-Status: **PARTIAL — ISOLATION FIX RETEST PENDING**
+Status: **PARTIAL — ISOLATION RETEST PASSED; FINAL CHECKS REMAIN**
 
 ### Device / environment
 
@@ -16,7 +16,7 @@ NOT RECORDED
 
 SiteProof APK/build:
 - Initial Phase 2 debug APK built by GitHub CI run #268 for `http://192.168.1.102:8000/api/v1/`.
-- Replacement isolation-fix APK built successfully by GitHub CI run #285 for the same host URL; physical retest pending.
+- Replacement isolation-fix APK built successfully by GitHub CI run #285 for the same host URL; physical account-switch retest passed.
 
 Host machine LAN IP:
 192.168.1.102 — observed during the 2026-08-19 acceptance setup
@@ -87,7 +87,7 @@ Record PASS / FAIL and notes for every item after actually performing it.
 | Admin can assign Inspector One | PASS | Web screenshot showed `Verify repaired pothole` in `ASSIGNED` state with active assignment `Inspector One`. |
 | Physical Android device can log in as assigned inspector | PASS | Physical-device screenshot shows authenticated inspection detail from the real backend. |
 | Assigned inspection appears on Android | PASS | `Verify repaired pothole` appeared on the physical Android device. |
-| Unrelated inspector work is not visible | **FAIL — FIX RETEST PENDING** | After signing out from Inspector One and signing in as Inspector Two, the Android list still displayed the prior `Verify repaired pothole` card. Opening it returned HTTP 404, proving backend authorization correctly denied Inspector Two but the Android UI retained stale in-memory list state across the account switch. |
+| Unrelated inspector work is not visible | PASS | On the replacement isolation-fix APK, Inspector Two's physical-device list showed `No inspections assigned.` after the Inspector One -> sign out -> Inspector Two account switch. The prior Inspector One card was no longer visible. |
 | **ACKNOWLEDGE** succeeds | PASS | The device later reached `READY`; backend transition rules require `ASSIGNED -> ACKNOWLEDGED` before `READY`, so the acknowledge action necessarily succeeded during this flow. |
 | Web/backend persist `ACKNOWLEDGED` | NOT TESTED | No direct web screenshot/API observation was recorded while the inspection was specifically in `ACKNOWLEDGED`. |
 | **MARK READY** succeeds | PASS | Physical-device screenshot shows `READY` and `Verification ready`. |
@@ -97,7 +97,7 @@ Record PASS / FAIL and notes for every item after actually performing it.
 
 ### Account-switch isolation defect
 
-Observed behavior:
+Observed behavior before fix:
 - Inspector Two's list showed an inspection that belonged to Inspector One.
 - The detail request returned HTTP 404 for Inspector Two.
 
@@ -115,14 +115,17 @@ Automated verification:
 - Full CI run #283 passed backend, web, Android unit tests, and Android debug APK assembly after the isolation fix.
 - Physical-device replacement APK build #285 passed Android tests/build and uploaded the host-specific APK.
 
+Physical retest:
+- PASS — user-provided physical-device screenshot on 2026-08-19 shows Inspector Two with an empty inspection list and the message `No inspections assigned.` after the account-switch sequence.
+
 ### Acceptance result
 
 Overall result:
-**PARTIAL — ACCOUNT-SWITCH ISOLATION FIX IMPLEMENTED; PHYSICAL RETEST REQUIRED**
+**PARTIAL — ACCOUNT-SWITCH ISOLATION PASSED; FINAL ACCEPTANCE CHECKS REMAIN**
 
 Blocking defect(s):
 - RESOLVED AND RETESTED — former `@siteproof.local` seed addresses were rejected by login validation. The seed now migrates legacy demo identities to `@siteproof.example.com`; local reseeding succeeded and admin login returned HTTP 200.
-- FIX IMPLEMENTED, RETEST PENDING — stale Inspector One list state was visible after switching to Inspector Two. Backend authorization blocked detail access with HTTP 404; Android session-scoped UI state fix is green in automated CI and awaits the replacement APK physical retest.
+- RESOLVED AND RETESTED — stale Inspector One list state was visible after switching to Inspector Two. Backend authorization had already blocked detail access; the Android session-scoped UI state fix now passes physical retest, with Inspector Two showing no unrelated inspection.
 - OPEN ACCEPTANCE ITEMS — manual admin-create flow, direct ACKNOWLEDGED observation, READY persistence after refresh/restart, assignment history, and audit verification.
 
 Evidence recorded by:
