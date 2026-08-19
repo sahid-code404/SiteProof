@@ -7,14 +7,34 @@ from app.services.vision.feature_matcher import match_orb_affine
 
 def _feature_image(width: int = 640, height: int = 360) -> np.ndarray:
     image = np.full((height, width), 30, dtype=np.uint8)
-    for y in range(25, height, 40):
-        for x in range(25, width, 45):
-            cv2.circle(image, (x, y), 5, 220, -1)
-            cv2.rectangle(image, (x - 9, y - 9), (x + 9, y + 9), 110, 1)
+    rng = np.random.default_rng(42)
+    for index in range(75):
+        x = int(rng.integers(25, width - 25))
+        y = int(rng.integers(25, height - 25))
+        value = int(rng.integers(80, 245))
+        radius = int(rng.integers(3, 9))
+        if index % 3 == 0:
+            cv2.circle(image, (x, y), radius, value, -1)
+        elif index % 3 == 1:
+            cv2.rectangle(
+                image,
+                (x - radius, y - radius),
+                (x + radius, y + radius),
+                value,
+                -1,
+            )
+        else:
+            cv2.line(
+                image,
+                (x - radius * 2, y - radius),
+                (x + radius * 2, y + radius),
+                value,
+                2,
+            )
     cv2.putText(
         image,
-        "SITEPROOF ORB",
-        (120, 180),
+        "SITEPROOF ORB 5",
+        (105, 185),
         cv2.FONT_HERSHEY_SIMPLEX,
         1.1,
         245,
