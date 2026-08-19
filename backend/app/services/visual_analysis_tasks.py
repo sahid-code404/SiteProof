@@ -3,6 +3,7 @@ import uuid
 
 from app.db.session import SessionLocal
 from app.services.fusion.service import run_fusion_analysis_task
+from app.services.verification.tasks import run_verification_task
 from app.services.visual_analysis_service import analyze_session_visual_motion
 
 logger = logging.getLogger("siteproof.vision")
@@ -17,6 +18,7 @@ def run_visual_analysis_retry_task(session_id: uuid.UUID) -> None:
     finally:
         db.close()
 
-    # A Phase 5 retry can change the visual input for an existing Phase 6 result.
-    # Re-run the same version idempotently after the visual attempt finishes.
+    # A Phase 5 retry can change the visual input for Phase 6 and therefore the Phase 7
+    # trust result. Both downstream layers are recalculated version-safely.
     run_fusion_analysis_task(session_id, force=True)
+    run_verification_task(session_id, force=True)
