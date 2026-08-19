@@ -12,29 +12,31 @@ Last Completed:
 Build Status:
 
 Backend:
-PASS — exact Phase 2 head previously passed GitHub CI run #9, including fresh PostgreSQL migration, downgrade/re-upgrade, Ruff, and 14 backend tests.
+PASS — Phase 2 seed/login compatibility fix is covered by a regression test; fresh CI verification is required on the latest documentation head before closing the automated gate.
 
 Web:
-PASS — exact Phase 2 head previously passed GitHub CI run #9, including 5 Vitest tests, ESLint, and production build.
+PASS — no web behavior changed in the seed/login fix; fresh CI verification is required on the latest documentation head before closing the automated gate.
 
 Android:
-PASS (AUTOMATED) — exact Phase 2 head previously passed unit tests and `:app:assembleDebug` in GitHub CI run #9.
+PASS (AUTOMATED) — no Android behavior changed in the seed/login fix; fresh CI verification is required on the latest documentation head before closing the automated gate.
 
 Infrastructure:
-PENDING MANUAL RECHECK — the final acceptance still requires the real local Docker stack used by the physical-device flow.
+PASS (LOCAL SETUP OBSERVED) — on 2026-08-19 the web, backend, PostgreSQL 16, and MinIO containers were observed running; backend and PostgreSQL reported healthy.
 
 Database:
-PASS — PostgreSQL 16 fresh migration plus Phase 2 downgrade/re-upgrade passed in GitHub CI run #9.
+PASS — PostgreSQL-backed Phase 2 migrations are covered by CI; the local acceptance PostgreSQL container was observed healthy.
 
 Acceptance Status:
 IMPLEMENTED — HARDWARE TEST PENDING
 
 Known Issues:
-- Physical Android-device acceptance for the admin → inspector → ACKNOWLEDGE → READY flow has not been recorded.
+- RESOLVED IN CODE, RETEST PENDING: Phase 2 seed accounts used `@siteproof.local`, which current `EmailStr`/email-validator rejects with HTTP 422 before authentication. Seed accounts now use `@siteproof.example.com` and a regression test enforces login-schema compatibility.
+- Physical Android-device acceptance for the admin → inspector → ACKNOWLEDGE → READY flow has not been completed.
 - Phase 3 and later branches exist, but under the execution-controller rules they must not be treated as completed until the earliest outstanding acceptance milestone is closed.
 - `main` remains behind the stacked phase branches; do not merge/advance later phases while this acceptance gate is unresolved.
 
 Next Task:
-- Run the Phase 2 physical-device acceptance checklist in `docs/device-testing.md` against the real Docker/PostgreSQL backend.
-- Record actual device/environment/results only after the test is performed.
-- If the flow passes, update this file and `docs/implementation-log.md`, then evaluate Phase 3.16 real-device acceptance.
+- Pull the latest `phase2/inspection-management` branch locally.
+- Re-copy and rerun `scripts/seed_phase2.py` inside the backend container, then verify web login with `admin@siteproof.example.com`.
+- Continue the Phase 2 physical-device acceptance checklist in `docs/device-testing.md` and record only actual observations.
+- If the full device flow passes, update this file and `docs/implementation-log.md`, then evaluate Phase 3.16 real-device acceptance.
