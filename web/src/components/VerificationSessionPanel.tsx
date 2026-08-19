@@ -10,7 +10,13 @@ import {
   type EvidenceFile,
   type VisualChallengeAnalysis,
 } from '../lib/api'
+import {
+  getSessionFusionAnalysis,
+  type FusionChallengeAnalysis,
+} from '../lib/fusionApi'
+import { consistencyLabel, fusionAnalysisLabel } from '../lib/fusion'
 import { getStoredUser } from '../lib/auth'
+import { FusionMotionChart } from './FusionMotionChart'
 
 function formatDate(value?: string | null) {
   if (!value) return '—'
@@ -59,6 +65,25 @@ function metricNumber(value: unknown, digits = 1) {
   return typeof value === 'number' ? value.toFixed(digits) : '—'
 }
 
+function percentage(value?: number | null) {
+  return typeof value === 'number' ? `${Math.round(value * 100)}%` : '—'
+}
+
+function signedMilliseconds(value?: number | null) {
+  if (typeof value !== 'number') return '—'
+  return `${value >= 0 ? '+' : ''}${Math.round(value)} ms`
+}
+
+function fusionChallengeTitle(
+  analysis: FusionChallengeAnalysis,
+  challenges: ChallengeTimelineItem[],
+) {
+  const challenge = challenges.find((item) => item.id === analysis.challengeId)
+  return challenge
+    ? `Challenge ${challenge.sequenceNumber} — ${challengeLabel(challenge.type)}`
+    : challengeLabel(analysis.challengeType)
+}
+
 export function VerificationSessionPanel({ inspectionId }: { inspectionId: string }) {
   const role = getStoredUser()?.role
   const canReviewVisual = role === 'ADMIN' || role === 'REVIEWER'
@@ -82,6 +107,15 @@ export function VerificationSessionPanel({ inspectionId }: { inspectionId: strin
   const visual = useQuery({
     queryKey: ['visual-analysis', session.data?.id],
     queryFn: () => getSessionVisualAnalysis(session.data!.id),
+    enabled: canReviewVisual && Boolean(session.data?.id) && ['UPLOADED', 'PROCESSING'].includes(session.data?.status ?? ''),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      return status === 'PROCESSING' || status === 'PENDING' ? 3000 : false
+    },
+  })
+  const fusion = useQuery({
+    queryKey: ['fusion-analysis', session.data?.id],
+    queryFn: () => getSessionFusionAnalysis(session.data!.id),
     enabled: canReviewVisual && Boolean(session.data?.id) && ['UPLOADED', 'PROCESSING'].includes(session.data?.status ?? ''),
     refetchInterval: (query) => {
       const status = query.state.data?.status
@@ -136,7 +170,7 @@ export function VerificationSessionPanel({ inspectionId }: { inspectionId: strin
     <article className="panel">
       <p className="eyebrow">VERIFICATION SESSION</p>
       <div className="definition-grid">
-        <div><span>Status</span><strong>{item.status}</strong><small>{['UPLOADED', 'PROCESSING'].includes(item.status) ? 'Evidence received · visual analysis is separate from final authenticity' : 'Live capture/challenge/upload in progress'}</small></div>
+        <div><span>Status</span><strong>{item.status}</strong><small>{['UPLOADED', 'PROCESSING'].includes(item.status) ? 'Evidence received · cross-signal analysis remains separate from final authenticity' : 'Live capture/challenge/upload in progress'}</small></div>
         <div><span>Captured</span><strong>{formatDate(item.captureEndedAt)}</strong><small>Duration: {formatDuration(item.captureDurationMs)}</small></div>
       </div>
 
@@ -185,7 +219,7 @@ export function VerificationSessionPanel({ inspectionId }: { inspectionId: strin
       {canReviewVisual && ['UPLOADED', 'PROCESSING'].includes(item.status) ? (
         <div className="callout visual-analysis-panel">
           <strong>VISUAL MOTION ANALYSIS · CAMERA EVIDENCE</strong>
-          <p className="muted">Deterministic OpenCV analysis only. Sensor-camera consistency is intentionally not calculated until Phase 6.</p>
+          <p className="muted">Deterministic OpenCV camera-side evidence. It remains an independent input to Phase 6 rather than ground truth.</p>
           {visual.isLoading ? <p>Analyzing challenge video windows…</p> : null}
           {visual.isError ? <div className="notice error">{visual.error.message}</div> : null}
           {visual.data && visual.data.challenges.length === 0 ? <p className="muted">Visual analysis has not produced challenge results yet.</p> : null}
@@ -214,6 +248,64 @@ export function VerificationSessionPanel({ inspectionId }: { inspectionId: strin
         </div>
       ) : null}
 
+      {canReviewVisual && ['UPLOADED', 'PROCESSING'].includes(item.status) ? (
+        <div className="callout">
+          <strong>CROSS-SIGNAL ANALYSIS · PHYSICAL VS CAMERA</strong>
+          <p className="muted">
+            Phase 6 deterministically compares backend-derived phone motion with camera-side motion. A consistency result is not a final authenticity verdict.
+          </p>
+          {fusion.isLoading ? <p>Waiting for cross-signal analysis…</p> : null}
+          {fusion.isError ? <div className="notice error">{fusion.error.message}</div> : null}
+          {fusion.data ? <p><strong>{fusionAnalysisLabel(fusion.data.status)}</strong> · algorithm {fusion.data.fusionVersion}</p> : null}
+          {fusion.data?.status === 'PENDING' && fusion.data.challenges.length === 0 ? (
+            <p className="muted">Fusion starts only after both Phase 4 sensor analysis and Phase 5 visual analysis are available.</p>
+          ) : null}
+
+          {fusion.data?.challenges.map((analysis) => (
+            <div className="challenge-row visual-result-row" key={`fusion-${analysis.challengeId}`}>
+              <div>
+                <strong>{fusionChallengeTitle(analysis, latestAttempts)}</strong>
+                <small>{consistencyLabel(analysis.consistencyStatus)} · fusion confidence {percentage(analysis.fusionConfidence)}</small>
+              </div>
+              <div className="definition-grid">
+                <div>
+                  <span>Sensor motion</span>
+                  <strong>{analysis.sensorDirection} · {metricNumber(analysis.sensorAngleDeg)}°</strong>
+                  <small>Confidence {percentage(analysis.sensorConfidence)}</small>
+                </div>
+                <div>
+                  <span>Camera motion</span>
+                  <strong>{analysis.visualDirection} · {metricNumber(analysis.visualAngleDeg)}°</strong>
+                  <small>Confidence {percentage(analysis.visualConfidence)}</small>
+                </div>
+              </div>
+              <div className="challenge-metrics">
+                <small>Angle difference: {metricNumber(analysis.angleDifferenceDeg)}°</small>
+                <small>Start offset (camera − sensor): {signedMilliseconds(analysis.startOffsetMs)}</small>
+                <small>End offset: {signedMilliseconds(analysis.endOffsetMs)}</small>
+                <small>Best curve correlation: {metricNumber(analysis.motionCurveCorrelation, 2)}</small>
+                <small>Best limited lag: {signedMilliseconds(analysis.bestLagMs)}</small>
+                <small>Cross-signal consistency: {percentage(analysis.consistencyScore)}</small>
+              </div>
+              <FusionMotionChart sensor={analysis.sensorCurve} visual={analysis.visualCurve} />
+              {analysis.mismatchReasons.length ? (
+                <small><strong>Detected:</strong> {analysis.mismatchReasons.join(' · ')}</small>
+              ) : null}
+              {analysis.explanations.length ? <small>{analysis.explanations.join(' ')}</small> : null}
+            </div>
+          ))}
+
+          {fusion.data?.status === 'COMPLETE' ? (
+            <p>
+              <strong>Challenge consistency summary:</strong>{' '}
+              {fusion.data.summary.consistent} Consistent · {fusion.data.summary.partiallyConsistent} Partial ·{' '}
+              {fusion.data.summary.mismatch} Mismatch · {fusion.data.summary.inconclusive} Inconclusive
+              {fusion.data.summary.meanConsistencyScore == null ? '' : ` · Mean ${percentage(fusion.data.summary.meanConsistencyScore)}`}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="definition-grid">
         <div><span>Video</span><strong>{evidenceMark(item.evidence.video)}</strong></div>
         <div><span>Motion sensors</span><strong>{evidenceMark(item.evidence.sensorData)}</strong></div>
@@ -226,7 +318,9 @@ export function VerificationSessionPanel({ inspectionId }: { inspectionId: strin
           <p>Accelerometer: {item.sensorSummary.accelerometerSamples} samples · Gyroscope: {item.sensorSummary.gyroscopeSamples} · Rotation vector: {item.sensorSummary.rotationVectorSamples} · Location: {item.locationSummary?.locationSamples ?? 0}</p>
         </div>
       ) : null}
-      <p className="muted"><strong>Final authenticity:</strong> Not yet calculated. Phase 5 adds camera-side visual motion evidence but does not compare it with sensor-derived movement.</p>
+      <p className="muted">
+        <strong>Final authenticity:</strong> Not yet calculated. Phase 6 measures sensor-camera consistency only; the overall SiteProof trust score and VERIFIED / REVIEW REQUIRED decision belong to Phase 7.
+      </p>
       {video ? <button className="button ghost" onClick={previewVideo} disabled={loadingVideo}>{loadingVideo ? 'Loading evidence…' : 'Preview captured video'}</button> : null}
       {videoError ? <div className="notice error">{videoError}</div> : null}
       {videoUrl ? <video className="evidence-video" src={videoUrl} controls preload="metadata" /> : null}
