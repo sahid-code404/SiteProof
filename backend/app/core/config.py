@@ -81,6 +81,35 @@ class Settings(BaseSettings):
     vision_coverage_weight: float = 0.15
     vision_continuity_weight: float = 0.10
 
+    # Phase 6 visual-inertial consistency. These are prototype starting values from the
+    # specification, not measured real-device thresholds. Real Android trials must tune them.
+    fusion_analysis_version: str = "fusion-v1.0"
+    fusion_resample_hz: float = 20.0
+    fusion_max_alignment_lag_ms: int = 500
+    fusion_strong_angle_error_deg: float = 8.0
+    fusion_max_angle_error_deg: float = 25.0
+    fusion_relative_angle_error_full_penalty: float = 0.60
+    fusion_timing_excellent_ms: int = 150
+    fusion_timing_good_ms: int = 350
+    fusion_timing_weak_ms: int = 700
+    fusion_pass_threshold: float = 0.80
+    fusion_partial_threshold: float = 0.60
+    fusion_min_sensor_confidence: float = 0.50
+    fusion_min_visual_confidence: float = 0.50
+    fusion_strong_contradiction_confidence: float = 0.80
+    fusion_motion_floor_deg: float = 5.0
+    fusion_large_motion_deg: float = 25.0
+    fusion_min_scene_continuity_score: float = 0.55
+    fusion_scene_freeze_warning_ms: int = 1500
+    fusion_duration_mismatch_score: float = 0.35
+    fusion_max_sensor_uncompressed_bytes: int = 50 * 1024 * 1024
+    fusion_max_processing_seconds: float = 5.0
+    fusion_direction_weight: float = 0.25
+    fusion_magnitude_weight: float = 0.25
+    fusion_timing_weight: float = 0.20
+    fusion_correlation_weight: float = 0.20
+    fusion_duration_weight: float = 0.10
+
     storage_backend: str = "local"
     local_storage_path: str = "./siteproof-evidence"
     storage_endpoint_url: str | None = None
@@ -128,6 +157,26 @@ class Settings(BaseSettings):
         total = sum(weights.values())
         if total <= 0:
             return {name: 0.2 for name in weights}
+        return {name: value / total for name, value in weights.items()}
+
+    @property
+    def fusion_score_weights(self) -> dict[str, float]:
+        weights = {
+            "direction": self.fusion_direction_weight,
+            "magnitude": self.fusion_magnitude_weight,
+            "timing": self.fusion_timing_weight,
+            "correlation": self.fusion_correlation_weight,
+            "duration": self.fusion_duration_weight,
+        }
+        total = sum(weights.values())
+        if total <= 0:
+            return {
+                "direction": 0.25,
+                "magnitude": 0.25,
+                "timing": 0.20,
+                "correlation": 0.20,
+                "duration": 0.10,
+            }
         return {name: value / total for name, value in weights.items()}
 
 

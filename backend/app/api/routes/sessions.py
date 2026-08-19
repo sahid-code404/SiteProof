@@ -29,6 +29,7 @@ from app.services.evidence_upload_service import (
     accept_evidence_upload,
     complete_evidence_upload,
 )
+from app.services.fusion.tasks import run_visual_then_fusion_task
 from app.services.session_service import (
     abort_session,
     complete_capture,
@@ -38,7 +39,6 @@ from app.services.session_service import (
     start_capture,
 )
 from app.services.storage_service import get_storage_service
-from app.services.visual_analysis_service import run_visual_analysis_task
 
 router = APIRouter(tags=["verification-sessions"])
 
@@ -147,7 +147,7 @@ def complete_upload(
     current_user: User = Depends(get_current_user),
 ) -> VerificationSessionResponse:
     response = complete_evidence_upload(db, current_user, session_id, payload)
-    background_tasks.add_task(run_visual_analysis_task, session_id)
+    background_tasks.add_task(run_visual_then_fusion_task, session_id)
     return response
 
 
