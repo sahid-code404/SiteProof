@@ -11,6 +11,7 @@ from tests.phase3_helpers import (
     seed_identities,
     start_capture,
 )
+from tests.phase4_helpers import complete_required_challenges
 
 
 def test_session_creation_requires_ready_active_assignee(client, db):
@@ -120,6 +121,9 @@ def test_delayed_capture_completion_survives_offline_gap_if_capture_finished_in_
     )
     session_id = create_session(client, inspector_headers, inspection_id).json()["sessionId"]
     assert start_capture(client, inspector_headers, session_id).status_code == 200
+    # Phase 4 challenge issuance is intentionally online-only. Complete the active proof
+    # sequence before simulating a network gap in the final capture-completion receipt.
+    complete_required_challenges(client, inspector_headers, session_id)
 
     row = db.get(VerificationSession, uuid.UUID(session_id))
     simulated_start = datetime.now(timezone.utc) - timedelta(minutes=30)
