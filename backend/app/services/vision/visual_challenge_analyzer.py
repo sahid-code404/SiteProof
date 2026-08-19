@@ -194,15 +194,21 @@ def analyze_visual_challenge(
     affine_rotation_total = float(sum(item.rotation_degrees for item in usable))
 
     # Phase 4 left/right challenges are portrait yaw movements, so coherent horizontal
-    # scene translation is the primary visual signal. A pure image-plane rotation is kept
-    # as a fallback for transform sanity tests and unusual camera motion; it is explicitly
-    # labelled in diagnostics so Phase 6 will not confuse the two motion models.
+    # scene translation is the primary visual signal. If affine rotation clearly dominates,
+    # retain it as a labelled image-plane fallback for transform sanity tests/unusual motion.
     direction_signal = "HORIZONTAL_TRANSLATION" if horizontal else "VERTICAL_TRANSLATION"
     signed_angles = translation_angles
     total_signed_angle = translation_total
-    if horizontal and abs(translation_total) < 1.5 and abs(affine_rotation_total) >= 1.5:
-        signed_angles = [item.rotation_degrees for item in usable]
-        total_signed_angle = affine_rotation_total
+    affine_dominates = (
+        horizontal
+        and abs(affine_rotation_total) >= 2.0
+        and abs(affine_rotation_total) > abs(translation_total) * 1.5
+    )
+    if affine_dominates:
+        # Image content rotates opposite the camera about the optical axis. Negating the
+        # measured image-plane rotation preserves physical-camera LEFT/RIGHT semantics.
+        signed_angles = [-item.rotation_degrees for item in usable]
+        total_signed_angle = -affine_rotation_total
         direction_signal = "AFFINE_ROTATION_FALLBACK"
 
     direction = _direction_from_angle(total_signed_angle, horizontal)
