@@ -21,6 +21,9 @@ class StorageService:
     def read_bytes(self, key: str, *, max_bytes: int) -> bytes:
         raise NotImplementedError
 
+    def copy_to_file(self, key: str, destination: Path) -> StorageStat:
+        raise NotImplementedError
+
     def local_path(self, key: str) -> Path | None:
         return None
 
@@ -64,6 +67,12 @@ class LocalObjectStorage(StorageService):
         if target.stat().st_size > max_bytes:
             raise ValueError("Object exceeds allowed read size")
         return target.read_bytes()
+
+    def copy_to_file(self, key: str, destination: Path) -> StorageStat:
+        source = self._path(key)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+        return StorageStat(size_bytes=destination.stat().st_size)
 
     def local_path(self, key: str) -> Path | None:
         target = self._path(key)
@@ -114,6 +123,12 @@ class S3ObjectStorage(StorageService):
             raise ValueError("Object exceeds allowed read size")
         response = self.client.get_object(Bucket=self.bucket, Key=key)
         return response["Body"].read(max_bytes + 1)
+
+    def copy_to_file(self, key: str, destination: Path) -> StorageStat:
+        _validated_key(key)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        self.client.download_file(self.bucket, key, str(destination))
+        return StorageStat(size_bytes=destination.stat().st_size)
 
     def presigned_download_url(self, key: str, *, expires_seconds: int = 300) -> str | None:
         _validated_key(key)
