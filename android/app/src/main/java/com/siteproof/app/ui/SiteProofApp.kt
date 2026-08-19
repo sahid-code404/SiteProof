@@ -36,7 +36,12 @@ fun SiteProofApp() {
         )
     }
     val verificationRepository = remember(context, api) {
-        VerificationRepository(api, PendingEvidenceDatabase.get(context).pendingEvidenceDao())
+        val database = PendingEvidenceDatabase.get(context)
+        VerificationRepository(
+            api = api,
+            pendingDao = database.pendingEvidenceDao(),
+            challengeDao = database.activeChallengeDao(),
+        )
     }
     val authViewModel: AuthViewModel = viewModel(
         factory = SiteProofViewModelFactory { AuthViewModel(repository) },
