@@ -1,16 +1,40 @@
-# Project State
+# SiteProof Project State
 
-Current phase: **Phase 2 — Inspection Management & Assignment Workflow**
+Current Phase:
+Phase 2 — Inspection Management
 
-Implementation status: **code complete on the Phase 2 branch; automated CI and real-device acceptance determine merge/readiness.**
+Current Milestone:
+2.12 End-to-End Acceptance — Physical Android Device
 
-Phase 2 scope is intentionally limited to organization-aware inspection CRUD, inspector assignment/reassignment, lifecycle transitions through `READY`, audit events, the admin dashboard, and Android assignment viewing/acknowledgement/readiness.
+Last Completed:
+2.11 Audit Events — implemented and covered by automated tests
 
-Phase 3 camera and sensor acquisition must not begin until Phase 2 acceptance is complete.
+Build Status:
 
-Source of truth:
-1. `docs/project-spec.md`
-2. `docs/inspection-lifecycle.md`
-3. current repository code and passing tests
+Backend:
+PASS — exact Phase 2 head previously passed GitHub CI run #9, including fresh PostgreSQL migration, downgrade/re-upgrade, Ruff, and 14 backend tests.
 
-Never claim a phase is complete unless its acceptance criteria have actually been tested.
+Web:
+PASS — exact Phase 2 head previously passed GitHub CI run #9, including 5 Vitest tests, ESLint, and production build.
+
+Android:
+PASS (AUTOMATED) — exact Phase 2 head previously passed unit tests and `:app:assembleDebug` in GitHub CI run #9.
+
+Infrastructure:
+PENDING MANUAL RECHECK — the final acceptance still requires the real local Docker stack used by the physical-device flow.
+
+Database:
+PASS — PostgreSQL 16 fresh migration plus Phase 2 downgrade/re-upgrade passed in GitHub CI run #9.
+
+Acceptance Status:
+IMPLEMENTED — HARDWARE TEST PENDING
+
+Known Issues:
+- Physical Android-device acceptance for the admin → inspector → ACKNOWLEDGE → READY flow has not been recorded.
+- Phase 3 and later branches exist, but under the execution-controller rules they must not be treated as completed until the earliest outstanding acceptance milestone is closed.
+- `main` remains behind the stacked phase branches; do not merge/advance later phases while this acceptance gate is unresolved.
+
+Next Task:
+- Run the Phase 2 physical-device acceptance checklist in `docs/device-testing.md` against the real Docker/PostgreSQL backend.
+- Record actual device/environment/results only after the test is performed.
+- If the flow passes, update this file and `docs/implementation-log.md`, then evaluate Phase 3.16 real-device acceptance.
