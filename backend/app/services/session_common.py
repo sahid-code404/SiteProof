@@ -23,6 +23,9 @@ from app.services.audit_service import record_audit
 ACTIVE_SESSION_STATES = {
     VerificationSessionStatus.CREATED,
     VerificationSessionStatus.CAPTURING,
+    VerificationSessionStatus.CHALLENGES_IN_PROGRESS,
+    VerificationSessionStatus.CHALLENGES_COMPLETED,
+    VerificationSessionStatus.CHALLENGE_FAILED,
     VerificationSessionStatus.CAPTURE_COMPLETED,
     VerificationSessionStatus.UPLOADING,
     VerificationSessionStatus.UPLOAD_FAILED,
