@@ -140,17 +140,17 @@ class VerificationCaptureCoordinator(
         val issuedReceiveNs = SystemClock.elapsedRealtimeNanos()
         val issue = repository.issueChallenge(capture.prepared.session.sessionId)
         val startNs = SystemClock.elapsedRealtimeNanos()
-        repository.startChallenge(issue, startNs)
+        val startedIssue = repository.startChallenge(issue, startNs)
         val startRelativeNs = startNs - capture.captureStartNs
         activeChallenge = ActiveChallenge(
-            issue = issue,
+            issue = startedIssue,
             startedMonotonicNs = startNs,
             startRelativeNs = startRelativeNs,
             issuedRelativeMs = (issuedReceiveNs - capture.captureStartNs) / 1_000_000L,
             idempotencyKey = repository.challengeIdempotencyKey(capture.prepared.session.sessionId),
         )
         pendingSubmission = null
-        return issue
+        return startedIssue
     }
 
     fun movementDetected(): Boolean {
@@ -164,7 +164,7 @@ class VerificationCaptureCoordinator(
     suspend fun submitCurrentChallenge(): ChallengeValidationResult {
         val capture = checkNotNull(active) { "Capture is not active." }
         val challenge = checkNotNull(activeChallenge) { "No challenge is active." }
-        val request = pendingSubmission ?: buildSubmission(capture, challenge).also { pendingSubmission = it }
+        val request = pendingSubmission ?: buildSubmission(challenge).also { pendingSubmission = it }
         preserveChallengeEvidence(capture, challenge, request)
         val result = repository.submitChallenge(challenge.issue, request)
         val completedRelativeMs = captureElapsedMs()
@@ -184,10 +184,7 @@ class VerificationCaptureCoordinator(
 
     suspend fun retryCurrentChallengeSubmission(): ChallengeValidationResult = submitCurrentChallenge()
 
-    private fun buildSubmission(
-        capture: ActiveCapture,
-        challenge: ActiveChallenge,
-    ): ChallengeSubmitRequest {
+    private fun buildSubmission(challenge: ActiveChallenge): ChallengeSubmitRequest {
         val endRelativeNs = sensorRecorder.relativeNowNs(SystemClock.elapsedRealtimeNanos())
         val slice = sensorRecorder.challengeSlice(challenge.startRelativeNs, endRelativeNs)
         require(slice.samples.isNotEmpty()) { "No challenge sensor samples were recorded." }
@@ -242,7 +239,8 @@ class VerificationCaptureCoordinator(
             val cameraResult = cameraManager.stopRecording()
             val sensorCounts = sensorRecorder.stop()
             val locations = locationRecorder.stopCapture()
-            val durationMs = cameraResult.recordedDurationNs / 1_000_000L
+            val durationMs =
+                (cameraResult.videoEndMonotonicNs - cameraResult.videoStartMonotonicNs) / 1_000_000L
             require(durationMs >= 8_000L) { "Capture must be at least 8 seconds." }
             require(durationMs <= 60_000L) { "Capture exceeded the 60 second maximum." }
             require(locations.isNotEmpty()) { "No GPS samples were recorded during capture." }
@@ -267,8 +265,7 @@ class VerificationCaptureCoordinator(
                 captureComplete = complete,
                 challenges = challengeTimeline.toList(),
             )
-            runCatching { repository.captureComplete(capture.prepared.session.sessionId, complete) }
-                .getOrElse { throw it }
+            repository.captureComplete(capture.prepared.session.sessionId, complete)
             repository.savePending(capture.prepared.inspection.id, capture.prepared.session.sessionId, evidence)
             repository.clearChallengeState(capture.prepared.session.sessionId)
             EvidenceUploadWorker.enqueue(context, capture.prepared.session.sessionId)
