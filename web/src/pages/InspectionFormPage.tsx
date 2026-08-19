@@ -125,9 +125,19 @@ export function InspectionFormPage() {
         }))
         try {
           const resolved = await reverseLocation(latitude, longitude)
-          if (resolved) applyLocation(resolved)
+          if (resolved) {
+            setForm((current) => ({
+              ...current,
+              latitude: latitude.toFixed(6),
+              longitude: longitude.toFixed(6),
+              locationName: resolved.name || current.locationName,
+              locationAddress: resolved.address || current.locationAddress,
+            }))
+            setSearchQuery(resolved.displayName)
+            setSearchResults([])
+          }
         } catch {
-          // Coordinates are still useful if reverse geocoding is temporarily unavailable.
+          // Exact browser coordinates are still useful if reverse geocoding is unavailable.
         } finally {
           setLocating(false)
         }
