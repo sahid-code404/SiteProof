@@ -7,6 +7,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.siteproof.app.verification.model.ChallengeIssue
 import com.siteproof.app.verification.model.ChallengeValidationResult
+import com.siteproof.app.verification.sensors.ChallengeGuidanceStatus
+import com.siteproof.app.verification.sensors.ChallengeMovementGuidance
 import java.io.IOException
 import java.time.Duration
 import java.time.Instant
@@ -31,6 +33,7 @@ sealed interface VerificationUiState {
         val remainingMs: Long,
         val elapsedMs: Long,
         val feedback: String,
+        val guidance: ChallengeMovementGuidance = ChallengeMovementGuidance(),
     ) : VerificationUiState
     data class ChallengeChecking(
         val prepared: VerificationCaptureCoordinator.Prepared,
@@ -80,6 +83,21 @@ class VerificationViewModel(
                 VerificationUiState.Ready(coordinator.prepare(inspectionId))
             } catch (error: Exception) {
                 VerificationUiState.Error(error.message ?: "Unable to prepare live verification.")
+            }
+        }
+    }
+
+    fun retryVerification() {
+        challengeJob?.cancel()
+        captureLimitJob?.cancel()
+        uploadJob?.cancel()
+        viewModelScope.launch {
+            runCatching { coordinator.abort("RETRY_REQUESTED") }
+            _state.value = VerificationUiState.Preparing
+            _state.value = try {
+                VerificationUiState.Ready(coordinator.prepare(inspectionId))
+            } catch (error: Exception) {
+                VerificationUiState.Error(error.message ?: "Unable to start a new verification.")
             }
         }
     }
@@ -190,10 +208,20 @@ class VerificationViewModel(
             while (true) {
                 val now = SystemClock.elapsedRealtime()
                 val remaining = (localDeadline - now).coerceAtLeast(0L)
+                val guidance = coordinator.challengeGuidance(challenge)
                 val feedback = when {
                     now < baselineEnd -> "Hold still for a moment…"
-                    movementSeenAt != null -> "Movement detected… hold steady."
-                    else -> "Perform the requested movement now."
+                    guidance.status == ChallengeGuidanceStatus.WRONG_DIRECTION ->
+                        "Wrong direction — follow the animated arrow."
+                    guidance.status == ChallengeGuidanceStatus.GOOD_RANGE ->
+                        "Good range — hold the phone steady."
+                    guidance.status == ChallengeGuidanceStatus.TOO_FAR ->
+                        "Too far — stop moving and hold steady."
+                    guidance.status == ChallengeGuidanceStatus.TOO_LITTLE && guidance.signedDegrees > 5.0 ->
+                        "Keep going — follow the guide."
+                    guidance.status == ChallengeGuidanceStatus.TOO_LITTLE ->
+                        "Start moving in the shown direction."
+                    else -> "Start moving in the shown direction."
                 }
                 _state.value = VerificationUiState.ChallengeActive(
                     prepared = prepared,
@@ -201,6 +229,7 @@ class VerificationViewModel(
                     remainingMs = remaining,
                     elapsedMs = coordinator.captureElapsedMs(),
                     feedback = feedback,
+                    guidance = guidance,
                 )
 
                 if (now >= baselineEnd && movementSeenAt == null && coordinator.movementDetected()) {
@@ -273,6 +302,15 @@ class VerificationViewModel(
         }
     }
 
+    fun retryChallenge() {
+        val current = _state.value as? VerificationUiState.ChallengeResultState ?: return
+        if (!current.result.retryAllowed || current.result.result == "PASS") return
+        challengeJob?.cancel()
+        challengeJob = viewModelScope.launch {
+            issueNextChallenge(current.prepared)
+        }
+    }
+
     private suspend fun handleChallengeResult(
         prepared: VerificationCaptureCoordinator.Prepared,
         result: ChallengeValidationResult,
@@ -282,12 +320,18 @@ class VerificationViewModel(
             result,
             coordinator.captureElapsedMs(),
         )
-        delay(900)
         if (result.sequenceComplete) {
+            delay(700)
             finishAfterChallenges(prepared)
-        } else {
-            issueNextChallenge(prepared)
+            return
         }
+        if (result.result != "PASS" && result.retryAllowed) {
+            // Stay on the result screen until the inspector explicitly asks for a fresh
+            // server-issued challenge. This never resubmits or reuses the completed evidence.
+            return
+        }
+        delay(800)
+        issueNextChallenge(prepared)
     }
 
     private suspend fun failChallengeProtocol(error: Exception, fallback: String) {
@@ -296,7 +340,7 @@ class VerificationViewModel(
         val detail = error.message?.takeIf { it.isNotBlank() }
         _state.value = VerificationUiState.Error(
             message = if (detail == null) fallback else "$fallback\n\n$detail",
-            canRetry = false,
+            canRetry = true,
         )
     }
 
@@ -315,7 +359,7 @@ class VerificationViewModel(
         } catch (error: Exception) {
             _state.value = VerificationUiState.Error(
                 error.message ?: "Unable to finalize challenge evidence.",
-                canRetry = false,
+                canRetry = true,
             )
         }
     }
@@ -328,6 +372,7 @@ class VerificationViewModel(
             coordinator.abort("APP_INTERRUPTED")
             _state.value = VerificationUiState.Error(
                 "Live proof was interrupted and this session was aborted. Start a new verification.",
+                canRetry = true,
             )
         }
     }
@@ -338,7 +383,10 @@ class VerificationViewModel(
         captureLimitJob?.cancel()
         viewModelScope.launch {
             coordinator.abort("USER_CANCELLED")
-            _state.value = VerificationUiState.Error("Verification aborted. Start a new live verification.")
+            _state.value = VerificationUiState.Error(
+                "Verification aborted. Start a new live verification.",
+                canRetry = true,
+            )
         }
     }
 
@@ -355,7 +403,7 @@ class VerificationViewModel(
                 val (message, status) = when (pending.uploadStatus) {
                     "UPLOADED" -> "Evidence submitted successfully. Challenge results are available; final authenticity is not yet calculated." to "UPLOADED"
                     "UPLOADING" -> "Uploading video, sensor, location and challenge timeline evidence…" to "UPLOADING"
-                    "FAILED" -> "Upload interrupted. Evidence is safely stored on this device and will retry when connected." to "FAILED"
+                    "FAILED" -> "Upload interrupted. Evidence is safely stored on this device. Automatic retry remains enabled, or retry now." to "FAILED"
                     else -> "Capture saved securely. Waiting for connection to upload." to pending.uploadStatus
                 }
                 _state.value = VerificationUiState.Captured(sessionId, status, message)
