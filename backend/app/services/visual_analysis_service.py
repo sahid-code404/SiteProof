@@ -13,8 +13,19 @@ from app.core.errors import SiteProofError
 from app.db.session import SessionLocal
 from app.models.challenge import VerificationChallenge
 from app.models.user import User
-from app.models.verification import EvidenceFile, EvidenceFileType, EvidenceUploadStatus, VerificationSession, VerificationSessionStatus
-from app.models.visual_motion import VisualAnalysisStatus, VisualDirection, VisualMotionResult, VisualQuality
+from app.models.verification import (
+    EvidenceFile,
+    EvidenceFileType,
+    EvidenceUploadStatus,
+    VerificationSession,
+    VerificationSessionStatus,
+)
+from app.models.visual_motion import (
+    VisualAnalysisStatus,
+    VisualDirection,
+    VisualMotionResult,
+    VisualQuality,
+)
 from app.schemas.visual_analysis import VisualAnalysisResponse, VisualChallengeAnalysisItem
 from app.services.audit_service import record_audit
 from app.services.storage_service import StorageService, get_storage_service
@@ -29,18 +40,37 @@ from app.services.vision.visual_challenge_analyzer import analyze_visual_challen
 
 logger = logging.getLogger("siteproof.vision")
 
+_TERMINAL_VISUAL_STATUSES = {
+    VisualAnalysisStatus.SUCCESS,
+    VisualAnalysisStatus.INCONCLUSIVE,
+}
 
-def _evidence_records(db: Session, session_id: uuid.UUID) -> dict[EvidenceFileType, EvidenceFile]:
+
+def _evidence_records(
+    db: Session,
+    session_id: uuid.UUID,
+) -> dict[EvidenceFileType, EvidenceFile]:
     return {
         item.file_type: item
-        for item in db.scalars(select(EvidenceFile).where(EvidenceFile.session_id == session_id)).all()
+        for item in db.scalars(
+            select(EvidenceFile).where(EvidenceFile.session_id == session_id)
+        ).all()
     }
 
 
-def _require_evidence(records: dict[EvidenceFileType, EvidenceFile], file_type: EvidenceFileType) -> EvidenceFile:
+def _require_evidence(
+    records: dict[EvidenceFileType, EvidenceFile],
+    file_type: EvidenceFileType,
+) -> EvidenceFile:
     record = records.get(file_type)
-    if record is None or record.upload_status != EvidenceUploadStatus.UPLOADED or not record.hash_verified:
-        raise VideoDecodeError(f"Required {file_type.value} evidence is unavailable or unverified")
+    if (
+        record is None
+        or record.upload_status != EvidenceUploadStatus.UPLOADED
+        or not record.hash_verified
+    ):
+        raise VideoDecodeError(
+            f"Required {file_type.value} evidence is unavailable or unverified"
+        )
     return record
 
 
@@ -54,6 +84,18 @@ def _load_metadata(storage: StorageService, record: EvidenceFile) -> dict:
     if not isinstance(value, dict):
         raise VideoDecodeError("Session metadata root must be an object")
     return value
+
+
+def _result_for_challenge(
+    db: Session,
+    challenge_id: uuid.UUID,
+) -> VisualMotionResult | None:
+    return db.scalar(
+        select(VisualMotionResult).where(
+            VisualMotionResult.challenge_id == challenge_id,
+            VisualMotionResult.analysis_version == get_settings().vision_analysis_version,
+        )
+    )
 
 
 def _upsert_result(
@@ -81,12 +123,7 @@ def _upsert_result(
     diagnostics: dict | None = None,
 ) -> VisualMotionResult:
     version = get_settings().vision_analysis_version
-    result = db.scalar(
-        select(VisualMotionResult).where(
-            VisualMotionResult.challenge_id == challenge.id,
-            VisualMotionResult.analysis_version == version,
-        )
-    )
+    result = _result_for_challenge(db, challenge.id)
     if result is None:
         result = VisualMotionResult(
             organization_id=session.organization_id,
@@ -98,6 +135,7 @@ def _upsert_result(
             visual_quality=quality,
         )
         db.add(result)
+
     result.analysis_status = status
     result.visual_direction = direction
     result.visual_quality = quality
@@ -119,6 +157,13 @@ def _upsert_result(
     return result
 
 
+def _restore_uploaded_state(db: Session, session: VerificationSession) -> None:
+    # PROCESSING is deliberately transient. Evidence upload completion remains the durable
+    # session state; per-challenge visual rows carry SUCCESS/INCONCLUSIVE/FAILED afterward.
+    if session.status == VerificationSessionStatus.PROCESSING:
+        session.status = VerificationSessionStatus.UPLOADED
+
+
 def _mark_failure(
     db: Session,
     *,
@@ -128,6 +173,10 @@ def _mark_failure(
     temporary: bool,
 ) -> None:
     for challenge in challenges:
+        existing = _result_for_challenge(db, challenge.id)
+        if existing is not None and existing.analysis_status in _TERMINAL_VISUAL_STATUSES:
+            # A later challenge failing must not erase an earlier defensible visual result.
+            continue
         _upsert_result(
             db,
             session=session,
@@ -145,8 +194,12 @@ def _mark_failure(
             entity_type="VERIFICATION_CHALLENGE",
             entity_id=challenge.id,
             action="VISUAL_ANALYSIS_FAILED",
-            metadata={"analysisVersion": get_settings().vision_analysis_version, "temporary": temporary},
+            metadata={
+                "analysisVersion": get_settings().vision_analysis_version,
+                "temporary": temporary,
+            },
         )
+    _restore_uploaded_state(db, session)
     db.commit()
 
 
@@ -161,14 +214,20 @@ def analyze_session_visual_motion(
     session = db.get(VerificationSession, session_id)
     if session is None:
         raise ValueError("Verification session does not exist")
-    if session.status not in {VerificationSessionStatus.UPLOADED, VerificationSessionStatus.PROCESSING}:
+    if session.status not in {
+        VerificationSessionStatus.UPLOADED,
+        VerificationSessionStatus.PROCESSING,
+    }:
         raise ValueError("Visual analysis requires a fully uploaded verification session")
 
     challenges = list(
         db.scalars(
             select(VerificationChallenge)
             .where(VerificationChallenge.session_id == session.id)
-            .order_by(VerificationChallenge.sequence_number, VerificationChallenge.attempt_number)
+            .order_by(
+                VerificationChallenge.sequence_number,
+                VerificationChallenge.attempt_number,
+            )
         ).all()
     )
     if not challenges:
@@ -182,8 +241,13 @@ def analyze_session_visual_motion(
             )
         ).all()
     )
-    terminal = {VisualAnalysisStatus.SUCCESS, VisualAnalysisStatus.INCONCLUSIVE}
-    if not force and len(existing) == len(challenges) and all(item.analysis_status in terminal for item in existing):
+    if (
+        not force
+        and len(existing) == len(challenges)
+        and all(item.analysis_status in _TERMINAL_VISUAL_STATUSES for item in existing)
+    ):
+        _restore_uploaded_state(db, session)
+        db.commit()
         return
 
     session.status = VerificationSessionStatus.PROCESSING
@@ -197,6 +261,13 @@ def analyze_session_visual_motion(
         metadata={"analysisVersion": settings.vision_analysis_version},
     )
     for challenge in challenges:
+        current = _result_for_challenge(db, challenge.id)
+        if (
+            not force
+            and current is not None
+            and current.analysis_status in _TERMINAL_VISUAL_STATUSES
+        ):
+            continue
         _upsert_result(
             db,
             session=session,
@@ -205,27 +276,32 @@ def analyze_session_visual_motion(
         )
     db.commit()
 
-    object_storage = storage or get_storage_service()
-    records = _evidence_records(db, session.id)
-    video_record = _require_evidence(records, EvidenceFileType.VIDEO)
-    metadata_record = _require_evidence(records, EvidenceFileType.SESSION_METADATA)
-    metadata = _load_metadata(object_storage, metadata_record)
-    metadata_challenges = challenge_metadata_by_id(metadata)
-
     started = time.monotonic()
     try:
+        object_storage = storage or get_storage_service()
+        records = _evidence_records(db, session.id)
+        video_record = _require_evidence(records, EvidenceFileType.VIDEO)
+        metadata_record = _require_evidence(records, EvidenceFileType.SESSION_METADATA)
+        metadata = _load_metadata(object_storage, metadata_record)
+        metadata_challenges = challenge_metadata_by_id(metadata)
+
         with tempfile.TemporaryDirectory(prefix="siteproof-vision-") as temp_dir:
             video_path = Path(temp_dir) / "capture.mp4"
             copied = object_storage.copy_to_file(video_record.storage_key, video_path)
             if copied.size_bytes != video_record.size_bytes:
-                raise VideoDecodeError("Materialized video size does not match stored evidence metadata")
+                raise VideoDecodeError(
+                    "Materialized video size does not match stored evidence metadata"
+                )
 
             video_metadata = inspect_video(video_path, settings)
             client_duration = int((metadata.get("capture") or {}).get("durationMs") or 0)
             if client_duration > 0:
+                three_frame_tolerance_ms = int(
+                    round(3.0 / video_metadata.fps * 1000.0)
+                )
                 duration_tolerance = max(
-                    settings.vision_timeline_tolerance_ms,
-                    int(round(3.0 / video_metadata.fps * 1000.0)),
+                    settings.vision_video_duration_tolerance_ms,
+                    three_frame_tolerance_ms,
                 )
                 if abs(video_metadata.duration_ms - client_duration) > duration_tolerance:
                     raise VideoDecodeError(
@@ -235,11 +311,23 @@ def analyze_session_visual_motion(
             video_offset_ms = video_start_relative_ms(metadata)
             for challenge in challenges:
                 if time.monotonic() - started > settings.vision_max_processing_seconds:
-                    raise TimeoutError("Visual analysis exceeded the configured processing limit")
+                    raise TimeoutError(
+                        "Visual analysis exceeded the configured processing limit"
+                    )
+
+                current = _result_for_challenge(db, challenge.id)
+                if (
+                    not force
+                    and current is not None
+                    and current.analysis_status in _TERMINAL_VISUAL_STATUSES
+                ):
+                    continue
 
                 item = metadata_challenges.get(str(challenge.id))
                 if item is None:
-                    raise ValueError(f"Challenge {challenge.id} is absent from client evidence metadata")
+                    raise ValueError(
+                        f"Challenge {challenge.id} is absent from client evidence metadata"
+                    )
                 started_relative_ms = int(
                     item.get("startedRelativeMs", item.get("issuedRelativeMs", -1))
                 )
@@ -336,6 +424,9 @@ def analyze_session_visual_motion(
                     },
                 )
                 db.commit()
+
+        _restore_uploaded_state(db, session)
+        db.commit()
     except (VideoDecodeError, ValueError) as exc:
         _mark_failure(
             db,
@@ -354,6 +445,17 @@ def analyze_session_visual_motion(
             temporary=True,
         )
         raise
+    except Exception:
+        # Unknown implementation failures are kept retryable for the prototype worker while
+        # still restoring the durable uploaded-evidence session state.
+        _mark_failure(
+            db,
+            session=session,
+            challenges=challenges,
+            message="Unexpected visual-analysis failure.",
+            temporary=True,
+        )
+        raise
 
 
 def run_visual_analysis_task(session_id: uuid.UUID) -> None:
@@ -363,6 +465,11 @@ def run_visual_analysis_task(session_id: uuid.UUID) -> None:
     except Exception:
         logger.exception("visual analysis failed for session %s", session_id)
     finally:
+        # Defensive recovery for exceptions that occur before analysis can classify them.
+        session = db.get(VerificationSession, session_id)
+        if session is not None:
+            _restore_uploaded_state(db, session)
+            db.commit()
         db.close()
 
 
@@ -370,7 +477,10 @@ def _overall_status(items: list[VisualMotionResult]) -> VisualAnalysisStatus:
     if not items:
         return VisualAnalysisStatus.PENDING
     statuses = {item.analysis_status for item in items}
-    if VisualAnalysisStatus.PROCESSING in statuses or VisualAnalysisStatus.PENDING in statuses:
+    if (
+        VisualAnalysisStatus.PROCESSING in statuses
+        or VisualAnalysisStatus.PENDING in statuses
+    ):
         return VisualAnalysisStatus.PROCESSING
     if VisualAnalysisStatus.FAILED in statuses:
         return VisualAnalysisStatus.FAILED
@@ -386,24 +496,38 @@ def get_visual_analysis(
 ) -> VisualAnalysisResponse:
     session = db.get(VerificationSession, session_id)
     if session is None or session.organization_id != current_user.organization_id:
-        raise SiteProofError(404, "SESSION_NOT_FOUND", "Verification session was not found.")
+        raise SiteProofError(
+            404,
+            "SESSION_NOT_FOUND",
+            "Verification session was not found.",
+        )
 
-    challenges = {
-        item.id: item
-        for item in db.scalars(
-            select(VerificationChallenge).where(VerificationChallenge.session_id == session.id)
+    challenge_rows = list(
+        db.scalars(
+            select(VerificationChallenge)
+            .where(VerificationChallenge.session_id == session.id)
+            .order_by(
+                VerificationChallenge.sequence_number,
+                VerificationChallenge.attempt_number,
+            )
         ).all()
+    )
+    challenges = {item.id: item for item in challenge_rows}
+    order = {
+        item.id: (item.sequence_number, item.attempt_number)
+        for item in challenge_rows
     }
     results = list(
         db.scalars(
-            select(VisualMotionResult)
-            .where(
+            select(VisualMotionResult).where(
                 VisualMotionResult.session_id == session.id,
-                VisualMotionResult.analysis_version == get_settings().vision_analysis_version,
+                VisualMotionResult.analysis_version
+                == get_settings().vision_analysis_version,
             )
-            .order_by(VisualMotionResult.created_at)
         ).all()
     )
+    results.sort(key=lambda item: order.get(item.challenge_id, (10_000, 10_000)))
+
     items: list[VisualChallengeAnalysisItem] = []
     for result in results:
         challenge = challenges.get(result.challenge_id)
