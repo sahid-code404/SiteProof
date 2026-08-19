@@ -138,7 +138,10 @@ def complete_evidence_upload(
     storage: StorageService | None = None,
 ) -> VerificationSessionResponse:
     session = owned_session(db, current_user, session_id)
-    if session.status == VerificationSessionStatus.UPLOADED:
+    # Phase 5 may move an already-uploaded session into PROCESSING immediately. Preserve
+    # Phase 3's idempotent completion receipt so a delayed/retried Android request does not
+    # become an invalid state transition merely because background analysis has started.
+    if session.status in {VerificationSessionStatus.UPLOADED, VerificationSessionStatus.PROCESSING}:
         if session.manifest_sha256 == payload.manifest_sha256:
             return session_response(db, session)
         raise SiteProofError(409, "UPLOAD_ALREADY_COMPLETED", "Evidence upload is already complete.")
