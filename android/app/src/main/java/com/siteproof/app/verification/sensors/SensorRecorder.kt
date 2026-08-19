@@ -92,6 +92,27 @@ class SensorRecorder(context: Context) : SensorEventListener {
         )
     }
 
+    fun challengeGuidance(
+        challengeType: String,
+        startRelativeNs: Long,
+        endRelativeNs: Long,
+        targetDegrees: Double,
+        minDegrees: Double,
+        maxDegrees: Double,
+    ): ChallengeMovementGuidance = synchronized(lock) {
+        ChallengeGuidanceMath.estimate(
+            samples = challengeBuffer.filter {
+                it.type == "GYROSCOPE" &&
+                    it.relativeTimestampNs in startRelativeNs..endRelativeNs
+            },
+            challengeType = challengeType,
+            challengeStartRelativeNs = startRelativeNs,
+            targetDegrees = targetDegrees,
+            minDegrees = minDegrees,
+            maxDegrees = maxDegrees,
+        )
+    }
+
     fun movementDetected(startRelativeNs: Long, endRelativeNs: Long): Boolean = synchronized(lock) {
         challengeBuffer.asSequence()
             .filter {
