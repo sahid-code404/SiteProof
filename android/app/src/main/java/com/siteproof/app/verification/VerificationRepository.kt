@@ -88,6 +88,15 @@ class VerificationRepository(
         return started
     }
 
+    suspend fun preserveChallengeEvidence(challengeId: String, evidencePath: String) {
+        challengeDao.updateSubmission(
+            challengeId = challengeId,
+            state = "STARTED",
+            submissionStatus = "SAVED_FOR_RETRY",
+            evidencePath = evidencePath,
+        )
+    }
+
     suspend fun submitChallenge(issue: ChallengeIssue, request: ChallengeSubmitRequest): ChallengeValidationResult {
         challengeDao.updateSubmission(issue.challengeId, "STARTED", "SUBMITTING", null)
         return try {
@@ -95,7 +104,6 @@ class VerificationRepository(
                 challengeDao.updateSubmission(issue.challengeId, it.result, "SUBMITTED", null)
             }
         } catch (error: Exception) {
-            challengeDao.updateSubmission(issue.challengeId, "STARTED", "SAVED_FOR_RETRY", null)
             throw error
         }
     }
