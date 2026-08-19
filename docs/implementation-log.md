@@ -85,3 +85,29 @@ Still required before closing Phase 2.12:
 
 Current acceptance status:
 - **PARTIAL — REAL DEVICE FLOW REACHED READY; FINAL ACCEPTANCE CHECKS REMAIN**.
+
+## 2026-08-19 — Phase 2.12 inspector account-switch isolation defect
+
+Observed on physical device:
+- The user signed out from Inspector One and authenticated as Inspector Two.
+- The Inspector Two `My Inspections` list still displayed the prior `Verify repaired pothole` card from Inspector One.
+- Opening that card returned `HTTP 404 Not Found`.
+
+Root cause:
+- Server-side assignee scoping was correct: Inspector Two was denied the detail resource.
+- Android already cleared its persisted inspection cache on login/logout, but the Compose navigation graph and `InspectionsViewModel` survived the account switch and retained Inspector One's in-memory list state.
+
+Fix implemented:
+- Added `InspectionRepository.sessionScopeKey()`, based on a SHA-256 fingerprint of the current access token. The raw token is not logged or persisted by this session-scoping mechanism.
+- Scoped the authenticated `NavHost`, inspection-list ViewModel, and inspection-detail ViewModels to that authentication-session key so an account switch creates fresh UI state and disposes the previous inspector graph.
+- Kept the existing persisted cache clearing behavior on both login and logout.
+- Added Android unit tests proving account logins produce different session scopes, login clears the previous inspection cache, and logout clears both session and cache state.
+
+Automated verification:
+- Full CI run #283 passed backend migration/downgrade, Ruff, pytest, web tests/lint/build, Android unit tests, and debug APK assembly.
+- CI run #285 built and uploaded a replacement debug APK configured for `http://192.168.1.102:8000/api/v1/` with the isolation fix.
+- The CI workflow was restored to its generic build configuration immediately afterward.
+
+Acceptance status:
+- **PARTIAL — FIX IMPLEMENTED; PHYSICAL ISOLATION RETEST PENDING**.
+- Phase 2.12 remains open until Inspector Two no longer sees Inspector One's inspection and the remaining acceptance checks are completed.
