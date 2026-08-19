@@ -4,10 +4,10 @@ Current Phase:
 Phase 2 — Inspection Management
 
 Current Milestone:
-2.12 End-to-End Acceptance — Physical Android Device
+2.12 End-to-End Acceptance — COMPLETE
 
 Last Completed:
-2.11 Audit Events — implemented and covered by automated tests
+2.12 End-to-End Acceptance — physical Android + real local backend/PostgreSQL acceptance passed on 2026-08-19
 
 Build Status:
 
@@ -18,28 +18,40 @@ Web:
 PASS — CI run #283 passed tests, lint, and production build.
 
 Android:
-PASS (AUTOMATED + REAL-DEVICE ACCEPTANCE IN PROGRESS) — CI run #283 passed Android unit tests and debug APK assembly with the account-switch isolation fix. CI run #285 built the replacement physical-device APK configured for `192.168.1.102`; physical account-switch isolation, manual inspection delivery, Android acknowledgement, and web-backed acknowledgement persistence have now passed.
+PASS — CI run #283 passed Android unit tests and debug APK assembly. CI run #285 built the replacement physical-device APK configured for `192.168.1.102`; the real-device acceptance flow completed successfully.
 
 Infrastructure:
-PASS (LOCAL SETUP OBSERVED) — on 2026-08-19 the web, backend, PostgreSQL 16, and MinIO containers were observed running; backend and PostgreSQL reported healthy.
+PASS (LOCAL SETUP OBSERVED) — web, backend, PostgreSQL 16, and MinIO were observed running on 2026-08-19; backend and PostgreSQL reported healthy.
 
 Database:
-PASS — PostgreSQL-backed Phase 2 migrations are covered by CI; the local acceptance PostgreSQL container was observed healthy.
+PASS — PostgreSQL-backed Phase 2 migrations are covered by CI; the local acceptance PostgreSQL container was observed healthy and the real acceptance audit trail was queried successfully.
 
 Acceptance Status:
-PARTIAL — ACKNOWLEDGED PERSISTENCE PASSED; FINAL CHECKS REMAIN
+**PASS — PHASE 2 COMPLETE**
 
-Known Issues:
-- RESOLVED AND RETESTED: the former `@siteproof.local` seed accounts were rejected by current email validation. The seed now uses/migrates to `@siteproof.example.com`, local reseeding succeeded, and direct admin login returned HTTP 200.
-- The physical Android app authenticated against the real local backend, loaded the assigned `Verify repaired pothole` inspection, and reached `READY` on the user's real phone.
-- RESOLVED AND RETESTED: after switching from Inspector One to Inspector Two, the old Android build retained Inspector One's stale inspection card. Server authorization already blocked detail access with HTTP 404. The authenticated Compose navigation/ViewModel graph is now session-scoped, and the replacement APK physical retest showed Inspector Two with `No inspections assigned.`
-- PASSED: a new inspection named `Phase 2 Final Test` was manually created through the admin flow, appeared for Inspector One on the real Android device in `ASSIGNED`, changed to `ACKNOWLEDGED` after the Android action, and the refreshed admin web dashboard also showed `ACKNOWLEDGED`, confirming backend/database persistence.
-- Phase 2.12 still requires explicit `READY` persistence after refresh/restart, assignment-history verification, and audit-record verification.
-- Phase 3 and later branches exist, but under the execution-controller rules they must not be treated as completed until this earliest outstanding acceptance milestone is closed.
-- `main` remains behind the stacked phase branches; do not merge/advance later phases while this acceptance gate is unresolved.
+Observed real acceptance:
+- corrected seed migration completed successfully against the existing PostgreSQL volume;
+- direct admin login returned HTTP 200;
+- admin manually created `Phase 2 Final Test` and assigned Inspector One;
+- the physical Android device authenticated and received the assignment;
+- Inspector One changed the inspection from `ASSIGNED` → `ACKNOWLEDGED` → `READY`;
+- the refreshed web dashboard persisted `ACKNOWLEDGED`;
+- `READY` persisted after fully closing and reopening the Android app;
+- Inspector Two account-switch isolation passed on the fixed APK with `No inspections assigned.`;
+- admin assignment history showed Inspector One as the active assignment;
+- direct backend/PostgreSQL audit query returned, in order, `INSPECTION_CREATED`, `INSPECTION_ASSIGNED`, `INSPECTION_ACKNOWLEDGED`, and `INSPECTION_READY` for inspection `bfa76c9d-898e-443a-ab96-065f37c16627`.
 
-Next Task:
-- On Android, mark `Phase 2 Final Test` as `READY`.
-- Fully close SiteProof, reopen it, refresh, and confirm `Phase 2 Final Test` still shows `READY`.
-- Verify assignment history and audit records for `Phase 2 Final Test`.
-- If every remaining item passes, mark Phase 2.12 PASS, update `docs/implementation-log.md`, and only then evaluate Phase 3.16 real-device acceptance.
+Resolved acceptance defects:
+- `@siteproof.local` demo addresses conflicted with the real email-validation contract; migrated to `@siteproof.example.com`.
+- reseeding an existing database initially collided with inspector employee-code uniqueness; the seed now migrates legacy identities in place and is idempotent.
+- Android account switching retained the prior inspector's in-memory list; authenticated navigation/ViewModel state is now session-scoped and the physical retest passed.
+
+Known non-blocking information:
+- physical handset model: NOT RECORDED;
+- Android version: NOT RECORDED;
+- no values are inferred or fabricated for those fields.
+
+Next earliest incomplete gate:
+**Phase 3 — Live Capture, Location & Multi-Sensor Evidence Collection: real-device acceptance on branch `phase3/live-capture`.**
+
+Phase 3 automated code already exists in a stacked draft PR, but its real-device acceptance remains open. The next acceptance must prove one real CameraX capture plus real sensor/location evidence, app-private evidence packaging, offline retention/retry, upload to the backend, and admin evidence display. Do not treat Phase 4+ acceptance as complete until the earlier physical gates are closed.
