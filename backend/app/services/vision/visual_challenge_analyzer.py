@@ -2,6 +2,7 @@ import math
 from statistics import median
 
 import numpy as np
+from scipy.stats import median_abs_deviation
 
 from app.core.config import Settings
 from app.models.challenge import ChallengeType
@@ -9,6 +10,7 @@ from app.models.visual_motion import VisualAnalysisStatus, VisualDirection, Visu
 from app.services.vision.continuity import analyze_continuity
 from app.services.vision.domain import AnalysisOutcome, MotionEstimate, VisualFrame
 from app.services.vision.feature_detector import detect_orb_count, detect_tracking_points
+from app.services.vision.feature_matcher import match_orb_affine
 from app.services.vision.motion_estimator import estimate_global_motion, physical_angle_from_translation
 from app.services.vision.optical_flow import track_points
 from app.services.vision.preprocessing import preprocess_frame
@@ -45,6 +47,22 @@ def _direction_from_angle(angle: float, horizontal: bool) -> VisualDirection:
     if horizontal:
         return VisualDirection.RIGHT if angle > 0 else VisualDirection.LEFT
     return VisualDirection.UP if angle > 0 else VisualDirection.DOWN
+
+
+def _robust_values(values: list[float]) -> tuple[list[float], int]:
+    """Reject isolated frame-pair estimates with a median/MAD temporal filter."""
+    if len(values) < 4:
+        return values, 0
+    array = np.asarray(values, dtype=np.float64)
+    center = float(np.median(array))
+    spread = float(median_abs_deviation(array, scale="normal", nan_policy="omit"))
+    if not np.isfinite(spread) or spread < 1e-6:
+        return values, 0
+    keep = np.abs(array - center) <= max(0.25, 3.5 * spread)
+    filtered = array[keep]
+    if len(filtered) < 2:
+        return values, 0
+    return [float(item) for item in filtered], int(len(array) - len(filtered))
 
 
 def _empty_outcome(
@@ -105,7 +123,10 @@ def analyze_visual_challenge(
         settings=settings,
     )
     if len(frames) < 3:
-        return _empty_outcome(continuity=continuity, reason="Too few decoded frames for motion analysis.")
+        return _empty_outcome(
+            continuity=continuity,
+            reason="Too few decoded frames for motion analysis.",
+        )
 
     grays = [preprocess_frame(frame.image, settings.vision_max_width) for frame in frames]
     orb_counts = [detect_orb_count(gray, settings.vision_max_features) for gray in grays]
@@ -151,7 +172,11 @@ def analyze_visual_challenge(
             quality=quality,
         )
         return AnalysisOutcome(
-            **{**outcome.__dict__, "feature_count": feature_count, "tracked_feature_count": tracked_count}
+            **{
+                **outcome.__dict__,
+                "feature_count": feature_count,
+                "tracked_feature_count": tracked_count,
+            }
         )
     if len(motion_estimates) < 2:
         outcome = _empty_outcome(
@@ -160,7 +185,11 @@ def analyze_visual_challenge(
             quality=quality,
         )
         return AnalysisOutcome(
-            **{**outcome.__dict__, "feature_count": feature_count, "tracked_feature_count": tracked_count}
+            **{
+                **outcome.__dict__,
+                "feature_count": feature_count,
+                "tracked_feature_count": tracked_count,
+            }
         )
 
     horizontal = challenge_type in {ChallengeType.ROTATE_LEFT, ChallengeType.ROTATE_RIGHT}
@@ -176,11 +205,15 @@ def analyze_visual_challenge(
             quality=quality,
         )
         return AnalysisOutcome(
-            **{**outcome.__dict__, "feature_count": feature_count, "tracked_feature_count": tracked_count}
+            **{
+                **outcome.__dict__,
+                "feature_count": feature_count,
+                "tracked_feature_count": tracked_count,
+            }
         )
 
     frame_height, frame_width = grays[0].shape[:2]
-    translation_angles = [
+    raw_translation_angles = [
         physical_angle_from_translation(
             item,
             frame_width=frame_width,
@@ -190,8 +223,12 @@ def analyze_visual_challenge(
         )
         for item in usable
     ]
+    translation_angles, translation_outliers = _robust_values(raw_translation_angles)
+    affine_angles, affine_outliers = _robust_values(
+        [item.rotation_degrees for item in usable]
+    )
     translation_total = float(sum(translation_angles))
-    affine_rotation_total = float(sum(item.rotation_degrees for item in usable))
+    affine_rotation_total = float(sum(affine_angles))
 
     # Phase 4 left/right challenges are portrait yaw movements, so coherent horizontal
     # scene translation is the primary visual signal. If affine rotation clearly dominates,
@@ -207,12 +244,11 @@ def analyze_visual_challenge(
     if affine_dominates:
         # Image content rotates opposite the camera about the optical axis. Negating the
         # measured image-plane rotation preserves physical-camera LEFT/RIGHT semantics.
-        signed_angles = [-item.rotation_degrees for item in usable]
+        signed_angles = [-value for value in affine_angles]
         total_signed_angle = -affine_rotation_total
         direction_signal = "AFFINE_ROTATION_FALLBACK"
 
     direction = _direction_from_angle(total_signed_angle, horizontal)
-
     dominant_sign = 1.0 if total_signed_angle >= 0 else -1.0
     meaningful_angles = [value for value in signed_angles if abs(value) >= 0.05]
     sign_support = [
@@ -223,7 +259,10 @@ def analyze_visual_challenge(
     consistency = len(sign_support) / float(max(1, len(meaningful_angles)))
     inlier_ratio = float(np.mean([item.inlier_ratio for item in usable]))
     coverage = float(np.mean([item.feature_coverage for item in usable]))
-    feature_quality = min(1.0, feature_count / float(max(1, settings.vision_min_features * 2)))
+    feature_quality = min(
+        1.0,
+        feature_count / float(max(1, settings.vision_min_features * 2)),
+    )
 
     weights = settings.vision_confidence_weights
     confidence = (
@@ -235,7 +274,11 @@ def analyze_visual_challenge(
     )
     confidence = max(0.0, min(1.0, confidence))
 
-    motion_pairs = [item for item in usable if item.median_flow_px >= settings.vision_motion_threshold_px]
+    motion_pairs = [
+        item
+        for item in usable
+        if item.median_flow_px >= settings.vision_motion_threshold_px
+    ]
     motion_start_ms = motion_pairs[0].timestamp_ms if motion_pairs else None
     motion_end_ms = motion_pairs[-1].timestamp_ms if motion_pairs else None
     translation_x = float(sum(item.translation_x for item in usable))
@@ -248,6 +291,7 @@ def analyze_visual_challenge(
         frames[-1].session_time_ms,
         settings,
     )
+    orb_match = match_orb_affine(grays[0], grays[-1], settings)
 
     reasons: list[str] = []
     status = VisualAnalysisStatus.SUCCESS
@@ -258,9 +302,15 @@ def analyze_visual_challenge(
         status = VisualAnalysisStatus.INCONCLUSIVE
         reasons.append("Visual motion confidence is below the analysis threshold.")
     else:
-        reasons.append("Visual motion was estimated from a dominant RANSAC-supported scene transform.")
+        reasons.append(
+            "Visual motion was estimated from a dominant RANSAC-supported scene transform."
+        )
+    if translation_outliers + affine_outliers > 0:
+        reasons.append("Isolated frame-pair motion estimates were removed by robust temporal filtering.")
     if continuity.scene_cut_detected:
-        reasons.append("An abrupt scene-continuity change was detected inside the analyzed window.")
+        reasons.append(
+            "An abrupt scene-continuity change was detected inside the analyzed window."
+        )
     if continuity.freeze_duration_ms > 0:
         reasons.append("Repeated-frame behavior was measured in the analyzed window.")
     if quality == VisualQuality.POOR:
@@ -292,6 +342,7 @@ def analyze_visual_challenge(
     diagnostics = {
         "framePairsAnalyzed": len(motion_estimates),
         "ransacSupportedPairs": len(usable),
+        "temporalOutlierPairs": max(translation_outliers, affine_outliers),
         "motionConsistency": round(consistency, 4),
         "featureCoverage": round(coverage, 4),
         "foregroundOutlierRatio": round(max(0.0, 1.0 - inlier_ratio), 4),
@@ -305,7 +356,7 @@ def analyze_visual_challenge(
         "directionSignal": direction_signal,
         "translationAngleDegrees": round(translation_total, 3),
         "accumulatedAffineRotationDegrees": round(affine_rotation_total, 3),
-        "directStartEnd": (
+        "directStartEndOpticalFlow": (
             {
                 "affineRotationDegrees": round(direct_estimate.rotation_degrees, 3),
                 "translationX": round(direct_estimate.translation_x, 3),
@@ -315,7 +366,24 @@ def analyze_visual_challenge(
             if direct_estimate is not None
             else None
         ),
-        "rawTrackingPointMedian": int(round(median(raw_tracked_counts))) if raw_tracked_counts else 0,
+        "directStartEndOrbMatching": (
+            {
+                "featuresStart": orb_match.detected_start,
+                "featuresEnd": orb_match.detected_end,
+                "goodMatches": orb_match.good_matches,
+                "inliers": orb_match.inliers,
+                "inlierRatio": round(orb_match.inlier_ratio, 4),
+                "affineRotationDegrees": round(orb_match.rotation_degrees, 3),
+                "translationX": round(orb_match.translation_x, 3),
+                "translationY": round(orb_match.translation_y, 3),
+                "scale": round(orb_match.scale, 5),
+            }
+            if orb_match is not None
+            else None
+        ),
+        "rawTrackingPointMedian": (
+            int(round(median(raw_tracked_counts))) if raw_tracked_counts else 0
+        ),
         "coordinateConvention": (
             "RIGHT/LEFT primarily infer physical camera yaw opposite horizontal image translation; "
             "UP/DOWN infer physical pitch from vertical image translation. Pure image-plane affine "
