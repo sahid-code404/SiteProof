@@ -15,6 +15,7 @@ import com.siteproof.app.data.SiteProofApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -22,7 +23,7 @@ private val inspector = Inspector(
     id = "inspector-1",
     userId = "user-1",
     name = "Inspector One",
-    email = "inspector@siteproof.local",
+    email = "inspector@siteproof.example.com",
 )
 
 private fun inspection(status: String = "ASSIGNED") = InspectionSummary(
@@ -93,9 +94,9 @@ private class FakeApi(
     var failDetail: Boolean = false,
 ) : SiteProofApi {
     override suspend fun login(request: LoginRequest): LoginResponse = LoginResponse(
-        accessToken = "token",
+        accessToken = "token-${request.email}",
         tokenType = "bearer",
-        user = AuthUser("user-1", "org-1", request.email, "Inspector One", "INSPECTOR"),
+        user = AuthUser("user-${request.email}", "org-1", request.email, "Inspector", "INSPECTOR"),
     )
 
     override suspend fun inspections(page: Int, pageSize: Int): InspectionPage {
@@ -158,6 +159,39 @@ class InspectionRepositoryTest {
             FakeInspectionStore(),
         )
         repository.loadInspections()
+    }
+
+    @Test
+    fun `login clears previous inspector cache and changes session scope`() = runTest {
+        val cache = FakeInspectionStore(listOf(inspection()))
+        val repository = InspectionRepository(FakeApi(), FakeSessionStore(), cache)
+
+        repository.login("inspector1@siteproof.example.com", "password1234")
+        val firstScope = repository.sessionScopeKey()
+        assertTrue(cache.items.isEmpty())
+
+        cache.save(listOf(inspection()))
+        repository.login("inspector2@siteproof.example.com", "password1234")
+        val secondScope = repository.sessionScopeKey()
+
+        assertTrue(cache.items.isEmpty())
+        assertNotEquals(firstScope, secondScope)
+    }
+
+    @Test
+    fun `sign out clears session and cache`() = runTest {
+        val cache = FakeInspectionStore(listOf(inspection()))
+        val session = FakeSessionStore().apply {
+            accessToken = "token-inspector1"
+            inspectorName = "Inspector One"
+        }
+        val repository = InspectionRepository(FakeApi(), session, cache)
+
+        repository.signOut()
+
+        assertEquals("signed-out", repository.sessionScopeKey())
+        assertTrue(cache.items.isEmpty())
+        assertFalse(repository.hasSession())
     }
 
     @Test
