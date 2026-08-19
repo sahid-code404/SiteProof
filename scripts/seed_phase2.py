@@ -28,11 +28,14 @@ from app.models import (  # noqa: E402
 )
 
 ORG_NAME = "SiteProof Demo Authority"
-ADMIN_EMAIL = "admin@siteproof.local"
+# Use example.com addresses so the seed accounts satisfy the same EmailStr
+# validation enforced by the real login API. The previous *.local addresses
+# are rejected by current email-validator releases as special-use domains.
+ADMIN_EMAIL = "admin@siteproof.example.com"
 INSPECTORS = [
-    ("Inspector One", "inspector1@siteproof.local", "SP-I001"),
-    ("Inspector Two", "inspector2@siteproof.local", "SP-I002"),
-    ("Inspector Three", "inspector3@siteproof.local", "SP-I003"),
+    ("Inspector One", "inspector1@siteproof.example.com", "SP-I001"),
+    ("Inspector Two", "inspector2@siteproof.example.com", "SP-I002"),
+    ("Inspector Three", "inspector3@siteproof.example.com", "SP-I003"),
 ]
 
 
