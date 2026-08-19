@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.siteproof.app.data.InspectionDetail
 import com.siteproof.app.data.InspectionRepository
 import com.siteproof.app.data.InspectionSummary
+import com.siteproof.app.data.InspectorVerificationResponse
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -75,6 +76,7 @@ data class InspectionDetailState(
     val item: InspectionDetail? = null,
     val offline: Boolean = false,
     val actionInProgress: Boolean = false,
+    val verification: InspectorVerificationResponse? = null,
     val error: String? = null,
 )
 
@@ -92,9 +94,22 @@ class InspectionDetailViewModel(
             _state.value = _state.value.copy(loading = true, error = null)
             _state.value = try {
                 val (item, offline) = repository.loadInspection(inspectionId)
-                InspectionDetailState(loading = false, item = item, offline = offline)
+                val verification = if (!offline && item.status == "PROCESSING") {
+                    repository.loadInspectorVerification(inspectionId)
+                } else {
+                    null
+                }
+                InspectionDetailState(
+                    loading = false,
+                    item = item,
+                    offline = offline,
+                    verification = verification,
+                )
             } catch (error: Exception) {
-                InspectionDetailState(loading = false, error = error.message ?: "Unable to load inspection.")
+                InspectionDetailState(
+                    loading = false,
+                    error = error.message ?: "Unable to load inspection.",
+                )
             }
         }
     }
@@ -104,7 +119,9 @@ class InspectionDetailViewModel(
 
     private fun performAction(action: suspend () -> InspectionSummary) {
         if (_state.value.offline) {
-            _state.value = _state.value.copy(error = "Connect to the network before changing inspection status.")
+            _state.value = _state.value.copy(
+                error = "Connect to the network before changing inspection status.",
+            )
             return
         }
         viewModelScope.launch {
@@ -112,7 +129,11 @@ class InspectionDetailViewModel(
             try {
                 action()
                 val (item, offline) = repository.loadInspection(inspectionId)
-                _state.value = InspectionDetailState(loading = false, item = item, offline = offline)
+                _state.value = InspectionDetailState(
+                    loading = false,
+                    item = item,
+                    offline = offline,
+                )
             } catch (error: Exception) {
                 _state.value = _state.value.copy(
                     actionInProgress = false,

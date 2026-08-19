@@ -21,6 +21,17 @@ from app.models.inspection import (
 )
 from app.models.inspector import Inspector
 from app.models.organization import Organization
+from app.models.trust import (
+    ReviewDecision,
+    ReviewDecisionType,
+    VerificationPolicy,
+    VerificationProcessingStatus,
+    VerificationResult,
+    VerificationSignalResult,
+    VerificationSignalStatus,
+    VerificationSignalType,
+    VerificationVerdict,
+)
 from app.models.user import User, UserRole
 from app.models.verification import (
     EvidenceFile,
@@ -56,11 +67,20 @@ __all__ = [
     "MismatchReason",
     "MotionDirection",
     "Organization",
+    "ReviewDecision",
+    "ReviewDecisionType",
     "User",
     "UserRole",
     "VerificationChallenge",
+    "VerificationPolicy",
+    "VerificationProcessingStatus",
+    "VerificationResult",
     "VerificationSession",
     "VerificationSessionStatus",
+    "VerificationSignalResult",
+    "VerificationSignalStatus",
+    "VerificationSignalType",
+    "VerificationVerdict",
     "VisualAnalysisStatus",
     "VisualDirection",
     "VisualInertialResult",

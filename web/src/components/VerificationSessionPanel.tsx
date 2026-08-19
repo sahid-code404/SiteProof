@@ -170,7 +170,7 @@ export function VerificationSessionPanel({ inspectionId }: { inspectionId: strin
     <article className="panel">
       <p className="eyebrow">VERIFICATION SESSION</p>
       <div className="definition-grid">
-        <div><span>Status</span><strong>{item.status}</strong><small>{['UPLOADED', 'PROCESSING'].includes(item.status) ? 'Evidence received · cross-signal analysis remains separate from final authenticity' : 'Live capture/challenge/upload in progress'}</small></div>
+        <div><span>Status</span><strong>{item.status}</strong><small>{['UPLOADED', 'PROCESSING'].includes(item.status) ? 'Evidence received · Phase 7 verification is reported separately above' : 'Live capture/challenge/upload in progress'}</small></div>
         <div><span>Captured</span><strong>{formatDate(item.captureEndedAt)}</strong><small>Duration: {formatDuration(item.captureDurationMs)}</small></div>
       </div>
 
@@ -319,7 +319,7 @@ export function VerificationSessionPanel({ inspectionId }: { inspectionId: strin
         </div>
       ) : null}
       <p className="muted">
-        <strong>Final authenticity:</strong> Not yet calculated. Phase 6 measures sensor-camera consistency only; the overall SiteProof trust score and VERIFIED / REVIEW REQUIRED decision belong to Phase 7.
+        <strong>Evidence drill-down:</strong> These Phase 4–6 measurements feed the Phase 7 SiteProof verification report shown above. This panel remains source evidence, not a standalone authenticity verdict.
       </p>
       {video ? <button className="button ghost" onClick={previewVideo} disabled={loadingVideo}>{loadingVideo ? 'Loading evidence…' : 'Preview captured video'}</button> : null}
       {videoError ? <div className="notice error">{videoError}</div> : null}
