@@ -25,15 +25,15 @@ The first supported types are deliberately small and safe:
 
 `ChallengeGenerator` runs only on the backend. Android cannot choose a challenge type or request a target angle. For each issued challenge the server:
 
-1. chooses the current challenge family;
-2. chooses a direction;
+1. chooses the current challenge type from all supported Phase 4 types;
+2. filters the exact previous type to avoid monotonous immediate repetition;
 3. chooses a comfortable target angle inside the configured range;
 4. creates an acceptable lower/upper range around the target;
 5. generates a cryptographically random nonce with `secrets.token_urlsafe`;
 6. stores the challenge and expiry;
 7. returns only that challenge.
 
-The MVP sequence is configurable and defaults to three challenges. The generator uses a comfortable rotation/tilt/rotation cadence while direction and target remain random. The next challenge is not generated/revealed to Android until the current one has a terminal result.
+The MVP sequence is configurable and defaults to three challenges. The sequence number does **not** determine whether the next movement will be a rotation or tilt: challenge type, direction and target are selected on the server at issuance. The next challenge is not generated/revealed to Android until the current one has a terminal result.
 
 Default target ranges:
 
@@ -282,6 +282,8 @@ Challenge expiry defaults to 15 seconds. The server checks both server-side expi
 ## Network interruption
 
 Future challenges are never downloaded in a batch. If connectivity disappears after the current challenge starts, Android can finish the local sensor slice and stores its current active-challenge metadata/evidence in app-private storage/Room. It then waits for network before authoritative submission and before requesting a future challenge.
+
+Transport failures are distinguished from server challenge rejections. A genuine network failure enters the reconnect state with the current evidence preserved. A server-side rejection such as an invalid/stale challenge does not get mislabeled as “offline”; the security-focused client aborts that live proof rather than reusing stale evidence.
 
 The process-kill/background policy is intentionally stricter: a live proof session should remain foregrounded. Backgrounding/locking during an active challenge aborts the session rather than silently continuing capture.
 
