@@ -33,7 +33,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -41,6 +44,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.siteproof.app.verification.model.ChallengeIssue
+import com.siteproof.app.verification.model.ChallengeValidationResult
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 @Composable
@@ -53,16 +59,15 @@ fun VerificationScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val activity = context as? Activity
     var showAbortDialog by remember { mutableStateOf(false) }
+    val live = isLiveState(state)
 
     DisposableEffect(activity) {
         activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         onDispose { activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
     }
-    DisposableEffect(lifecycleOwner, state) {
+    DisposableEffect(lifecycleOwner, live) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP && state is VerificationUiState.Capturing) {
-                viewModel.abortForInterruption()
-            }
+            if (event == Lifecycle.Event.ON_STOP && live) viewModel.abortForInterruption()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -84,17 +89,19 @@ fun VerificationScreen(
     )
 
     BackHandler(enabled = state is VerificationUiState.Ready) { viewModel.cancelPrepared(onBack) }
-    BackHandler(enabled = state is VerificationUiState.Capturing) { showAbortDialog = true }
+    BackHandler(enabled = live) { showAbortDialog = true }
     if (showAbortDialog) {
         AlertDialog(
             onDismissRequest = { showAbortDialog = false },
-            title = { Text("Cancel verification?") },
-            text = { Text("The current live capture will be discarded and this session will be marked aborted.") },
+            title = { Text("Cancel live verification?") },
+            text = {
+                Text("The continuous capture and active challenge will be discarded. A new session will be required.")
+            },
             confirmButton = {
                 TextButton(onClick = { showAbortDialog = false; viewModel.abortByUser() }) { Text("Abort") }
             },
             dismissButton = {
-                TextButton(onClick = { showAbortDialog = false }) { Text("Continue capture") }
+                TextButton(onClick = { showAbortDialog = false }) { Text("Continue") }
             },
         )
     }
@@ -111,11 +118,38 @@ fun VerificationScreen(
                     viewModel::startCapture,
                     { viewModel.cancelPrepared(onBack) },
                 )
-                is VerificationUiState.Capturing -> LiveCapture(
+                is VerificationUiState.ChallengeLoading -> LiveLoading(
+                    current.prepared,
+                    lifecycleOwner,
+                    viewModel::bindCamera,
+                    "Requesting an unpredictable server challenge…",
+                    { showAbortDialog = true },
+                )
+                is VerificationUiState.ChallengeActive -> ChallengeActiveScreen(
                     current,
                     lifecycleOwner,
                     viewModel::bindCamera,
-                    viewModel::stopCapture,
+                    { showAbortDialog = true },
+                )
+                is VerificationUiState.ChallengeChecking -> LiveLoading(
+                    current.prepared,
+                    lifecycleOwner,
+                    viewModel::bindCamera,
+                    "Checking movement with the server…",
+                    { showAbortDialog = true },
+                )
+                is VerificationUiState.ChallengeNetworkWait -> NetworkWaitScreen(
+                    current,
+                    lifecycleOwner,
+                    viewModel::bindCamera,
+                    viewModel::retryChallengeConnection,
+                    { showAbortDialog = true },
+                )
+                is VerificationUiState.ChallengeResultState -> ChallengeResultScreen(
+                    current.prepared,
+                    current.result,
+                    lifecycleOwner,
+                    viewModel::bindCamera,
                     { showAbortDialog = true },
                 )
                 is VerificationUiState.Captured -> CaptureResult(current, viewModel::retryUpload, onBack)
@@ -129,15 +163,15 @@ fun VerificationScreen(
 private fun PermissionIntro(onBack: () -> Unit, onContinue: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(28.dp), verticalArrangement = Arrangement.Center) {
         Text("SITE VERIFICATION", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Text("Live evidence capture", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 8.dp, bottom = 24.dp))
+        Text("Live proof-of-presence", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 8.dp, bottom = 24.dp))
         Text("Camera", style = MaterialTheme.typography.titleMedium)
-        Text("Records live site evidence. Gallery uploads are not supported.")
+        Text("Records one continuous live view of the inspection site. Gallery uploads are not supported.")
         Spacer(Modifier.height(16.dp))
         Text("Location", style = MaterialTheme.typography.titleMedium)
-        Text("Checks that capture occurs near the assigned inspection site.")
+        Text("Checks that capture starts near the assigned inspection site.")
         Spacer(Modifier.height(16.dp))
-        Text("Motion sensors", style = MaterialTheme.typography.titleMedium)
-        Text("Accelerometer, gyroscope and rotation-vector data are collected only during verification.")
+        Text("Motion challenges", style = MaterialTheme.typography.titleMedium)
+        Text("The server will issue one unpredictable phone movement at a time while motion sensors are recorded.")
         Spacer(Modifier.height(28.dp))
         Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) { Text("CONTINUE") }
         TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Back") }
@@ -161,38 +195,140 @@ private fun ReadyCapture(
         StatusRow("GPS", "${prepared.location.accuracyLabel} · ±${prepared.location.location.accuracyMeters.roundToInt()} m")
         StatusRow("Distance", "${prepared.location.distanceMeters.roundToInt()} m / ${prepared.inspection.allowedRadiusMeters} m allowed")
         StatusRow("Accelerometer", if (prepared.capabilities.accelerometer) "Ready" else "Unavailable")
-        StatusRow("Gyroscope", if (prepared.capabilities.gyroscope) "Ready" else "Unavailable · reduced strength")
-        StatusRow("Rotation vector", if (prepared.capabilities.rotationVector) "Ready" else "Unavailable · reduced strength")
-        Text("Estimated capture: 15–30 seconds · maximum 60 seconds", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 12.dp))
-        Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text("START LIVE CAPTURE") }
+        StatusRow("Gyroscope", if (prepared.capabilities.gyroscope) "Ready" else "Unavailable")
+        StatusRow("Rotation vector", if (prepared.capabilities.rotationVector) "Ready" else "Unavailable · reduced confidence")
+        Text("Keep the site visible while following three short movement challenges.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 12.dp))
+        Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text("START LIVE VERIFICATION") }
         TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Back") }
     }
 }
 
 @Composable
-private fun LiveCapture(
-    state: VerificationUiState.Capturing,
+private fun ChallengeActiveScreen(
+    state: VerificationUiState.ChallengeActive,
     lifecycleOwner: LifecycleOwner,
     bindCamera: (PreviewView, LifecycleOwner) -> Unit,
-    onStop: () -> Unit,
     onAbort: () -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().padding(20.dp)) {
-        Text("LIVE VERIFICATION", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        CameraPreview(lifecycleOwner, bindCamera, Modifier.fillMaxWidth().weight(1f))
-        Text("GPS ✓    Sensors ✓    Session ACTIVE", modifier = Modifier.padding(top = 12.dp))
+    Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
-            "%02d:%02d".format((state.elapsedMs / 1000) / 60, (state.elapsedMs / 1000) % 60),
-            style = MaterialTheme.typography.headlineMedium,
+            "CHALLENGE ${state.challenge.sequenceNumber} OF ${state.challenge.totalChallenges}",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
         )
-        Button(
-            onClick = onStop,
-            enabled = state.elapsedMs >= 8_000L,
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-        ) { Text(if (state.elapsedMs < 8_000L) "CAPTURE AT LEAST 8 SECONDS" else "STOP CAPTURE") }
-        Text("Capture stops automatically at 60 seconds.", style = MaterialTheme.typography.bodySmall)
-        TextButton(onClick = onAbort, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Abort") }
+        CameraPreview(lifecycleOwner, bindCamera, Modifier.fillMaxWidth().weight(1f))
+        Spacer(Modifier.height(12.dp))
+        Text(challengeSymbol(state.challenge), fontSize = 44.sp)
+        Text(
+            challengeTitle(state.challenge),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+        Text("Keep the inspection site visible in the camera.", textAlign = TextAlign.Center)
+        Text(
+            "Approximately ${state.challenge.parameters.targetDegrees.roundToInt()}°",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        Text(state.feedback, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
+        Text(
+            "${ceil(state.remainingMs / 1000.0).toInt()} sec remaining",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(top = 6.dp),
+        )
+        TextButton(onClick = onAbort) { Text("Abort verification") }
     }
+}
+
+@Composable
+private fun LiveLoading(
+    prepared: VerificationCaptureCoordinator.Prepared,
+    lifecycleOwner: LifecycleOwner,
+    bindCamera: (PreviewView, LifecycleOwner) -> Unit,
+    message: String,
+    onAbort: () -> Unit,
+) {
+    Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("LIVE VERIFICATION", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Text(prepared.inspection.title, style = MaterialTheme.typography.titleMedium)
+        CameraPreview(lifecycleOwner, bindCamera, Modifier.fillMaxWidth().weight(1f))
+        CircularProgressIndicator(modifier = Modifier.padding(top = 16.dp))
+        Text(message, textAlign = TextAlign.Center, modifier = Modifier.padding(12.dp))
+        TextButton(onClick = onAbort) { Text("Abort verification") }
+    }
+}
+
+@Composable
+private fun NetworkWaitScreen(
+    state: VerificationUiState.ChallengeNetworkWait,
+    lifecycleOwner: LifecycleOwner,
+    bindCamera: (PreviewView, LifecycleOwner) -> Unit,
+    retry: () -> Unit,
+    onAbort: () -> Unit,
+) {
+    Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("CONNECTION LOST", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
+        CameraPreview(lifecycleOwner, bindCamera, Modifier.fillMaxWidth().weight(1f))
+        Text(state.message, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 16.dp))
+        Text("No future challenge is available until the server reconnects.", style = MaterialTheme.typography.bodySmall)
+        Button(onClick = retry, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) { Text("RETRY CONNECTION") }
+        TextButton(onClick = onAbort) { Text("Abort verification") }
+    }
+}
+
+@Composable
+private fun ChallengeResultScreen(
+    prepared: VerificationCaptureCoordinator.Prepared,
+    result: ChallengeValidationResult,
+    lifecycleOwner: LifecycleOwner,
+    bindCamera: (PreviewView, LifecycleOwner) -> Unit,
+    onAbort: () -> Unit,
+) {
+    val title = when (result.result) {
+        "PASS" -> "Challenge completed ✓"
+        "FAIL" -> "Movement could not be verified"
+        else -> "Challenge was inconclusive"
+    }
+    val detail = when (result.result) {
+        "PASS" -> "Movement verified. Preparing the next challenge…"
+        "FAIL" -> "The requested movement did not match the recorded device motion. Continuing securely…"
+        else -> if (result.retryAllowed) "A new challenge will be issued." else "Continuing with the recorded result."
+    }
+    Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("LIVE VERIFICATION", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Text(prepared.inspection.title, style = MaterialTheme.typography.titleMedium)
+        CameraPreview(lifecycleOwner, bindCamera, Modifier.fillMaxWidth().weight(1f))
+        Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp))
+        Text(detail, textAlign = TextAlign.Center, modifier = Modifier.padding(8.dp))
+        TextButton(onClick = onAbort) { Text("Abort verification") }
+    }
+}
+
+private fun challengeTitle(challenge: ChallengeIssue): String = when (challenge.type) {
+    "ROTATE_RIGHT" -> "ROTATE YOUR PHONE TO THE RIGHT"
+    "ROTATE_LEFT" -> "ROTATE YOUR PHONE TO THE LEFT"
+    "TILT_UP" -> "TILT THE TOP OF YOUR PHONE UP"
+    "TILT_DOWN" -> "TILT THE TOP OF YOUR PHONE DOWN"
+    else -> challenge.instruction.uppercase()
+}
+
+private fun challengeSymbol(challenge: ChallengeIssue): String = when (challenge.type) {
+    "ROTATE_RIGHT" -> "↻"
+    "ROTATE_LEFT" -> "↺"
+    "TILT_UP" -> "↑"
+    "TILT_DOWN" -> "↓"
+    else -> "◆"
+}
+
+private fun isLiveState(state: VerificationUiState): Boolean = when (state) {
+    is VerificationUiState.ChallengeLoading,
+    is VerificationUiState.ChallengeActive,
+    is VerificationUiState.ChallengeChecking,
+    is VerificationUiState.ChallengeNetworkWait,
+    is VerificationUiState.ChallengeResultState,
+    -> true
+    else -> false
 }
 
 @Composable
@@ -212,7 +348,7 @@ private fun CaptureResult(state: VerificationUiState.Captured, retry: (String) -
     Column(Modifier.fillMaxSize().padding(28.dp), verticalArrangement = Arrangement.Center) {
         Text("Evidence Captured", style = MaterialTheme.typography.headlineMedium)
         Text(state.message, modifier = Modifier.padding(vertical = 16.dp))
-        Text("Verification has not been analyzed yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Final SiteProof authenticity has not been calculated yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (state.uploadStatus == "FAILED") {
             Button(onClick = { retry(state.sessionId) }, modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
                 Text("RETRY NOW")
