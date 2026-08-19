@@ -50,6 +50,36 @@ class Settings(BaseSettings):
     challenge_timing_weight: float = 0.10
     challenge_smoothness_weight: float = 0.10
 
+    # Phase 5 visual-motion analysis. The original evidence video is never rewritten;
+    # OpenCV works only on derived, down-scaled frames.
+    vision_analysis_version: str = "vision-v1.0"
+    vision_analysis_fps: float = 12.0
+    vision_max_width: int = 960
+    vision_pre_challenge_padding_ms: int = 500
+    vision_post_challenge_padding_ms: int = 500
+    vision_min_features: int = 40
+    vision_max_features: int = 600
+    vision_grid_rows: int = 4
+    vision_grid_cols: int = 4
+    vision_lk_window_size: int = 21
+    vision_forward_backward_max_error_px: float = 1.5
+    vision_ransac_threshold_px: float = 3.0
+    vision_min_inlier_ratio: float = 0.45
+    vision_scene_cut_hist_distance: float = 0.60
+    vision_duplicate_mean_absdiff: float = 1.5
+    vision_motion_threshold_px: float = 1.5
+    vision_timeline_tolerance_ms: int = 300
+    vision_assumed_horizontal_fov_degrees: float = 65.0
+    vision_max_duration_seconds: int = 90
+    vision_max_frame_count: int = 5000
+    vision_max_resolution_pixels: int = 3840 * 2160
+    vision_max_processing_seconds: float = 20.0
+    vision_feature_weight: float = 0.20
+    vision_inlier_weight: float = 0.30
+    vision_consistency_weight: float = 0.25
+    vision_coverage_weight: float = 0.15
+    vision_continuity_weight: float = 0.10
+
     storage_backend: str = "local"
     local_storage_path: str = "./siteproof-evidence"
     storage_endpoint_url: str | None = None
@@ -79,6 +109,20 @@ class Settings(BaseSettings):
             "agreement": self.challenge_agreement_weight,
             "timing": self.challenge_timing_weight,
             "smoothness": self.challenge_smoothness_weight,
+        }
+        total = sum(weights.values())
+        if total <= 0:
+            return {name: 0.2 for name in weights}
+        return {name: value / total for name, value in weights.items()}
+
+    @property
+    def vision_confidence_weights(self) -> dict[str, float]:
+        weights = {
+            "feature": self.vision_feature_weight,
+            "inlier": self.vision_inlier_weight,
+            "consistency": self.vision_consistency_weight,
+            "coverage": self.vision_coverage_weight,
+            "continuity": self.vision_continuity_weight,
         }
         total = sum(weights.values())
         if total <= 0:
