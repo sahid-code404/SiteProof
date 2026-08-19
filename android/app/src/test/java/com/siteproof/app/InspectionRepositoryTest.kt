@@ -14,6 +14,11 @@ import com.siteproof.app.data.SessionStore
 import com.siteproof.app.data.SiteProofApi
 import com.siteproof.app.verification.model.AbortRequest
 import com.siteproof.app.verification.model.CaptureCompleteRequest
+import com.siteproof.app.verification.model.ChallengeIssue
+import com.siteproof.app.verification.model.ChallengeListResponse
+import com.siteproof.app.verification.model.ChallengeStartRequest
+import com.siteproof.app.verification.model.ChallengeSubmitRequest
+import com.siteproof.app.verification.model.ChallengeValidationResult
 import com.siteproof.app.verification.model.EvidenceCompleteRequest
 import com.siteproof.app.verification.model.EvidenceFileResponse
 import com.siteproof.app.verification.model.EvidenceInitiateRequest
@@ -132,51 +137,65 @@ private class FakeApi(
         return updated
     }
 
-    // Phase 2 repository tests never call live-verification APIs. Explicit stubs keep this
-    // test double honest as SiteProofApi grows without hiding unexpected calls.
     override suspend fun createVerificationSession(
         inspectionId: String,
         request: SessionCreateRequest,
-    ): SessionCreateResponse = error("unused in Phase 2 repository tests")
+    ): SessionCreateResponse = error("unused in inspection repository tests")
 
     override suspend fun latestVerificationSession(inspectionId: String): VerificationSession? =
-        error("unused in Phase 2 repository tests")
+        error("unused in inspection repository tests")
 
     override suspend fun verificationSession(sessionId: String): VerificationSession =
-        error("unused in Phase 2 repository tests")
+        error("unused in inspection repository tests")
 
     override suspend fun startCapture(
         sessionId: String,
         request: StartCaptureRequest,
-    ): VerificationSession = error("unused in Phase 2 repository tests")
+    ): VerificationSession = error("unused in inspection repository tests")
+
+    override suspend fun nextChallenge(sessionId: String): ChallengeIssue =
+        error("unused in inspection repository tests")
+
+    override suspend fun startChallenge(
+        challengeId: String,
+        request: ChallengeStartRequest,
+    ): ChallengeIssue = error("unused in inspection repository tests")
+
+    override suspend fun submitChallenge(
+        challengeId: String,
+        request: ChallengeSubmitRequest,
+    ): ChallengeValidationResult = error("unused in inspection repository tests")
+
+    override suspend fun challenges(sessionId: String): ChallengeListResponse =
+        error("unused in inspection repository tests")
 
     override suspend fun captureComplete(
         sessionId: String,
         request: CaptureCompleteRequest,
-    ): VerificationSession = error("unused in Phase 2 repository tests")
+    ): VerificationSession = error("unused in inspection repository tests")
 
     override suspend fun abortSession(
         sessionId: String,
         request: AbortRequest,
-    ): VerificationSession = error("unused in Phase 2 repository tests")
+    ): VerificationSession = error("unused in inspection repository tests")
 
     override suspend fun initiateEvidence(
         sessionId: String,
         request: EvidenceInitiateRequest,
-    ): EvidenceInitiateResponse = error("unused in Phase 2 repository tests")
+    ): EvidenceInitiateResponse = error("unused in inspection repository tests")
 
     override suspend fun uploadEvidence(
         relativeUrl: String,
         body: RequestBody,
-    ): EvidenceFileResponse = error("unused in Phase 2 repository tests")
+    ): EvidenceFileResponse = error("unused in inspection repository tests")
 
     override suspend fun completeEvidence(
         sessionId: String,
         request: EvidenceCompleteRequest,
-    ): VerificationSession = error("unused in Phase 2 repository tests")
+    ): VerificationSession = error("unused in inspection repository tests")
 
     override suspend fun evidence(sessionId: String): EvidenceListResponse =
-        error("unused in Phase 2 repository tests")
+        error("unused in inspection repository tests")
 }
 
 class InspectionRepositoryTest {
