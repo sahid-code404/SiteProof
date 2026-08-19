@@ -8,6 +8,7 @@ import com.siteproof.app.data.InspectionRepository
 import com.siteproof.app.data.InspectionStore
 import com.siteproof.app.data.InspectionSummary
 import com.siteproof.app.data.Inspector
+import com.siteproof.app.data.InspectorVerificationResponse
 import com.siteproof.app.data.LoginRequest
 import com.siteproof.app.data.LoginResponse
 import com.siteproof.app.data.SessionStore
@@ -84,6 +85,15 @@ private fun detail(item: InspectionSummary) = InspectionDetail(
     activeAssignment = item.activeAssignment,
 )
 
+private fun verificationSession() = VerificationSession(
+    id = "session-1",
+    inspectionId = "inspection-1",
+    inspectorId = "inspector-1",
+    status = "UPLOADED",
+    createdAt = "2026-08-19T00:00:00Z",
+    expiresAt = "2026-08-19T01:00:00Z",
+)
+
 private class FakeSessionStore : SessionStore {
     override var accessToken: String? = null
     override var inspectorName: String? = null
@@ -108,6 +118,13 @@ private class FakeApi(
     var items: List<InspectionSummary> = listOf(inspection()),
     var failList: Boolean = false,
     var failDetail: Boolean = false,
+    var latestSession: VerificationSession? = null,
+    var verificationResult: InspectorVerificationResponse = InspectorVerificationResponse(
+        status = "COMPLETED",
+        verdict = "VERIFIED",
+        summary = "Evidence accepted by automated checks.",
+        detailed = false,
+    ),
 ) : SiteProofApi {
     override suspend fun login(request: LoginRequest): LoginResponse = LoginResponse(
         accessToken = "token",
@@ -143,10 +160,13 @@ private class FakeApi(
     ): SessionCreateResponse = error("unused in inspection repository tests")
 
     override suspend fun latestVerificationSession(inspectionId: String): VerificationSession? =
-        error("unused in inspection repository tests")
+        latestSession
 
     override suspend fun verificationSession(sessionId: String): VerificationSession =
         error("unused in inspection repository tests")
+
+    override suspend fun inspectorVerification(sessionId: String): InspectorVerificationResponse =
+        verificationResult
 
     override suspend fun startCapture(
         sessionId: String,
@@ -256,5 +276,17 @@ class InspectionRepositoryTest {
         repository.markReady("inspection-1")
 
         assertEquals("READY", cache.items.single().status)
+    }
+
+    @Test
+    fun `inspector verification returns simplified server result`() = runTest {
+        val api = FakeApi(latestSession = verificationSession())
+        val repository = InspectionRepository(api, FakeSessionStore(), FakeInspectionStore())
+
+        val result = repository.loadInspectorVerification("inspection-1")
+
+        assertEquals("COMPLETED", result?.status)
+        assertEquals("Evidence accepted by automated checks.", result?.summary)
+        assertFalse(result?.detailed ?: true)
     }
 }
