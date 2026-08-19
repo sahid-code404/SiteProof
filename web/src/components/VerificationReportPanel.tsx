@@ -103,7 +103,7 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
 
       {result.status !== 'COMPLETED' ? (
         <div className="callout">
-          <strong>{result.status.replaceAll('_', ' ')}</strong>
+          <strong>{result.status.replace(/_/g, ' ')}</strong>
           <p>{result.summary ?? 'Verification is waiting for upstream evidence.'}</p>
         </div>
       ) : null}
