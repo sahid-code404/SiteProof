@@ -111,3 +111,21 @@ Automated verification:
 Acceptance status:
 - **PARTIAL — FIX IMPLEMENTED; PHYSICAL ISOLATION RETEST PENDING**.
 - Phase 2.12 remains open until Inspector Two no longer sees Inspector One's inspection and the remaining acceptance checks are completed.
+
+## 2026-08-19 — Phase 2.12 isolation retest, manual create, and acknowledge
+
+Observed on physical device:
+- The replacement isolation-fix APK passed the Inspector One -> sign out -> Inspector Two retest. Inspector Two showed `No inspections assigned.` and no longer displayed Inspector One's stale inspection card.
+- A fresh inspection named `Phase 2 Final Test` was manually created through the admin flow and assigned to Inspector One.
+- Inspector One's Android list showed both the existing `Verify repaired pothole` in `READY` and the new `Phase 2 Final Test` in `ASSIGNED`.
+- Opening the new inspection showed the `ACKNOWLEDGE` action.
+- After tapping `ACKNOWLEDGE`, the same physical-device detail screen showed status `ACKNOWLEDGED` and exposed the `MARK READY` action.
+
+Acceptance impact:
+- PASS — unrelated-inspector isolation on the fixed APK.
+- PASS — manual admin inspection creation and delivery to the assigned inspector.
+- PASS — direct Android `ACKNOWLEDGE` transition observation.
+- Still pending — separate web/API observation while `Phase 2 Final Test` remains `ACKNOWLEDGED`, READY persistence after full app restart/refresh, assignment history, and audit records.
+
+Current acceptance status:
+- **PARTIAL — MANUAL CREATE, ASSIGNMENT, ISOLATION, AND ANDROID ACKNOWLEDGE PASSED; FINAL ACCEPTANCE CHECKS REMAIN**.
