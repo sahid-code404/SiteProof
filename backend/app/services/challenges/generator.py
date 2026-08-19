@@ -43,23 +43,24 @@ def generate_definition(
     previous_type: ChallengeType | None,
     settings: Settings,
 ) -> ChallengeDefinition:
-    # A rotation/tilt/rotation cadence keeps the phone comfortable while each direction,
-    # target and nonce remains server-selected and unknown before issuance.
-    if sequence_number % 2 == 0:
-        candidates = [ChallengeType.TILT_UP, ChallengeType.TILT_DOWN]
-        target = _rng.uniform(settings.tilt_min_target_degrees, settings.tilt_max_target_degrees)
-        parameters = _comfortable_parameters(target, 12.0, 60.0)
-    else:
-        candidates = [ChallengeType.ROTATE_LEFT, ChallengeType.ROTATE_RIGHT]
+    # The sequence number deliberately does not determine the movement family. An observer who
+    # knows "challenge 2" must still not know whether a rotate or tilt will be issued. Filtering
+    # only the exact previous type avoids monotonous repeats without precomputing the sequence.
+    candidates = list(ChallengeType)
+    if previous_type is not None and len(candidates) > 1:
+        candidates = [item for item in candidates if item != previous_type]
+    challenge_type = _rng.choice(candidates)
+
+    if challenge_type in {ChallengeType.ROTATE_LEFT, ChallengeType.ROTATE_RIGHT}:
         target = _rng.uniform(
             settings.rotation_min_target_degrees,
             settings.rotation_max_target_degrees,
         )
         parameters = _comfortable_parameters(target, 15.0, 70.0)
+    else:
+        target = _rng.uniform(settings.tilt_min_target_degrees, settings.tilt_max_target_degrees)
+        parameters = _comfortable_parameters(target, 12.0, 60.0)
 
-    if previous_type in candidates and len(candidates) > 1:
-        candidates = [item for item in candidates if item != previous_type]
-    challenge_type = _rng.choice(candidates)
     return ChallengeDefinition(
         challenge_type=challenge_type,
         parameters=parameters,
