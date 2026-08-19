@@ -2,7 +2,11 @@
 
 Current development branch: **Phase 4 — Active Challenge-Response Engine & Sensor-Based Liveness Verification**
 
-Phase 4 is stacked on `phase3/live-capture`; Phase 3's mandatory physical-device acceptance remains a prerequisite. Automated success must never be described as proof that real CameraX/sensor behavior passed on a phone.
+Phase 4 is stacked on `phase3/live-capture`.
+
+Phase 3 physical-device acceptance: **PASS — completed on 2026-08-19.** A physical Android phone successfully produced real CameraX video, accelerometer, gyroscope, rotation-vector and GPS/location evidence from one live session; the evidence package and manifest uploaded to the backend and appeared in the admin dashboard. Temporary network loss was also tested successfully: evidence remained recoverable and uploaded after connectivity returned.
+
+Phase 4 real-hardware challenge-response acceptance remains pending.
 
 ## Phase 4 implementation status
 

@@ -28,12 +28,38 @@ from app.models import (  # noqa: E402
 )
 
 ORG_NAME = "SiteProof Demo Authority"
-ADMIN_EMAIL = "admin@siteproof.local"
+# Use example.com addresses so the seed accounts satisfy the same EmailStr
+# validation enforced by the real login API. The previous *.local addresses
+# are rejected by current email-validator releases as special-use domains.
+ADMIN_EMAIL = "admin@siteproof.example.com"
+LEGACY_ADMIN_EMAIL = "admin@siteproof.local"
 INSPECTORS = [
-    ("Inspector One", "inspector1@siteproof.local", "SP-I001"),
-    ("Inspector Two", "inspector2@siteproof.local", "SP-I002"),
-    ("Inspector Three", "inspector3@siteproof.local", "SP-I003"),
+    ("Inspector One", "inspector1@siteproof.example.com", "SP-I001"),
+    ("Inspector Two", "inspector2@siteproof.example.com", "SP-I002"),
+    ("Inspector Three", "inspector3@siteproof.example.com", "SP-I003"),
 ]
+LEGACY_INSPECTOR_EMAILS = {
+    "SP-I001": "inspector1@siteproof.local",
+    "SP-I002": "inspector2@siteproof.local",
+    "SP-I003": "inspector3@siteproof.local",
+}
+
+
+def _user_by_email(db, organization_id, email):
+    return db.scalar(
+        select(User).where(
+            User.organization_id == organization_id,
+            User.email == email,
+        )
+    )
+
+
+def _configure_user(user, *, email, full_name, password, role):
+    user.email = email
+    user.full_name = full_name
+    user.hashed_password = hash_password(password)
+    user.role = role
+    user.is_active = True
 
 
 def main() -> None:
@@ -56,7 +82,9 @@ def main() -> None:
             db.add(organization)
             db.flush()
 
-        admin = db.scalar(select(User).where(User.email == ADMIN_EMAIL))
+        admin = _user_by_email(db, organization.id, ADMIN_EMAIL)
+        if admin is None:
+            admin = _user_by_email(db, organization.id, LEGACY_ADMIN_EMAIL)
         if admin is None:
             admin = User(
                 organization_id=organization.id,
@@ -66,10 +94,35 @@ def main() -> None:
                 role=UserRole.ADMIN,
             )
             db.add(admin)
-            db.flush()
+        else:
+            _configure_user(
+                admin,
+                email=ADMIN_EMAIL,
+                full_name="SiteProof Demo Admin",
+                password=admin_password,
+                role=UserRole.ADMIN,
+            )
+        db.flush()
 
         for full_name, email, employee_code in INSPECTORS:
-            user = db.scalar(select(User).where(User.email == email))
+            profile = db.scalar(
+                select(Inspector).where(
+                    Inspector.organization_id == organization.id,
+                    Inspector.employee_code == employee_code,
+                )
+            )
+            user = _user_by_email(db, organization.id, email)
+
+            if profile is not None and user is None:
+                # Migrate the original seeded inspector in place. This preserves
+                # the inspector profile ID and any assignment history attached to it.
+                user = db.get(User, profile.user_id)
+            if user is None:
+                user = _user_by_email(
+                    db,
+                    organization.id,
+                    LEGACY_INSPECTOR_EMAILS[employee_code],
+                )
             if user is None:
                 user = User(
                     organization_id=organization.id,
@@ -79,17 +132,29 @@ def main() -> None:
                     role=UserRole.INSPECTOR,
                 )
                 db.add(user)
-                db.flush()
-            profile = db.scalar(select(Inspector).where(Inspector.user_id == user.id))
-            if profile is None:
-                db.add(
-                    Inspector(
-                        organization_id=organization.id,
-                        user_id=user.id,
-                        employee_code=employee_code,
-                        active=True,
-                    )
+            else:
+                _configure_user(
+                    user,
+                    email=email,
+                    full_name=full_name,
+                    password=inspector_password,
+                    role=UserRole.INSPECTOR,
                 )
+            db.flush()
+
+            if profile is None:
+                profile = db.scalar(select(Inspector).where(Inspector.user_id == user.id))
+            if profile is None:
+                profile = Inspector(
+                    organization_id=organization.id,
+                    user_id=user.id,
+                    employee_code=employee_code,
+                    active=True,
+                )
+                db.add(profile)
+            else:
+                profile.user_id = user.id
+                profile.active = True
 
         existing = db.scalar(
             select(Inspection).where(
