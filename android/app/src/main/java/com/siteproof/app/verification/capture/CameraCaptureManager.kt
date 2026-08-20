@@ -81,9 +81,8 @@ class CameraCaptureManager(private val context: Context) {
             .start(ContextCompat.getMainExecutor(context)) { event ->
                 when (event) {
                     is VideoRecordEvent.Start -> {
-                        // Anchor the video timeline when CameraX confirms the encoder has
-                        // actually started, not when start() was merely requested. Phase 5
-                        // maps challenge timestamps to decoded frames from this boundary.
+                        // Anchor the wall-clock video interval only when CameraX confirms that
+                        // recording has actually started.
                         val monotonicStartNs = SystemClock.elapsedRealtimeNanos()
                         startNs = monotonicStartNs
                         if (!started.isCompleted) {
@@ -98,8 +97,6 @@ class CameraCaptureManager(private val context: Context) {
                         val effectiveStartNs = if (startNs > 0L) {
                             startNs
                         } else {
-                            // Defensive fallback for a device that finalizes without delivering
-                            // a Start callback. Keep the encoded duration authoritative.
                             (finalizedAtNs - recordedDurationNs).coerceAtLeast(0L)
                         }
                         if (event.hasError()) {
@@ -117,9 +114,10 @@ class CameraCaptureManager(private val context: Context) {
                             activeCompletion.complete(
                                 RecordingResult(
                                     videoStartMonotonicNs = effectiveStartNs,
-                                    // Use CameraX's encoded-media duration so client metadata
-                                    // agrees with the MP4 duration OpenCV later decodes.
-                                    videoEndMonotonicNs = effectiveStartNs + recordedDurationNs,
+                                    // Keep the real Finalize callback time as the wall-clock end
+                                    // anchor. CameraX's encoded duration is stored separately and
+                                    // remains authoritative for MP4 duration validation.
+                                    videoEndMonotonicNs = finalizedAtNs,
                                     recordedDurationNs = recordedDurationNs,
                                     fileSizeBytes = outputFile.length(),
                                 ),
@@ -131,9 +129,7 @@ class CameraCaptureManager(private val context: Context) {
                 }
             }
 
-        // Do not expose an active verification to the coordinator until CameraX confirms
-        // recording has actually begun. This guarantees every issued challenge is covered
-        // by the continuous video timeline.
+        // Do not expose an active verification until CameraX confirms recording began.
         started.await()
     }
 
