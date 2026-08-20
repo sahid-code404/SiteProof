@@ -8,7 +8,7 @@ pytest -q
 ruff check app tests alembic
 ```
 
-The suite covers Phase 2 inspection management, Phase 3 live-session/evidence upload and Phase 4 active challenges. Phase 4 tests include synthetic correct rotation/tilt, wrong direction, insufficient movement, sensor disagreement, missing gyroscope, nonce failure, inspector ownership/role isolation, timestamp ordering/window attacks, idempotent duplicate submission/replay rejection, challenge expiration/replacement and a complete three-challenge API sequence.
+The suite covers Phase 2 inspection management, Phase 3 live-session/evidence upload and Phase 4 active challenges. Phase 4 tests include synthetic correct rotation/tilt, wrong direction, insufficient movement, sensor disagreement, missing gyroscope, nonce failure, inspector ownership/role isolation, timestamp ordering/window attacks, idempotent duplicate submission/replay rejection, challenge expiration/replacement, retry-budget behavior and a complete three-challenge API sequence.
 
 ## Migrations
 
@@ -32,6 +32,8 @@ npm run build
 
 The admin inspection detail shows challenge results and sensor-derived diagnostics together with Phase 3 evidence receipt status. It must not display a final authenticity/trust score.
 
+The Phase 4 UX acceptance also verifies that inspection creation/editing supports location search, search-result map recentering, coordinate filling, and browser **Use current location**, while click-on-map/manual coordinates remain available.
+
 ## Android automated checks
 
 GitHub CI uses Java 17 and Gradle 8.13:
@@ -41,141 +43,182 @@ cd android
 gradle :app:testDebugUnitTest :app:assembleDebug
 ```
 
-Automated Android success proves compilation/unit behavior only. It cannot prove CameraX, physical sensor direction, real sample timing or user movement on hardware.
+Automated Android success proves compilation/unit behavior only. CameraX, physical sensor direction, real sample timing and user movement require hardware testing.
 
 ## Phase 3 physical-device acceptance
 
-Phase 3 remains a physical-hardware prerequisite. Existing fields are deliberately not fabricated:
+**PASS — completed on 2026-08-19.**
+
+Observed on a physical Android phone:
 
 ```text
-Device:               NOT TESTED YET
-Android version:      NOT TESTED YET
-Camera preview:       NOT TESTED YET
-Video capture:        NOT TESTED YET
-Accelerometer:        NOT TESTED YET
-Gyroscope:            NOT TESTED YET
-Rotation vector:      NOT TESTED YET
-GPS freshness/radius: NOT TESTED YET
-Evidence packaging:   NOT TESTED YET
-Upload/retry:         NOT TESTED YET
-Admin evidence view:  NOT TESTED YET
+Physical Android device: PASS (model not recorded)
+Android version:         NOT RECORDED
+Camera preview:          PASS
+Video capture:           PASS
+Accelerometer:           PASS
+Gyroscope:               PASS
+Rotation vector:         PASS
+GPS freshness/radius:    PASS
+Evidence packaging:      PASS
+Upload/retry:            PASS
+Admin evidence view:     PASS
+Network-loss recovery:   PASS
 ```
+
+The test produced real CameraX video, motion sensors and location data, packaged them with the manifest, uploaded them to the backend, displayed them in admin, and recovered after temporary network loss.
 
 ## Phase 4 physical-device acceptance
 
-**Phase 4 must not be called complete until this section is replaced with actual observations from at least one Android phone.**
+**PASS — completed on 2026-08-20 on a physical Android phone.**
 
 ### Device record
 
 ```text
-Device model:              NOT TESTED YET
-Android version:           NOT TESTED YET
-App commit/build:          NOT TESTED YET
-Gyroscope available:       NOT TESTED YET
-Rotation vector available: NOT TESTED YET
-Observed gyro sample rate: NOT TESTED YET
-Observed max sensor gap:   NOT TESTED YET
-Rear CameraX continuity:   NOT TESTED YET
+Device model:              Physical Android phone; exact model NOT RECORDED
+Android version:           NOT RECORDED
+Android UX APK baseline:   Phase 4 UX build from f4ee7b3a32f735e7421efe87ad2031b5e5dad759
+Backend retry baseline:    66494bd05723b2dc621404c8b85c0ad053fa3a32
+Gyroscope available:       PASS
+Rotation vector available: PASS
+Observed gyro sample rate: NOT FORMALLY MEASURED
+Observed max sensor gap:   NOT FORMALLY MEASURED
+Rear CameraX continuity:   PASS
 ```
 
-### Setup
+Exact device model/version and formal sample-rate/gap statistics were not recorded during the manual session and are deliberately not invented.
 
-1. Put the Fedora development machine and Android phone on the same trusted LAN.
-2. Check out `phase4/challenge-engine`.
-3. Start the stack with `docker compose up --build`.
-4. Seed admin/inspector accounts using locally chosen passwords.
-5. Get the Fedora LAN address with `hostname -I`.
-6. Build/install Android with that address, for example:
+### Required end-to-end flow — observed
 
-```bash
-cd android
-gradle :app:assembleDebug \
-  -PSITEPROOF_API_BASE_URL=http://192.168.1.20:8000/api/v1/
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
+1. Admin inspection at the real test location: **PASS**.
+2. Inspector login, ACKNOWLEDGE and MARK READY: **PASS**.
+3. START LIVE VERIFICATION with rear CameraX continuous capture: **PASS**.
+4. Server issues Challenge #1 only after capture begins: **PASS**.
+5. Real requested movement produces PASS / FAIL / INCONCLUSIVE and human-readable guidance instead of requiring exact-degree estimation: **PASS**.
+6. Challenge #2 is issued after the previous challenge terminates: **PASS**.
+7. Challenge #3 completes the required sequence: **PASS**.
+8. Camera remains continuous across the challenge sequence: **PASS**.
+9. Capture finalizes after the challenge sequence reaches a terminal state: **PASS**.
+10. Video, full sensor package, location, metadata and manifest upload through the Phase 3 pipeline: **PASS**.
+11. Admin challenge timeline/result/score plus Video/Sensors/Location/Manifest receipt status are visible while final authenticity remains not calculated: **PASS**.
 
-The release app remains HTTPS-oriented; local debug networking is for development testing only.
+### Real observed challenge sessions
 
-### Required end-to-end flow
-
-1. Admin creates an inspection at the actual test location with a realistic radius/deadline and assigns the physical-device inspector.
-2. Android inspector logs in, taps **ACKNOWLEDGE**, then **MARK READY**.
-3. Tap **START LIVE VERIFICATION** and confirm the rear camera begins one continuous recording.
-4. Confirm Challenge #1 arrives from the server only after capture begins. Record its type/target.
-5. Perform the requested motion naturally. Confirm the backend returns `PASS`, `FAIL` or `INCONCLUSIVE` and the Android UI does not show raw security thresholds.
-6. Confirm Challenge #2 is not known before Challenge #1 finishes, then perform it.
-7. Repeat for Challenge #3.
-8. Confirm the camera never restarts between challenges.
-9. Confirm capture finalizes only after the required challenge sequence is terminal.
-10. Confirm video, full sensor package, location, metadata and manifest upload through the Phase 3 pipeline.
-11. In admin web, confirm the challenge timeline/result/score and Video/Sensors/Location/Manifest status are visible, while **Final authenticity: Not yet calculated** remains visible.
-
-### Legitimate-movement trials
-
-Perform each challenge at least 10 times when practical and record real counts only:
+Multiple physical runs were performed. One successful run recorded:
 
 ```text
-ROTATE_RIGHT:  PASS __/10 | INCONCLUSIVE __/10 | FAIL __/10
-ROTATE_LEFT:   PASS __/10 | INCONCLUSIVE __/10 | FAIL __/10
-TILT_UP:       PASS __/10 | INCONCLUSIVE __/10 | FAIL __/10
-TILT_DOWN:     PASS __/10 | INCONCLUSIVE __/10 | FAIL __/10
+Challenge 1: ROTATE_LEFT  — PASS 96%
+Challenge 2: TILT_DOWN    — PASS 85%
+Challenge 3: TILT_UP      — PASS 93%
+Final: 3 Pass · 0 Fail · 0 Inconclusive
+Capture duration: 19 s
+Accelerometer samples: 1487
+Gyroscope samples: 966
+Rotation-vector samples: 964
+Location samples: 18
+Video / Motion sensors / Location / Manifest: all Received
 ```
 
-Current state:
+A later run exercised retry behavior:
 
 ```text
-ROTATE_RIGHT: NOT TESTED YET
-ROTATE_LEFT:  NOT TESTED YET
-TILT_UP:      NOT TESTED YET
-TILT_DOWN:    NOT TESTED YET
+Challenge 1: ROTATE_RIGHT — PASS 84%
+Challenge 2 attempt 1: ROTATE_LEFT — INCONCLUSIVE
+Challenge 2 attempt 2: ROTATE_RIGHT — PASS 84%
+Challenge 3: TILT_DOWN — PASS 97%
+Final: 3 Pass · 0 Fail · 0 Inconclusive
+Capture duration: 18 s
+Accelerometer samples: 1428
+Gyroscope samples: 890
+Rotation-vector samples: 887
+Location samples: 13
+Video / Motion sensors / Location / Manifest: all Received
 ```
 
-Tune `ROTATION_RIGHT_SIGN`, `TILT_DOWN_SIGN`, sensor thresholds and tolerances only from observed real-device behavior.
+These are real observed session values, not synthetic CI values.
 
-### Deliberately wrong-motion trials
+### Challenge directions / UX
 
-Record actual observations:
+Physical testing confirmed the user-facing movement guide works for all four challenge families:
 
 ```text
-Requested ROTATE_RIGHT, performed ROTATE_LEFT: NOT TESTED YET
-Requested ROTATE_LEFT, performed ROTATE_RIGHT: NOT TESTED YET
-Requested TILT_DOWN, stayed still:              NOT TESTED YET
-Requested TILT_UP, random shake:                NOT TESTED YET
+ROTATE_RIGHT: PASS observed
+ROTATE_LEFT:  PASS observed
+TILT_UP:      PASS observed
+TILT_DOWN:    PASS observed
 ```
 
-Clearly wrong movements should usually fail; noisy/insufficient evidence may be inconclusive where appropriate.
+The Android UI shows an animated phone/directional arrow, human-readable movement copy, and live progress states so the inspector does not need to estimate an exact target degree manually.
+
+A formal 10-trial statistical pass/inconclusive/fail table for every motion family was **not** recorded during this acceptance session. Do not infer percentages beyond the observed runs above.
+
+### Retry behavior
+
+**PASS.** Manual hardware testing confirmed:
+
+```text
+Initial attempt + at least 3 explicit reattempts: PASS
+Retry after FAIL / INCONCLUSIVE:                PASS
+Fresh challenge ID/nonce/evidence window:       PASS by implementation + observed fresh challenge flow
+Retry budget is per challenge sequence:         PASS
+Fourth total attempt available:                 PASS
+Verification retry:                             PASS
+Upload retry / Phase 3 recovery:                PASS
+```
+
+The backend guarantees a minimum `CHALLENGE_MAX_RETRIES=3`, and retry accounting is per challenge sequence so an earlier challenge's retries do not consume the next challenge's allowance.
+
+### Map/location UX
+
+```text
+Location search:                 PASS
+Search result recenters map:     PASS
+Latitude/longitude auto-fill:    PASS
+Use current location:            PASS
+Click-on-map fallback retained:  PASS
+Manual coordinates retained:     PASS
+```
+
+### Deliberately wrong / inconclusive behavior
+
+Manual testing intentionally produced failed/inconclusive attempts in order to exercise retry behavior, and the app/server did not silently reuse stale evidence. A systematic wrong-motion matrix (e.g. 10 wrong-direction trials for each movement family) was not recorded, so no rejection-rate percentage is claimed.
 
 ### Nonce/timestamp/network checks
 
-Automated tests cover structural attacks. On-device additionally verify:
+Automated tests cover structural timestamp, nonce, replay and idempotency attacks. Physical-device testing additionally confirmed:
 
-- let a challenge expire; stale continuation must not be accepted;
-- briefly disconnect after current challenge starts; current evidence is preserved and future challenge is not preloaded;
-- reconnect and retry the same saved submission without creating a duplicate result;
-- background or lock the phone during an active challenge; session should abort rather than silently continue;
-- confirm one continuous video still covers all completed challenge intervals.
+- fresh challenge issuance on retry rather than stale evidence reuse: **PASS**;
+- temporary network-loss recovery from the Phase 3 upload pipeline: **PASS**;
+- explicit retry actions for challenge, verification and upload flows: **PASS**;
+- one continuous evidence package reaches admin with challenge timing plus sensor/location data: **PASS**.
+
+A dedicated measured stale-expiry timing study and formal background/lock matrix were not recorded in this acceptance session and should remain separate hardening tests if required before production deployment.
 
 ### Admin verification record
 
 ```text
-Challenge timeline visible:                 NOT TESTED YET
-PASS/FAIL/INCONCLUSIVE visible:             NOT TESTED YET
-Sensor-derived metrics visible to admin:    NOT TESTED YET
-Final authenticity absent/not calculated:   NOT TESTED YET
+Challenge timeline visible:                 PASS
+PASS/FAIL/INCONCLUSIVE visible:             PASS
+Sensor-derived metrics visible to admin:    PASS
+Video received:                             PASS
+Motion sensors received:                    PASS
+Location received:                          PASS
+Manifest received:                          PASS
+Final authenticity absent/not calculated:   PASS
 ```
 
 ## Security boundary test
 
-Even after a real sensor challenge passes, Phase 4 must **not** claim the visible scene is genuine. A phone can theoretically be rotated correctly while its camera points at prerecorded content. Phase 5 will compare challenge-time video motion with the synchronized sensor timeline.
+Even after a real sensor challenge passes, Phase 4 does **not** claim the visible scene is genuine. A phone can theoretically move correctly while its camera points at prerecorded content. Phase 5 will compare challenge-time video motion with the synchronized sensor timeline.
 
 ## Phase 5 readiness check
 
-After real-device Phase 4 testing, confirm with actual evidence that these are synchronized:
+Phase 4 now provides the required inputs for Phase 5:
 
 ```text
-continuous video:       NOT TESTED YET
-challenge relative time: NOT TESTED YET
-sensor relative time:    NOT TESTED YET
+continuous video:        PRESENT / physically verified
+challenge relative time: PRESENT in evidence metadata/timeline
+sensor relative time:    PRESENT in common monotonic timeline
 ```
 
-Do not replace `NOT TESTED YET` with guessed measurements.
+**Phase 5 may now begin.** Its acceptance must verify visual camera motion against these synchronized challenge/sensor intervals; Phase 4 sensor validation remains intact and authoritative for the phone-motion portion.
