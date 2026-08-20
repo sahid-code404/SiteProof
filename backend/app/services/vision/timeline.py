@@ -25,6 +25,18 @@ def video_start_relative_ms(metadata: dict[str, Any]) -> int:
     return value // 1_000_000
 
 
+def video_end_relative_ms(metadata: dict[str, Any]) -> int | None:
+    """Return the CameraX wall-clock finalize anchor when newer clients provide it."""
+    capture = metadata.get("capture") or {}
+    value = capture.get("videoEndRelativeNs")
+    if value is None:
+        return None
+    value = int(value)
+    if value < 0:
+        raise ValueError("videoEndRelativeNs cannot be negative")
+    return value // 1_000_000
+
+
 def challenge_metadata_by_id(metadata: dict[str, Any]) -> dict[str, dict[str, Any]]:
     items = metadata.get("challenges")
     if not isinstance(items, list):
@@ -35,6 +47,30 @@ def challenge_metadata_by_id(metadata: dict[str, Any]) -> dict[str, dict[str, An
             continue
         result[str(item["id"])] = item
     return result
+
+
+def _session_ms_to_video_ms(
+    session_ms: int,
+    *,
+    video_start_session_ms: int,
+    video_end_session_ms: int | None,
+    video_duration_ms: int,
+) -> int:
+    """Map Android monotonic wall time onto the decoded MP4 media timeline.
+
+    CameraX's encoded media duration can be slightly shorter than elapsed wall-clock
+    time between its Start and Finalize callbacks. With only a start anchor, late
+    challenges can therefore appear to fall just beyond the decoded file even though
+    they happened while recording was active. New clients include both wall-clock
+    anchors, allowing a linear calibration onto [0, decoded_duration].
+    """
+    if video_end_session_ms is None or video_end_session_ms <= video_start_session_ms:
+        return session_ms - video_start_session_ms
+
+    wall_span_ms = video_end_session_ms - video_start_session_ms
+    relative_wall_ms = session_ms - video_start_session_ms
+    scaled = relative_wall_ms * video_duration_ms / float(wall_span_ms)
+    return int(round(scaled))
 
 
 def map_challenge_window(
@@ -60,11 +96,25 @@ def map_challenge_window(
     if challenge_start < 0 or challenge_end <= challenge_start:
         raise ValueError(f"Challenge {challenge_id} has an invalid monotonic time window")
 
-    video_offset_ms = video_start_relative_ms(metadata)
+    video_start_session_ms = video_start_relative_ms(metadata)
+    video_end_session_ms = video_end_relative_ms(metadata)
     analysis_start_session = max(0, challenge_start - max(0, pre_padding_ms))
     analysis_end_session = challenge_end + max(0, post_padding_ms)
-    video_start = max(0, analysis_start_session - video_offset_ms)
-    video_end = min(video_duration_ms, analysis_end_session - video_offset_ms)
+
+    mapped_start = _session_ms_to_video_ms(
+        analysis_start_session,
+        video_start_session_ms=video_start_session_ms,
+        video_end_session_ms=video_end_session_ms,
+        video_duration_ms=video_duration_ms,
+    )
+    mapped_end = _session_ms_to_video_ms(
+        analysis_end_session,
+        video_start_session_ms=video_start_session_ms,
+        video_end_session_ms=video_end_session_ms,
+        video_duration_ms=video_duration_ms,
+    )
+    video_start = max(0, min(video_duration_ms, mapped_start))
+    video_end = max(0, min(video_duration_ms, mapped_end))
     if video_end <= video_start:
         raise ValueError(f"Challenge {challenge_id} does not overlap the uploaded video")
 
