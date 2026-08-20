@@ -1,5 +1,7 @@
 package com.siteproof.app.data
 
+import java.security.MessageDigest
+
 class InspectionRepository(
     private val api: SiteProofApi,
     private val tokenStore: SessionStore,
@@ -8,6 +10,14 @@ class InspectionRepository(
     fun hasSession(): Boolean = !tokenStore.accessToken.isNullOrBlank()
 
     fun inspectorName(): String = tokenStore.inspectorName ?: "Inspector"
+
+    fun sessionScopeKey(): String {
+        val token = tokenStore.accessToken ?: return "signed-out"
+        return MessageDigest.getInstance("SHA-256")
+            .digest(token.toByteArray(Charsets.UTF_8))
+            .take(12)
+            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+    }
 
     suspend fun login(email: String, password: String): AuthUser {
         val response = api.login(LoginRequest(email.trim(), password))

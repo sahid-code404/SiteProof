@@ -23,7 +23,15 @@ Phase 4 provides:
 - SHA-256 evidence/manifest verification and storage abstraction;
 - admin/reviewer sensor challenge timeline.
 
-Phase 4 real-device acceptance remains a prerequisite and must not be replaced by CI results.
+Phase 4 physical-device acceptance: **PASS — completed on 2026-08-20.**
+
+Real Android testing confirmed continuous CameraX capture, all four ROTATE/TILT challenge families, animated movement guidance, PASS/FAIL/INCONCLUSIVE handling, fresh challenge retry with at least three reattempts per challenge, verification/upload retry, real sensor/location evidence, admin challenge/evidence display, map search and browser current-location flow.
+
+Observed successful sessions included:
+- ROTATE_LEFT PASS 96%, TILT_DOWN PASS 85%, TILT_UP PASS 93%;
+- ROTATE_RIGHT PASS 84%, an INCONCLUSIVE ROTATE_LEFT followed by a fresh successful retry, and TILT_DOWN PASS 97%.
+
+Video, motion sensors, location and manifest were received successfully. Exact device model/Android version and formal multi-run statistical rates were not recorded and are not fabricated.
 
 ## Phase 5 implemented in code
 

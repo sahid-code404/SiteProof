@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,7 +34,7 @@ class Settings(BaseSettings):
     challenge_sensor_conflict_degrees: float = 35.0
     challenge_pass_threshold: float = 0.75
     challenge_inconclusive_threshold: float = 0.50
-    challenge_max_retries: int = 1
+    challenge_max_retries: int = 3
     challenge_failure_limit: int = 2
     rotation_min_target_degrees: float = 25.0
     rotation_max_target_degrees: float = 55.0
@@ -97,6 +98,13 @@ class Settings(BaseSettings):
     max_thumbnail_bytes: int = 5 * 1024 * 1024
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @field_validator("challenge_max_retries", mode="after")
+    @classmethod
+    def enforce_minimum_challenge_retries(cls, value: int) -> int:
+        # Phase 4 mobile UX guarantees the inspector at least three explicit
+        # reattempts even if an older local .env still contains the previous value of 1.
+        return max(3, value)
 
     @property
     def cors_origin_list(self) -> list[str]:

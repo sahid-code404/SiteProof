@@ -72,10 +72,16 @@ class SensorRecorder(context: Context) : SensorEventListener {
     fun relativeNowNs(monotonicNowNs: Long): Long = (monotonicNowNs - captureStartNs).coerceAtLeast(0L)
 
     fun challengeSlice(startRelativeNs: Long, endRelativeNs: Long): ChallengeSlice = synchronized(lock) {
-        val samples = challengeBuffer.filter {
-            it.relativeTimestampNs in startRelativeNs..endRelativeNs &&
-                it.type in setOf("ACCELEROMETER", "GYROSCOPE", "ROTATION_VECTOR")
-        }
+        // SensorEvent callbacks from different sensor types are not guaranteed to arrive in
+        // globally timestamp-sorted order on real devices. The Phase 4 backend deliberately
+        // requires one monotonic common timeline, so normalize the merged slice by the hardware
+        // sensor timestamp before it is submitted.
+        val samples = challengeBuffer
+            .filter {
+                it.relativeTimestampNs in startRelativeNs..endRelativeNs &&
+                    it.type in setOf("ACCELEROMETER", "GYROSCOPE", "ROTATION_VECTOR")
+            }
+            .sortedBy { it.relativeTimestampNs }
         ChallengeSlice(
             samples = samples,
             summary = ChallengeClientSensorSummary(
@@ -83,6 +89,27 @@ class SensorRecorder(context: Context) : SensorEventListener {
                 rotationVectorSamples = samples.count { it.type == "ROTATION_VECTOR" },
                 accelerometerSamples = samples.count { it.type == "ACCELEROMETER" },
             ),
+        )
+    }
+
+    fun challengeGuidance(
+        challengeType: String,
+        startRelativeNs: Long,
+        endRelativeNs: Long,
+        targetDegrees: Double,
+        minDegrees: Double,
+        maxDegrees: Double,
+    ): ChallengeMovementGuidance = synchronized(lock) {
+        ChallengeGuidanceMath.estimate(
+            samples = challengeBuffer.filter {
+                it.type == "GYROSCOPE" &&
+                    it.relativeTimestampNs in startRelativeNs..endRelativeNs
+            },
+            challengeType = challengeType,
+            challengeStartRelativeNs = startRelativeNs,
+            targetDegrees = targetDegrees,
+            minDegrees = minDegrees,
+            maxDegrees = maxDegrees,
         )
     }
 

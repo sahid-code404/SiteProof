@@ -17,6 +17,7 @@ import com.siteproof.app.verification.model.DeviceCapabilities
 import com.siteproof.app.verification.model.EvidencePackage
 import com.siteproof.app.verification.model.LocationReadiness
 import com.siteproof.app.verification.model.SessionCreateResponse
+import com.siteproof.app.verification.sensors.ChallengeMovementGuidance
 import com.siteproof.app.verification.sensors.SensorRecorder
 import com.siteproof.app.verification.upload.EvidenceUploadWorker
 import java.io.File
@@ -159,6 +160,20 @@ class VerificationCaptureCoordinator(
         val baselineEnd = challenge.startRelativeNs + 500_000_000L
         if (nowRelative <= baselineEnd) return false
         return sensorRecorder.movementDetected(baselineEnd, nowRelative)
+    }
+
+    fun challengeGuidance(challenge: ChallengeIssue): ChallengeMovementGuidance {
+        val active = activeChallenge ?: return ChallengeMovementGuidance()
+        if (active.issue.challengeId != challenge.challengeId) return ChallengeMovementGuidance()
+        val nowRelative = sensorRecorder.relativeNowNs(SystemClock.elapsedRealtimeNanos())
+        return sensorRecorder.challengeGuidance(
+            challengeType = challenge.type,
+            startRelativeNs = active.startRelativeNs,
+            endRelativeNs = nowRelative,
+            targetDegrees = challenge.parameters.targetDegrees,
+            minDegrees = challenge.parameters.minDegrees,
+            maxDegrees = challenge.parameters.maxDegrees,
+        )
     }
 
     suspend fun submitCurrentChallenge(): ChallengeValidationResult {

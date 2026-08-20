@@ -40,6 +40,7 @@ TERMINAL_CHALLENGE_STATES = {
     ChallengeStatus.EXPIRED,
     ChallengeStatus.CANCELLED,
 }
+RETRYABLE_CHALLENGE_RESULTS = {ChallengeResult.FAIL, ChallengeResult.INCONCLUSIVE}
 
 
 def _challenge_rows(db: Session, session_id: uuid.UUID) -> list[VerificationChallenge]:
@@ -66,8 +67,12 @@ def _challenge_for_update(db: Session, challenge_id: uuid.UUID) -> VerificationC
     return challenge
 
 
-def _retry_count(rows: list[VerificationChallenge]) -> int:
-    return sum(1 for row in rows if row.attempt_number > 1)
+def _retry_count(rows: list[VerificationChallenge], sequence_number: int) -> int:
+    return sum(
+        1
+        for row in rows
+        if row.sequence_number == sequence_number and row.attempt_number > 1
+    )
 
 
 def _latest_by_sequence(rows: list[VerificationChallenge]) -> dict[int, VerificationChallenge]:
@@ -176,9 +181,9 @@ def issue_next_challenge(
     session.status = VerificationSessionStatus.CHALLENGES_IN_PROGRESS
     latest = _latest_by_sequence(rows)
     previous = rows[-1] if rows else None
-    retries_used = _retry_count(rows)
+    retries_used = _retry_count(rows, previous.sequence_number) if previous else 0
 
-    if previous and previous.result == ChallengeResult.INCONCLUSIVE and retries_used < settings.challenge_max_retries:
+    if previous and previous.result in RETRYABLE_CHALLENGE_RESULTS and retries_used < settings.challenge_max_retries:
         sequence_number = previous.sequence_number
         attempt_number = previous.attempt_number + 1
         audit_action = "CHALLENGE_RETRY_ISSUED"
@@ -219,7 +224,7 @@ def issue_next_challenge(
     db.flush()
     record_audit(
         db,
-        organization_id=session.organization_id,
+        organization_id=challenge.organization_id,
         actor_user_id=current_user.id,
         entity_type="VERIFICATION_CHALLENGE",
         entity_id=challenge.id,
@@ -338,8 +343,8 @@ def _result_response(
     settings = get_settings()
     rows = _challenge_rows(db, session.id)
     retry_allowed = (
-        challenge.result == ChallengeResult.INCONCLUSIVE
-        and _retry_count(rows) < settings.challenge_max_retries
+        challenge.result in RETRYABLE_CHALLENGE_RESULTS
+        and _retry_count(rows, challenge.sequence_number) < settings.challenge_max_retries
         and challenge.sequence_number <= settings.challenge_count
     )
     sequence_complete = session.status in {
@@ -463,8 +468,8 @@ def submit_challenge(
 
     rows = _challenge_rows(db, session.id)
     retry_allowed = (
-        outcome.result == ChallengeResult.INCONCLUSIVE
-        and _retry_count(rows) < settings.challenge_max_retries
+        outcome.result in RETRYABLE_CHALLENGE_RESULTS
+        and _retry_count(rows, challenge.sequence_number) < settings.challenge_max_retries
     )
     if challenge.sequence_number >= settings.challenge_count and not retry_allowed:
         _finalize_sequence(db, current_user, session, rows)
