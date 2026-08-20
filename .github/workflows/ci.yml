@@ -73,4 +73,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - run: gradle :app:testDebugUnitTest :app:assembleDebug --stacktrace
+      - name: Build OTA bootstrap APK
+        run: |
+          gradle :app:testDebugUnitTest :app:assembleDebug --stacktrace \
+            -PSITEPROOF_API_BASE_URL="http://192.168.1.102:8000/api/v1/" \
+            -PSITEPROOF_VERSION_CODE="5000" \
+            -PSITEPROOF_VERSION_NAME="0.5.0-dev.bootstrap"
+      - name: Upload OTA bootstrap APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: siteproof-phase5-ota-bootstrap-192-168-1-102
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
