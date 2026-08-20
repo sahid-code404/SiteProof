@@ -17,6 +17,7 @@ import com.siteproof.app.data.InspectionCache
 import com.siteproof.app.data.InspectionRepository
 import com.siteproof.app.data.TokenStore
 import com.siteproof.app.data.createApi
+import com.siteproof.app.update.DevAppUpdateManager
 import com.siteproof.app.verification.VerificationCaptureCoordinator
 import com.siteproof.app.verification.VerificationRepository
 import com.siteproof.app.verification.VerificationScreen
@@ -44,6 +45,7 @@ fun SiteProofApp() {
             challengeDao = database.activeChallengeDao(),
         )
     }
+    val updateManager = remember(context) { DevAppUpdateManager(context) }
     val authViewModel: AuthViewModel = viewModel(
         factory = SiteProofViewModelFactory { AuthViewModel(repository) },
     )
@@ -66,6 +68,7 @@ fun SiteProofApp() {
                         InspectionListScreen(
                             inspectorName = repository.inspectorName(),
                             state = state,
+                            updateManager = updateManager,
                             onRefresh = inspectionsViewModel::refresh,
                             onOpen = { id -> navController.navigate("inspection/$id") },
                             onSignOut = authViewModel::signOut,
