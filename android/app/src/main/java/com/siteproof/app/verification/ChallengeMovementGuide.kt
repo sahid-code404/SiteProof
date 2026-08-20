@@ -55,9 +55,13 @@ internal fun ChallengeMovementGuide(
         label = "phone-motion",
     )
 
-    val rotationZ = when (challenge.type) {
-        "ROTATE_RIGHT" -> motion * 22f
-        "ROTATE_LEFT" -> motion * -22f
+    // ROTATE_LEFT / ROTATE_RIGHT are yaw challenges in the existing Phase 4
+    // sensor contract (rotation about the phone's portrait Y axis), not a
+    // clockwise/counter-clockwise screen-plane roll. Animate the same physical
+    // movement that the backend and Phase 5 camera-motion analyzer validate.
+    val rotationY = when (challenge.type) {
+        "ROTATE_RIGHT" -> motion * 30f
+        "ROTATE_LEFT" -> motion * -30f
         else -> 0f
     }
     val rotationX = when (challenge.type) {
@@ -66,8 +70,8 @@ internal fun ChallengeMovementGuide(
         else -> 0f
     }
     val arrow = when (challenge.type) {
-        "ROTATE_RIGHT" -> "↻"
-        "ROTATE_LEFT" -> "↺"
+        "ROTATE_RIGHT" -> "→"
+        "ROTATE_LEFT" -> "←"
         "TILT_UP" -> "↗"
         "TILT_DOWN" -> "↙"
         else -> "◆"
@@ -100,7 +104,7 @@ internal fun ChallengeMovementGuide(
                 modifier = Modifier
                     .size(width = 86.dp, height = 138.dp)
                     .graphicsLayer {
-                        this.rotationZ = rotationZ
+                        this.rotationY = rotationY
                         this.rotationX = rotationX
                     }
                     .clip(RoundedCornerShape(17.dp))
@@ -171,16 +175,16 @@ private fun guidanceColor(status: ChallengeGuidanceStatus): Color = when (status
 internal fun challengeInstruction(type: String): String = when (type) {
     "TILT_UP" -> "Tilt the TOP of the phone away from you"
     "TILT_DOWN" -> "Tilt the TOP of the phone toward you"
-    "ROTATE_RIGHT" -> "Rotate the phone clockwise"
-    "ROTATE_LEFT" -> "Rotate the phone counter-clockwise"
+    "ROTATE_RIGHT" -> "Turn the phone to your right"
+    "ROTATE_LEFT" -> "Turn the phone to your left"
     else -> "Follow the movement shown"
 }
 
 private fun challengeSecondaryHint(type: String): String = when (type) {
     "TILT_UP" -> "Keep the screen facing you; push only the top edge away."
     "TILT_DOWN" -> "Keep the screen facing you; bring only the top edge toward you."
-    "ROTATE_RIGHT" -> "Keep the screen facing you and turn it to the right."
-    "ROTATE_LEFT" -> "Keep the screen facing you and turn it to the left."
+    "ROTATE_RIGHT" -> "Keep the phone upright and swing the camera right, like looking to your right. Do not twist it clockwise."
+    "ROTATE_LEFT" -> "Keep the phone upright and swing the camera left, like looking to your left. Do not twist it counter-clockwise."
     else -> "Keep the inspection site visible while moving."
 }
 
