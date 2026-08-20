@@ -7,18 +7,50 @@ plugins {
 
 val siteProofApiBaseUrl = providers.gradleProperty("SITEPROOF_API_BASE_URL")
     .orElse("http://10.0.2.2:8000/api/v1/")
+val siteProofVersionCode = providers.gradleProperty("SITEPROOF_VERSION_CODE")
+    .orElse("5")
+    .map(String::toInt)
+val siteProofVersionName = providers.gradleProperty("SITEPROOF_VERSION_NAME")
+    .orElse("0.5.0")
+val siteProofUpdateManifestUrl = providers.gradleProperty("SITEPROOF_UPDATE_MANIFEST_URL")
+    .orElse("https://github.com/sahid-code404/SiteProof/releases/download/dev-latest/siteproof-update.json")
 
 android {
     namespace = "com.siteproof.app"
     compileSdk = 36
 
+    signingConfigs {
+        create("devDebug") {
+            // Development-only signing identity. The debug package uses an applicationId
+            // suffix so this key can never sign or update the production SiteProof package.
+            storeFile = rootProject.file("dev-signing/siteproof-dev.keystore")
+            storePassword = "siteproof-dev"
+            keyAlias = "siteproof-dev"
+            keyPassword = "siteproof-dev"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.siteproof.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.4.0"
+        versionCode = siteProofVersionCode.get()
+        versionName = siteProofVersionName.get()
         buildConfigField("String", "SITEPROOF_API_BASE_URL", "\"${siteProofApiBaseUrl.get()}\"")
+        buildConfigField(
+            "String",
+            "SITEPROOF_UPDATE_MANIFEST_URL",
+            "\"${siteProofUpdateManifestUrl.get()}\"",
+        )
+    }
+
+    buildTypes {
+        getByName("debug") {
+            // One-time bootstrap installs as com.siteproof.app.dev. All subsequent dev APKs
+            // share the stable development certificate and can update in place.
+            applicationIdSuffix = ".dev"
+            signingConfig = signingConfigs.getByName("devDebug")
+        }
     }
 
     buildFeatures {
@@ -48,6 +80,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.5")
+    implementation("androidx.core:core-ktx:1.15.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
