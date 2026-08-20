@@ -105,6 +105,118 @@ data class VerificationSession(
 )
 
 @JsonClass(generateAdapter = false)
+data class ChallengeParameters(
+    val targetDegrees: Double,
+    val minDegrees: Double,
+    val maxDegrees: Double,
+)
+
+@JsonClass(generateAdapter = false)
+data class ChallengeIssue(
+    val challengeId: String,
+    val sequenceNumber: Int,
+    val attemptNumber: Int,
+    val totalChallenges: Int,
+    val type: String,
+    val instruction: String,
+    val parameters: ChallengeParameters,
+    val issuedAt: String,
+    val expiresAt: String,
+    val serverTime: String,
+    val nonce: String,
+)
+
+@JsonClass(generateAdapter = false)
+data class ChallengeStartRequest(
+    val nonce: String,
+    val clientMonotonicNs: Long,
+)
+
+@JsonClass(generateAdapter = false)
+data class ChallengeSensorWindow(
+    val startRelativeNs: Long,
+    val endRelativeNs: Long,
+)
+
+@JsonClass(generateAdapter = false)
+data class ChallengeSensorSample(
+    val type: String,
+    val relativeTimestampNs: Long,
+    val values: List<Double>,
+    val accuracy: Int? = null,
+)
+
+@JsonClass(generateAdapter = false)
+data class ChallengeClientSensorSummary(
+    val gyroSamples: Int,
+    val rotationVectorSamples: Int,
+    val accelerometerSamples: Int,
+)
+
+@JsonClass(generateAdapter = false)
+data class ChallengeSubmitRequest(
+    val nonce: String,
+    val idempotencyKey: String,
+    val sensorWindow: ChallengeSensorWindow,
+    val samples: List<ChallengeSensorSample>,
+    val sensorSummary: ChallengeClientSensorSummary,
+)
+
+@JsonClass(generateAdapter = false)
+data class ChallengeValidationResult(
+    val challengeId: String,
+    val sequenceNumber: Int,
+    val type: String,
+    val result: String,
+    val score: Double,
+    val reasons: List<String>,
+    val metrics: Map<String, Any?>,
+    val sensorQuality: Map<String, Any?>,
+    val retryAllowed: Boolean,
+    val sequenceComplete: Boolean,
+    val sessionStatus: String,
+    val serverTime: String,
+)
+
+@JsonClass(generateAdapter = false)
+data class ChallengeTimelineItem(
+    val id: String,
+    val sequenceNumber: Int,
+    val attemptNumber: Int,
+    val type: String,
+    val status: String,
+    val result: String? = null,
+    val parameters: ChallengeParameters,
+    val issuedAt: String,
+    val startedAt: String? = null,
+    val completedAt: String? = null,
+    val expiresAt: String,
+    val score: Double? = null,
+    val sensorScore: Double? = null,
+    val failureReason: String? = null,
+    val reasons: List<String> = emptyList(),
+    val metrics: Map<String, Any?> = emptyMap(),
+    val sensorQuality: Map<String, Any?> = emptyMap(),
+)
+
+@JsonClass(generateAdapter = false)
+data class ChallengeListResponse(
+    val sessionId: String,
+    val totalRequired: Int,
+    val items: List<ChallengeTimelineItem>,
+)
+
+data class ChallengeTimelineMetadata(
+    val id: String,
+    val type: String,
+    val issuedRelativeMs: Long,
+    val startedRelativeMs: Long?,
+    val completedRelativeMs: Long?,
+    val result: String?,
+    val score: Double?,
+)
+
+@JsonClass(generateAdapter = false)
 data class EvidenceFileDescriptor(
     val type: String,
     val filename: String,

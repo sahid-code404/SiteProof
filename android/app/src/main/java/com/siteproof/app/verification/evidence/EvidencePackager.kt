@@ -4,6 +4,7 @@ import android.os.Build
 import com.siteproof.app.BuildConfig
 import com.siteproof.app.data.InspectionDetail
 import com.siteproof.app.verification.model.CaptureCompleteRequest
+import com.siteproof.app.verification.model.ChallengeTimelineMetadata
 import com.siteproof.app.verification.model.DeviceCapabilities
 import com.siteproof.app.verification.model.EvidenceFileDescriptor
 import com.siteproof.app.verification.model.EvidencePackage
@@ -23,6 +24,7 @@ class EvidencePackager {
         videoStartMonotonicNs: Long,
         capabilities: DeviceCapabilities,
         captureComplete: CaptureCompleteRequest,
+        challenges: List<ChallengeTimelineMetadata> = emptyList(),
     ): EvidencePackage {
         val video = File(directory, "capture.mp4")
         val sensors = File(directory, "sensors.ndjson.gz")
@@ -69,6 +71,19 @@ class EvidencePackager {
                 captureComplete.locationSummary.bestAccuracyMeters?.let { put("bestAccuracyMeters", it) }
                 captureComplete.locationSummary.firstRelativeTimestampNs?.let { put("firstRelativeTimestampNs", it) }
                 captureComplete.locationSummary.lastRelativeTimestampNs?.let { put("lastRelativeTimestampNs", it) }
+            })
+            put("challenges", JSONArray().apply {
+                challenges.forEach { item ->
+                    put(JSONObject().apply {
+                        put("id", item.id)
+                        put("type", item.type)
+                        put("issuedRelativeMs", item.issuedRelativeMs)
+                        item.startedRelativeMs?.let { put("startedRelativeMs", it) }
+                        item.completedRelativeMs?.let { put("completedRelativeMs", it) }
+                        item.result?.let { put("result", it) }
+                        item.score?.let { put("score", it) }
+                    })
+                }
             })
         }
         metadata.writeText(metadataJson.toString(), Charsets.UTF_8)

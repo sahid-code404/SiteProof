@@ -23,9 +23,22 @@ from app.services.audit_service import record_audit
 ACTIVE_SESSION_STATES = {
     VerificationSessionStatus.CREATED,
     VerificationSessionStatus.CAPTURING,
+    VerificationSessionStatus.CHALLENGES_IN_PROGRESS,
+    VerificationSessionStatus.CHALLENGES_COMPLETED,
+    VerificationSessionStatus.CHALLENGE_FAILED,
     VerificationSessionStatus.CAPTURE_COMPLETED,
     VerificationSessionStatus.UPLOADING,
     VerificationSessionStatus.UPLOAD_FAILED,
+}
+
+# The short verification-session expiry protects the *live proof* stage. Once the server has
+# accepted the complete challenge sequence, or once capture has been finalized, the Phase 3
+# evidence transport may legitimately arrive later after a network gap. Expiring those states
+# merely because an admin/inspector polls the session would destroy that recovery guarantee.
+LIVE_EXPIRING_STATES = {
+    VerificationSessionStatus.CREATED,
+    VerificationSessionStatus.CAPTURING,
+    VerificationSessionStatus.CHALLENGES_IN_PROGRESS,
 }
 
 
@@ -133,7 +146,7 @@ def viewable_session(db: Session, current_user: User, session_id: uuid.UUID) -> 
 
 
 def expire_if_needed(db: Session, session: VerificationSession, *, actor_user_id: uuid.UUID) -> bool:
-    if session.status not in ACTIVE_SESSION_STATES or aware(session.expires_at) > utc_now():
+    if session.status not in LIVE_EXPIRING_STATES or aware(session.expires_at) > utc_now():
         return False
     session.status = VerificationSessionStatus.EXPIRED
     inspection = db.get(Inspection, session.inspection_id)

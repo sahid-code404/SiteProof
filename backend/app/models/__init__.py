@@ -1,5 +1,11 @@
 from app.models.assignment import AssignmentStatus, InspectionAssignment
 from app.models.audit import AuditLog
+from app.models.challenge import (
+    ChallengeResult,
+    ChallengeStatus,
+    ChallengeType,
+    VerificationChallenge,
+)
 from app.models.inspection import (
     Inspection,
     InspectionPriority,
@@ -20,6 +26,9 @@ from app.models.verification import (
 __all__ = [
     "AssignmentStatus",
     "AuditLog",
+    "ChallengeResult",
+    "ChallengeStatus",
+    "ChallengeType",
     "EvidenceFile",
     "EvidenceFileType",
     "EvidenceUploadStatus",
@@ -32,6 +41,7 @@ __all__ = [
     "Organization",
     "User",
     "UserRole",
+    "VerificationChallenge",
     "VerificationSession",
     "VerificationSessionStatus",
 ]

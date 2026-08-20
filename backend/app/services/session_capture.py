@@ -131,11 +131,25 @@ def complete_capture(
             "Capture completion was already recorded with different metadata.",
         )
 
-    if session.status != VerificationSessionStatus.CAPTURING:
+    challenge_terminal_states = {
+        VerificationSessionStatus.CHALLENGES_COMPLETED,
+        VerificationSessionStatus.CHALLENGE_FAILED,
+    }
+    if session.status not in challenge_terminal_states:
+        if session.status == VerificationSessionStatus.CAPTURING:
+            raise SiteProofError(
+                409,
+                "CHALLENGES_REQUIRED",
+                "Required server-generated movement challenges must finish before capture can complete.",
+            )
         if expire_if_needed(db, session, actor_user_id=current_user.id):
             db.commit()
             raise SiteProofError(409, "SESSION_EXPIRED", "Verification session expired.")
-        raise SiteProofError(409, "INVALID_STATUS_TRANSITION", "Only CAPTURING sessions can complete capture.")
+        raise SiteProofError(
+            409,
+            "INVALID_STATUS_TRANSITION",
+            "Capture can complete only after the challenge sequence finishes.",
+        )
 
     if payload.capture_duration_ms < settings.capture_min_seconds * 1000:
         raise SiteProofError(422, "CAPTURE_TOO_SHORT", f"Capture must be at least {settings.capture_min_seconds} seconds.")

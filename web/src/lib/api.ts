@@ -95,6 +95,9 @@ export type InspectionPayload = {
 export type VerificationSessionStatus =
   | 'CREATED'
   | 'CAPTURING'
+  | 'CHALLENGES_IN_PROGRESS'
+  | 'CHALLENGES_COMPLETED'
+  | 'CHALLENGE_FAILED'
   | 'CAPTURE_COMPLETED'
   | 'UPLOADING'
   | 'UPLOADED'
@@ -140,6 +143,35 @@ export type VerificationSession = {
   sensorSummary?: SensorSummary | null
   locationSummary?: LocationSummary | null
   evidence: EvidencePresence
+}
+
+export type ChallengeType = 'ROTATE_LEFT' | 'ROTATE_RIGHT' | 'TILT_UP' | 'TILT_DOWN'
+export type ChallengeResult = 'PASS' | 'FAIL' | 'INCONCLUSIVE'
+
+export type ChallengeTimelineItem = {
+  id: string
+  sequenceNumber: number
+  attemptNumber: number
+  type: ChallengeType
+  status: string
+  result?: ChallengeResult | null
+  parameters: { targetDegrees: number; minDegrees: number; maxDegrees: number }
+  issuedAt: string
+  startedAt?: string | null
+  completedAt?: string | null
+  expiresAt: string
+  score?: number | null
+  sensorScore?: number | null
+  failureReason?: string | null
+  reasons: string[]
+  metrics: Record<string, unknown>
+  sensorQuality: Record<string, unknown>
+}
+
+export type ChallengeListResponse = {
+  sessionId: string
+  totalRequired: number
+  items: ChallengeTimelineItem[]
 }
 
 export type EvidenceFile = {
@@ -237,6 +269,10 @@ export function getInspectors(search = ''): Promise<Page<Inspector>> {
 
 export function getLatestVerificationSession(inspectionId: string): Promise<VerificationSession | null> {
   return request(`/inspections/${inspectionId}/sessions/latest`)
+}
+
+export function getSessionChallenges(sessionId: string): Promise<ChallengeListResponse> {
+  return request(`/sessions/${sessionId}/challenges`)
 }
 
 export function getSessionEvidence(sessionId: string): Promise<{ sessionId: string; items: EvidenceFile[] }> {

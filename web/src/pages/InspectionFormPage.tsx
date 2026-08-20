@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { SiteMap } from '../components/SiteMap'
 import { createInspection, getInspection, updateInspection, type InspectionPayload, type InspectionPriority, type InspectionType } from '../lib/api'
+import { reverseLocation, searchLocation, type GeocodingResult } from '../lib/geocoding'
 import { validateInspectionInput } from '../lib/inspectionValidation'
+import '../location-search.css'
 
 type FormState = {
   title: string
@@ -38,6 +40,11 @@ export function InspectionFormPage() {
   const queryClient = useQueryClient()
   const [form, setForm] = useState<FormState>(initialState)
   const [clientError, setClientError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<GeocodingResult[]>([])
+  const [locationError, setLocationError] = useState<string | null>(null)
+  const [searching, setSearching] = useState(false)
+  const [locating, setLocating] = useState(false)
   const existing = useQuery({ queryKey: ['inspection', id], queryFn: () => getInspection(id!), enabled: editing })
 
   useEffect(() => {
@@ -70,6 +77,77 @@ export function InspectionFormPage() {
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  function applyLocation(result: GeocodingResult) {
+    setForm((current) => ({
+      ...current,
+      latitude: result.latitude.toFixed(6),
+      longitude: result.longitude.toFixed(6),
+      locationName: result.name || current.locationName,
+      locationAddress: result.address || current.locationAddress,
+    }))
+    setSearchQuery(result.displayName)
+    setSearchResults([])
+    setLocationError(null)
+  }
+
+  async function searchSite() {
+    setLocationError(null)
+    setSearching(true)
+    try {
+      const results = await searchLocation(searchQuery)
+      setSearchResults(results)
+      if (results.length === 0) setLocationError('No matching locations found. Try a more specific place name.')
+    } catch (error) {
+      setSearchResults([])
+      setLocationError(error instanceof Error ? error.message : 'Unable to search for that location.')
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  function useCurrentLocation() {
+    setLocationError(null)
+    if (!navigator.geolocation) {
+      setLocationError('This browser does not provide geolocation.')
+      return
+    }
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const latitude = position.coords.latitude
+        const longitude = position.coords.longitude
+        setForm((current) => ({
+          ...current,
+          latitude: latitude.toFixed(6),
+          longitude: longitude.toFixed(6),
+        }))
+        try {
+          const resolved = await reverseLocation(latitude, longitude)
+          if (resolved) {
+            setForm((current) => ({
+              ...current,
+              latitude: latitude.toFixed(6),
+              longitude: longitude.toFixed(6),
+              locationName: resolved.name || current.locationName,
+              locationAddress: resolved.address || current.locationAddress,
+            }))
+            setSearchQuery(resolved.displayName)
+            setSearchResults([])
+          }
+        } catch {
+          // Exact browser coordinates are still useful if reverse geocoding is unavailable.
+        } finally {
+          setLocating(false)
+        }
+      },
+      (error) => {
+        setLocating(false)
+        setLocationError(error.message || 'Unable to read the browser location.')
+      },
+      { enableHighAccuracy: true, timeout: 12_000, maximumAge: 0 },
+    )
   }
 
   function submit(event: FormEvent) {
@@ -122,7 +200,19 @@ export function InspectionFormPage() {
           <div className="field-grid"><label>Inspection type<select value={form.inspectionType} onChange={(event) => update('inspectionType', event.target.value as InspectionType)}>{['ROAD_REPAIR','INFRASTRUCTURE','CONSTRUCTION','UTILITY','GENERAL'].map((item) => <option key={item}>{item}</option>)}</select></label><label>Priority<select value={form.priority} onChange={(event) => update('priority', event.target.value as InspectionPriority)}>{['LOW','MEDIUM','HIGH','CRITICAL'].map((item) => <option key={item}>{item}</option>)}</select></label></div>
         </section>
 
-        <section className="form-card"><div className="section-title"><span>02</span><div><h2>Site</h2><p>Click the map or enter coordinates. OpenStreetMap provides the base map.</p></div></div>
+        <section className="form-card"><div className="section-title"><span>02</span><div><h2>Site</h2><p>Search, use your current location, click the map, or enter coordinates. OpenStreetMap provides the base map.</p></div></div>
+          <div className="location-tools">
+            <label className="location-search-field">Search location
+              <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Road, landmark, area or city" onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void searchSite() } }} />
+            </label>
+            <div className="location-search-actions">
+              <button className="button primary" type="button" disabled={searching} onClick={() => void searchSite()}>{searching ? 'Searching…' : 'Search'}</button>
+              <button className="button ghost" type="button" disabled={locating} onClick={useCurrentLocation}>{locating ? 'Locating…' : 'Use current location'}</button>
+            </div>
+          </div>
+          {searchResults.length > 0 ? <div className="location-results" role="list">{searchResults.map((result) => <button className="location-result" type="button" role="listitem" key={`${result.latitude}-${result.longitude}-${result.displayName}`} onClick={() => applyLocation(result)}><strong>{result.name}</strong><small>{result.displayName}</small></button>)}</div> : null}
+          {locationError ? <div className="notice error">{locationError}</div> : null}
+          <p className="location-provider-note">Search is submitted only when you press Search and is powered by OpenStreetMap Nominatim.</p>
           <SiteMap latitude={latitude} longitude={longitude} radius={radius} editable onChange={(lat, lng) => setForm((current) => ({ ...current, latitude: lat.toFixed(6), longitude: lng.toFixed(6) }))} />
           <div className="field-grid"><label>Latitude<input type="number" step="0.000001" min="-90" max="90" value={form.latitude} onChange={(event) => update('latitude', event.target.value)} required /></label><label>Longitude<input type="number" step="0.000001" min="-180" max="180" value={form.longitude} onChange={(event) => update('longitude', event.target.value)} required /></label></div>
           <div className="field-grid"><label>Location name<input maxLength={200} value={form.locationName} onChange={(event) => update('locationName', event.target.value)} placeholder="Central Avenue" /></label><label>Allowed radius (m)<input type="number" min="10" max="5000" value={form.radius} onChange={(event) => update('radius', event.target.value)} required /></label></div>

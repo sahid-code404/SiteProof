@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.core.security import hash_password
 from app.models import Inspector, Organization, User, UserRole
+from tests.phase4_helpers import complete_required_challenges
 
 PASSWORD = "SiteProofTest!42"
 
@@ -113,7 +114,7 @@ def create_session(client, inspector_headers, inspection_id, device_session_id=N
             "deviceSessionId": device_session_id or str(uuid.uuid4()),
             "clientTime": datetime.now(timezone.utc).isoformat(),
             "clientMonotonicNs": 123456789,
-            "clientVersion": "0.3.0-test",
+            "clientVersion": "0.4.0-test",
             "androidVersion": "15",
             "deviceModel": "Test device",
         },
@@ -147,6 +148,7 @@ def start_capture(client, headers, session_id, **location_overrides):
 
 
 def finish_capture(client, headers, session_id):
+    complete_required_challenges(client, headers, session_id)
     return client.post(
         f"/api/v1/sessions/{session_id}/capture-complete",
         headers=headers,
