@@ -28,6 +28,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.siteproof.app.data.InspectionSummary
+import com.siteproof.app.update.DevAppUpdateCard
+import com.siteproof.app.update.DevAppUpdateManager
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -41,6 +43,7 @@ private fun formatDeadline(value: String): String = runCatching {
 fun InspectionListScreen(
     inspectorName: String,
     state: InspectionsState,
+    updateManager: DevAppUpdateManager,
     onRefresh: () -> Unit,
     onOpen: (String) -> Unit,
     onSignOut: () -> Unit,
@@ -75,6 +78,9 @@ fun InspectionListScreen(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    item(key = "dev-update") {
+                        DevAppUpdateCard(updateManager)
+                    }
                     if (state.offline) {
                         item {
                             Text(
