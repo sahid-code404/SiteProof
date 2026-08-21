@@ -348,13 +348,16 @@ class VerificationViewModel(
         captureLimitJob?.cancel()
         val remainingMinimum = (8_000L - coordinator.captureElapsedMs()).coerceAtLeast(0L)
         if (remainingMinimum > 0) delay(remainingMinimum)
-        _state.value = VerificationUiState.Captured(
-            prepared.session.sessionId,
-            "PACKAGING",
-            "Finalizing secure evidence and challenge timeline…",
-        )
         try {
+            // Keep the persistent camera host composed until CameraX has fully finalized the
+            // recording. Switching to Captured earlier disposed PreviewView while Recorder was
+            // still active and produced real timestamp/frame gaps at the tail on some devices.
             coordinator.stop()
+            _state.value = VerificationUiState.Captured(
+                prepared.session.sessionId,
+                "PACKAGING",
+                "Secure evidence finalized. Preparing upload…",
+            )
             monitorUpload(prepared.session.sessionId)
         } catch (error: Exception) {
             _state.value = VerificationUiState.Error(
