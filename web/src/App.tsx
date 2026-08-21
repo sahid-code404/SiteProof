@@ -4,6 +4,7 @@ import { getToken, getStoredUser } from './lib/auth'
 import { DashboardPage } from './pages/DashboardPage'
 import { InspectionDetailPage } from './pages/InspectionDetailPage'
 import { InspectionFormPage } from './pages/InspectionFormPage'
+import { InspectorManagementPage } from './pages/InspectorManagementPage'
 import { InspectionsPage } from './pages/InspectionsPage'
 import { LoginPage } from './pages/LoginPage'
 import { PublicReceiptPage } from './pages/PublicReceiptPage'
@@ -24,6 +25,7 @@ function ProtectedApp() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/review" element={canReview ? <ReviewWorkspacePage /> : <Navigate to="/" replace />} />
         <Route path="/inspections" element={<InspectionsPage />} />
+        <Route path="/inspectors" element={canManage ? <InspectorManagementPage /> : <Navigate to="/" replace />} />
         <Route path="/inspections/new" element={canManage ? <InspectionFormPage /> : <Navigate to="/inspections" replace />} />
         <Route path="/inspections/:id/edit" element={canManage ? <InspectionFormPage /> : <Navigate to="/inspections" replace />} />
         <Route path="/inspections/:id" element={<InspectionDetailPage />} />
