@@ -1,9 +1,11 @@
 import { useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { getSummary } from '../lib/api'
+import { getSummary, type DashboardSummary } from '../lib/api'
 import { clearSession, getStoredUser } from '../lib/auth'
 import { NetworkStatusBanner } from './NetworkStatusBanner'
+
+type ShellSummary = DashboardSummary & { reviewRequired?: number; flagged?: number }
 
 function NavIcon({ path }: { path: 'home' | 'inspection' | 'review' | 'people' }) {
   const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8 }
@@ -20,13 +22,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const summary = useQuery({ queryKey: ['shell-summary'], queryFn: getSummary, staleTime: 30_000 })
+  const shellSummary = summary.data as ShellSummary | undefined
   const canReview = user?.role === 'ADMIN' || user?.role === 'REVIEWER'
   const canManage = user?.role === 'ADMIN'
   const inspectorsActive = location.pathname.startsWith('/inspectors')
   const notices = [
-    summary.data?.overdue ? `${summary.data.overdue} overdue inspection${summary.data.overdue === 1 ? '' : 's'}` : null,
-    summary.data?.reviewRequired ? `${summary.data.reviewRequired} result${summary.data.reviewRequired === 1 ? '' : 's'} need review` : null,
-    summary.data?.flagged ? `${summary.data.flagged} flagged verification${summary.data.flagged === 1 ? '' : 's'}` : null,
+    shellSummary?.overdue ? `${shellSummary.overdue} overdue inspection${shellSummary.overdue === 1 ? '' : 's'}` : null,
+    shellSummary?.reviewRequired ? `${shellSummary.reviewRequired} result${shellSummary.reviewRequired === 1 ? '' : 's'} need review` : null,
+    shellSummary?.flagged ? `${shellSummary.flagged} flagged verification${shellSummary.flagged === 1 ? '' : 's'}` : null,
   ].filter(Boolean) as string[]
 
   function closeMenus() {
