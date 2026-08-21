@@ -22,9 +22,17 @@ type FormState = {
 }
 
 const initialState: FormState = {
-  title: '', description: '', inspectionType: 'GENERAL', priority: 'MEDIUM',
-  latitude: '22.5726', longitude: '88.3639', locationName: '', locationAddress: '', radius: '100',
-  deadline: '', instructions: '',
+  title: '',
+  description: '',
+  inspectionType: 'GENERAL',
+  priority: 'MEDIUM',
+  latitude: '22.5726',
+  longitude: '88.3639',
+  locationName: '',
+  locationAddress: '',
+  radius: '100',
+  deadline: '',
+  instructions: '',
 }
 
 function toLocalInput(iso: string): string {
@@ -98,10 +106,10 @@ export function InspectionFormPage() {
     try {
       const results = await searchLocation(searchQuery)
       setSearchResults(results)
-      if (results.length === 0) setLocationError('No matching locations found. Try a more specific place name.')
+      if (results.length === 0) setLocationError('No matching locations found. Try a more specific search.')
     } catch (error) {
       setSearchResults([])
-      setLocationError(error instanceof Error ? error.message : 'Unable to search for that location.')
+      setLocationError(error instanceof Error ? error.message : 'Could not search for that location.')
     } finally {
       setSearching(false)
     }
@@ -110,7 +118,7 @@ export function InspectionFormPage() {
   function useCurrentLocation() {
     setLocationError(null)
     if (!navigator.geolocation) {
-      setLocationError('This browser does not provide geolocation.')
+      setLocationError('Location is not available in this browser.')
       return
     }
     setLocating(true)
@@ -137,14 +145,14 @@ export function InspectionFormPage() {
             setSearchResults([])
           }
         } catch {
-          // Exact browser coordinates are still useful if reverse geocoding is unavailable.
+          // Keep the device coordinates even if the address lookup fails.
         } finally {
           setLocating(false)
         }
       },
       (error) => {
         setLocating(false)
-        setLocationError(error.message || 'Unable to read the browser location.')
+        setLocationError(error.message || 'Could not read your location.')
       },
       { enableHighAccuracy: true, timeout: 12_000, maximumAge: 0 },
     )
@@ -166,6 +174,7 @@ export function InspectionFormPage() {
       setClientError(validationError)
       return
     }
+
     setClientError(null)
     mutation.mutate({
       title: form.title.trim(),
@@ -173,7 +182,8 @@ export function InspectionFormPage() {
       inspectionType: form.inspectionType,
       priority: form.priority,
       location: {
-        latitude, longitude,
+        latitude,
+        longitude,
         name: form.locationName.trim() || undefined,
         address: form.locationAddress.trim() || undefined,
       },
@@ -192,41 +202,86 @@ export function InspectionFormPage() {
 
   return (
     <>
-      <section className="page-heading"><p className="eyebrow">{editing ? 'EDIT INSPECTION' : 'NEW INSPECTION'}</p><h1>{editing ? 'Update field requirements' : 'Create inspection'}</h1><p>Define the task and site precisely. Assignment happens after the inspection is saved.</p></section>
+      <section className="page-heading">
+        <p className="eyebrow">{editing ? 'Edit inspection' : 'New inspection'}</p>
+        <h1>{editing ? 'Update inspection' : 'Create inspection'}</h1>
+        <p>Set the work, site and deadline. You can assign an inspector after saving.</p>
+      </section>
+
       <form className="form-layout" onSubmit={submit}>
-        <section className="form-card"><div className="section-title"><span>01</span><div><h2>Basic information</h2><p>Describe what the inspector needs to verify.</p></div></div>
+        <section className="form-card">
+          <div className="simple-section-title">
+            <h2>Work</h2>
+            <p>What needs to be checked?</p>
+          </div>
           <label className="wide">Title<input minLength={3} maxLength={150} value={form.title} onChange={(event) => update('title', event.target.value)} required /></label>
-          <label className="wide">Description<textarea rows={4} maxLength={5000} value={form.description} onChange={(event) => update('description', event.target.value)} /></label>
-          <div className="field-grid"><label>Inspection type<select value={form.inspectionType} onChange={(event) => update('inspectionType', event.target.value as InspectionType)}>{['ROAD_REPAIR','INFRASTRUCTURE','CONSTRUCTION','UTILITY','GENERAL'].map((item) => <option key={item}>{item}</option>)}</select></label><label>Priority<select value={form.priority} onChange={(event) => update('priority', event.target.value as InspectionPriority)}>{['LOW','MEDIUM','HIGH','CRITICAL'].map((item) => <option key={item}>{item}</option>)}</select></label></div>
+          <label className="wide">Description<textarea rows={3} maxLength={5000} value={form.description} onChange={(event) => update('description', event.target.value)} /></label>
+          <div className="field-grid">
+            <label>Type<select value={form.inspectionType} onChange={(event) => update('inspectionType', event.target.value as InspectionType)}>{['ROAD_REPAIR','INFRASTRUCTURE','CONSTRUCTION','UTILITY','GENERAL'].map((item) => <option key={item}>{item.replace(/_/g, ' ')}</option>)}</select></label>
+            <label>Priority<select value={form.priority} onChange={(event) => update('priority', event.target.value as InspectionPriority)}>{['LOW','MEDIUM','HIGH','CRITICAL'].map((item) => <option key={item}>{item}</option>)}</select></label>
+          </div>
         </section>
 
-        <section className="form-card"><div className="section-title"><span>02</span><div><h2>Site</h2><p>Search, use your current location, click the map, or enter coordinates. OpenStreetMap provides the base map.</p></div></div>
+        <section className="form-card">
+          <div className="simple-section-title">
+            <h2>Site</h2>
+            <p>Search for the site, use your location or choose a point on the map.</p>
+          </div>
+
           <div className="location-tools">
-            <label className="location-search-field">Search location
+            <label className="location-search-field">Search
               <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Road, landmark, area or city" onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void searchSite() } }} />
             </label>
             <div className="location-search-actions">
               <button className="button primary" type="button" disabled={searching} onClick={() => void searchSite()}>{searching ? 'Searching…' : 'Search'}</button>
-              <button className="button ghost" type="button" disabled={locating} onClick={useCurrentLocation}>{locating ? 'Locating…' : 'Use current location'}</button>
+              <button className="button ghost" type="button" disabled={locating} onClick={useCurrentLocation}>{locating ? 'Locating…' : 'Use my location'}</button>
             </div>
           </div>
-          {searchResults.length > 0 ? <div className="location-results" role="list">{searchResults.map((result) => <button className="location-result" type="button" role="listitem" key={`${result.latitude}-${result.longitude}-${result.displayName}`} onClick={() => applyLocation(result)}><strong>{result.name}</strong><small>{result.displayName}</small></button>)}</div> : null}
+
+          {searchResults.length > 0 ? (
+            <div className="location-results" role="list">
+              {searchResults.map((result) => (
+                <button className="location-result" type="button" role="listitem" key={`${result.latitude}-${result.longitude}-${result.displayName}`} onClick={() => applyLocation(result)}>
+                  <strong>{result.name}</strong>
+                  <small>{result.displayName}</small>
+                </button>
+              ))}
+            </div>
+          ) : null}
           {locationError ? <div className="notice error">{locationError}</div> : null}
-          <p className="location-provider-note">Search is submitted only when you press Search and is powered by OpenStreetMap Nominatim.</p>
+
           <SiteMap latitude={latitude} longitude={longitude} radius={radius} editable onChange={(lat, lng) => setForm((current) => ({ ...current, latitude: lat.toFixed(6), longitude: lng.toFixed(6) }))} />
-          <div className="field-grid"><label>Latitude<input type="number" step="0.000001" min="-90" max="90" value={form.latitude} onChange={(event) => update('latitude', event.target.value)} required /></label><label>Longitude<input type="number" step="0.000001" min="-180" max="180" value={form.longitude} onChange={(event) => update('longitude', event.target.value)} required /></label></div>
-          <div className="field-grid"><label>Location name<input maxLength={200} value={form.locationName} onChange={(event) => update('locationName', event.target.value)} placeholder="Central Avenue" /></label><label>Allowed radius (m)<input type="number" min="10" max="5000" value={form.radius} onChange={(event) => update('radius', event.target.value)} required /></label></div>
+
+          <div className="field-grid">
+            <label>Site name<input maxLength={200} value={form.locationName} onChange={(event) => update('locationName', event.target.value)} placeholder="Central Avenue" /></label>
+            <label>Capture radius (m)<input type="number" min="10" max="5000" value={form.radius} onChange={(event) => update('radius', event.target.value)} required /></label>
+          </div>
           <label className="wide">Address<input maxLength={500} value={form.locationAddress} onChange={(event) => update('locationAddress', event.target.value)} placeholder="Kolkata, West Bengal" /></label>
+
+          <details className="form-advanced-details">
+            <summary>Coordinates</summary>
+            <div className="field-grid">
+              <label>Latitude<input type="number" step="0.000001" min="-90" max="90" value={form.latitude} onChange={(event) => update('latitude', event.target.value)} required /></label>
+              <label>Longitude<input type="number" step="0.000001" min="-180" max="180" value={form.longitude} onChange={(event) => update('longitude', event.target.value)} required /></label>
+            </div>
+          </details>
         </section>
 
-        <section className="form-card"><div className="section-title"><span>03</span><div><h2>Deadline & instructions</h2><p>Browser local time is converted to an ISO timestamp before submission.</p></div></div>
+        <section className="form-card">
+          <div className="simple-section-title">
+            <h2>Timing & instructions</h2>
+            <p>When is it due and what should the inspector know?</p>
+          </div>
           <label>Deadline<input type="datetime-local" value={form.deadline} onChange={(event) => update('deadline', event.target.value)} required /></label>
-          <label className="wide">Inspector instructions<textarea rows={6} maxLength={5000} value={form.instructions} onChange={(event) => update('instructions', event.target.value)} /></label>
+          <label className="wide">Inspector instructions<textarea rows={5} maxLength={5000} value={form.instructions} onChange={(event) => update('instructions', event.target.value)} /></label>
         </section>
 
         {clientError ? <div className="notice error">{clientError}</div> : null}
         {mutation.isError ? <div className="notice error">{mutation.error.message}</div> : null}
-        <div className="form-actions"><Link className="button ghost" to={editing ? `/inspections/${id}` : '/inspections'}>Cancel</Link><button className="button primary" disabled={mutation.isPending}>{mutation.isPending ? 'Saving…' : editing ? 'Save changes' : 'Create inspection'}</button></div>
+        <div className="form-actions">
+          <Link className="button ghost" to={editing ? `/inspections/${id}` : '/inspections'}>Cancel</Link>
+          <button className="button primary" disabled={mutation.isPending}>{mutation.isPending ? 'Saving…' : editing ? 'Save changes' : 'Create inspection'}</button>
+        </div>
       </form>
     </>
   )
