@@ -151,10 +151,28 @@ def complete_capture(
             "Capture can complete only after the challenge sequence finishes.",
         )
 
-    if payload.capture_duration_ms < settings.capture_min_seconds * 1000:
-        raise SiteProofError(422, "CAPTURE_TOO_SHORT", f"Capture must be at least {settings.capture_min_seconds} seconds.")
-    if payload.capture_duration_ms > settings.capture_max_seconds * 1000:
-        raise SiteProofError(422, "CAPTURE_TOO_LONG", f"Capture cannot exceed {settings.capture_max_seconds} seconds.")
+    inspection = db.get(Inspection, session.inspection_id)
+    if inspection is None:
+        raise SiteProofError(409, "INSPECTION_UNAVAILABLE", "Inspection is unavailable.")
+
+    configured_min_seconds = max(settings.capture_min_seconds, inspection.capture_duration_seconds)
+    if payload.capture_duration_ms < configured_min_seconds * 1000:
+        raise SiteProofError(
+            422,
+            "CAPTURE_TOO_SHORT",
+            f"This inspection requires at least {configured_min_seconds} seconds of continuous video.",
+        )
+
+    # Legacy deployments used a 60 second global ceiling. A deliberately configured longer
+    # inspection gets a small finalization allowance without turning that legacy value into a
+    # reason to reject the administrator's selected duration.
+    effective_max_seconds = max(settings.capture_max_seconds, inspection.capture_duration_seconds + 10)
+    if payload.capture_duration_ms > effective_max_seconds * 1000:
+        raise SiteProofError(
+            422,
+            "CAPTURE_TOO_LONG",
+            f"Capture cannot exceed {effective_max_seconds} seconds for this inspection.",
+        )
 
     # A recording that began while the short-lived session was valid may be reported later
     # after connectivity returns. Infer its end from the authoritative server start receipt
@@ -165,8 +183,7 @@ def complete_capture(
     inferred_end = aware(session.capture_started_at) + timedelta(milliseconds=payload.capture_duration_ms)
     if inferred_end > aware(session.expires_at):
         session.status = VerificationSessionStatus.EXPIRED
-        inspection = db.get(Inspection, session.inspection_id)
-        if inspection is not None and inspection.status != InspectionStatus.CANCELLED:
+        if inspection.status != InspectionStatus.CANCELLED:
             inspection.status = InspectionStatus.READY
         record_audit(
             db,
@@ -197,8 +214,7 @@ def complete_capture(
     session.capture_duration_ms = payload.capture_duration_ms
     session.sensor_summary = payload.sensor_summary.model_dump()
     session.location_summary = payload.location_summary.model_dump()
-    inspection = db.get(Inspection, session.inspection_id)
-    if inspection is not None and inspection.status != InspectionStatus.CANCELLED:
+    if inspection.status != InspectionStatus.CANCELLED:
         inspection.status = InspectionStatus.EVIDENCE_UPLOADING
     record_audit(
         db,
