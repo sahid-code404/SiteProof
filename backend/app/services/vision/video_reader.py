@@ -49,6 +49,76 @@ def inspect_video(path: Path, settings: Settings) -> VideoMetadata:
     )
 
 
+def _decode_window_attempt(
+    path: Path,
+    *,
+    start_frame: int,
+    end_frame: int,
+    start_ms: int,
+    end_ms: int,
+    source_fps: float,
+    step: int,
+    video_start_relative_ms: int,
+    seek_frame: int,
+) -> tuple[list[VisualFrame], float]:
+    """Decode a window after seeking to a safe pre-roll frame.
+
+    Android CameraX commonly writes H.264/H.265 MP4s with sparse keyframes. Seeking
+    directly to a late challenge frame can leave some OpenCV/FFmpeg builds without
+    enough decoder reference frames. Starting before the requested window lets the
+    decoder warm up while still returning only frames from the challenge itself.
+    """
+    capture = cv2.VideoCapture(str(path))
+    if not capture.isOpened():
+        raise VideoDecodeError("OpenCV could not reopen the uploaded video")
+
+    if seek_frame > 0:
+        capture.set(cv2.CAP_PROP_POS_FRAMES, seek_frame)
+        reported = int(round(capture.get(cv2.CAP_PROP_POS_FRAMES)))
+        # Some backends report zero after an imprecise keyframe seek. In that case,
+        # decode forward from the beginning rather than pretending we are at seek_frame.
+        frame_index = reported if 0 <= reported <= seek_frame else seek_frame
+    else:
+        frame_index = 0
+
+    frames: list[VisualFrame] = []
+    attempted = 0
+    failed = 0
+    consecutive_failures = 0
+    try:
+        while frame_index <= end_frame:
+            ok, image = capture.read()
+            if not ok or image is None or image.size == 0:
+                failed += 1
+                consecutive_failures += 1
+                frame_index += 1
+                if consecutive_failures > 5:
+                    break
+                continue
+
+            consecutive_failures = 0
+            if frame_index >= start_frame and (frame_index - start_frame) % step == 0:
+                attempted += 1
+                video_time_ms = int(round(frame_index / source_fps * 1000.0))
+                if video_time_ms > end_ms:
+                    break
+                if video_time_ms >= start_ms:
+                    frames.append(
+                        VisualFrame(
+                            frame_index=frame_index,
+                            video_time_ms=video_time_ms,
+                            session_time_ms=video_start_relative_ms + video_time_ms,
+                            image=image,
+                        )
+                    )
+            frame_index += 1
+    finally:
+        capture.release()
+
+    invalid_ratio = failed / max(1, attempted + failed)
+    return frames, min(1.0, invalid_ratio)
+
+
 def sample_window(
     path: Path,
     *,
@@ -61,48 +131,52 @@ def sample_window(
     if end_ms <= start_ms:
         raise ValueError("Video sample window must have positive duration")
 
-    capture = cv2.VideoCapture(str(path))
-    if not capture.isOpened():
-        raise VideoDecodeError("OpenCV could not reopen the uploaded video")
-
     source_fps = metadata.fps
     analysis_fps = min(max(settings.vision_analysis_fps, 1.0), source_fps)
     step = max(1, int(round(source_fps / analysis_fps)))
-    start_frame = max(0, int(start_ms / 1000.0 * source_fps))
-    end_frame = min(metadata.frame_count - 1, int(end_ms / 1000.0 * source_fps) + 1)
-    capture.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    start_frame = min(
+        metadata.frame_count - 1,
+        max(0, int(start_ms / 1000.0 * source_fps)),
+    )
+    end_frame = min(
+        metadata.frame_count - 1,
+        max(start_frame, int(end_ms / 1000.0 * source_fps) + 1),
+    )
 
-    frames: list[VisualFrame] = []
-    attempted = 0
-    failed = 0
-    frame_index = start_frame
-    try:
-        while frame_index <= end_frame:
-            ok, image = capture.read()
-            if not ok or image is None or image.size == 0:
-                failed += 1
-                frame_index += 1
-                if failed > 5:
-                    break
-                continue
-            if (frame_index - start_frame) % step == 0:
-                attempted += 1
-                video_time_ms = int(round(frame_index / source_fps * 1000.0))
-                if video_time_ms > end_ms:
-                    break
-                frames.append(
-                    VisualFrame(
-                        frame_index=frame_index,
-                        video_time_ms=video_time_ms,
-                        session_time_ms=video_start_relative_ms + video_time_ms,
-                        image=image,
-                    )
-                )
-            frame_index += 1
-    finally:
-        capture.release()
+    # A very short window at the encoded tail can mathematically collapse to one frame.
+    # Include one immediately preceding frame so optical flow still has a pair to inspect.
+    if end_frame == start_frame and start_frame > 0:
+        start_frame -= 1
 
-    invalid_ratio = failed / max(1, attempted + failed)
+    preroll_frames = max(1, int(round(source_fps * 2.0)))
+    seek_frame = max(0, start_frame - preroll_frames)
+    frames, invalid_ratio = _decode_window_attempt(
+        path,
+        start_frame=start_frame,
+        end_frame=end_frame,
+        start_ms=start_ms,
+        end_ms=end_ms,
+        source_fps=source_fps,
+        step=step,
+        video_start_relative_ms=video_start_relative_ms,
+        seek_frame=seek_frame,
+    )
+
+    if len(frames) < 2 and seek_frame > 0:
+        # Final fallback for devices/codecs whose random access is unreliable near EOF.
+        # Full forward decoding is slower but deterministic and only used on a failed seek.
+        frames, invalid_ratio = _decode_window_attempt(
+            path,
+            start_frame=start_frame,
+            end_frame=end_frame,
+            start_ms=start_ms,
+            end_ms=end_ms,
+            source_fps=source_fps,
+            step=step,
+            video_start_relative_ms=video_start_relative_ms,
+            seek_frame=0,
+        )
+
     if len(frames) < 2:
         raise VideoDecodeError("Too few valid frames were decoded from the challenge window")
-    return frames, min(1.0, invalid_ratio)
+    return frames, invalid_ratio
