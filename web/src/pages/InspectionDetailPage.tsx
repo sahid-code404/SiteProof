@@ -35,7 +35,7 @@ export function InspectionDetailPage() {
   const reassign = useMutation({ mutationFn: () => reassignInspection(id, inspectorId, reason), onSuccess: refresh })
   const cancel = useMutation({ mutationFn: () => cancelInspection(id, cancelReason), onSuccess: refresh })
 
-  if (inspection.isLoading) return <div className="loading-block">Loading inspection…</div>
+  if (inspection.isLoading) return <div className="loading-block">Loading inspection evidence…</div>
   if (inspection.isError || !inspection.data) return <div className="notice error">{inspection.error?.message ?? 'Inspection not found'}</div>
   const item = inspection.data
   const canAssign = canManage && item.status === 'DRAFT'
@@ -46,18 +46,37 @@ export function InspectionDetailPage() {
   return (
     <>
       <section className="page-heading split-heading">
-        <div><p className="eyebrow">INSPECTION · {item.id.slice(0, 8).toUpperCase()}</p><h1>{item.title}</h1><div className="badge-row"><StatusBadge value={item.status} /><StatusBadge value={item.priority} />{item.isOverdue ? <span className="badge badge-overdue">OVERDUE</span> : null}</div></div>
+        <div>
+          <p className="eyebrow">INSPECTION EVIDENCE · {item.id.slice(0, 8).toUpperCase()}</p>
+          <h1>{item.title}</h1>
+          <div className="badge-row"><StatusBadge value={item.status} /><StatusBadge value={item.priority} />{item.isOverdue ? <span className="badge badge-overdue">OVERDUE</span> : null}</div>
+        </div>
         {canManage && ['DRAFT', 'ASSIGNED', 'ACKNOWLEDGED', 'READY'].includes(item.status) ? <Link className="button ghost" to={`/inspections/${id}/edit`}>Edit inspection</Link> : null}
       </section>
 
       <div className="detail-grid">
         <section className="detail-main">
-          <article className="panel"><p className="eyebrow">SITE</p><SiteMap latitude={item.expectedLatitude} longitude={item.expectedLongitude} radius={item.allowedRadiusMeters} /><div className="definition-grid"><div><span>Location</span><strong>{item.locationName || 'Unnamed site'}</strong><small>{item.locationAddress || 'No address provided'}</small></div><div><span>Coordinates</span><strong>{item.expectedLatitude.toFixed(6)}, {item.expectedLongitude.toFixed(6)}</strong><small>Allowed radius: {item.allowedRadiusMeters} m</small></div></div></article>
-          <article className="panel"><p className="eyebrow">REQUIREMENTS</p><h3>{item.inspectionType.replace('_', ' ')}</h3><p>{item.description || 'No description provided.'}</p><div className="callout"><strong>Inspector instructions</strong><p>{item.instructions || 'No additional instructions.'}</p></div></article>
           <VerificationReportPanel inspectionId={id} />
           <ReceiptPanel inspectionId={id} />
           <AdvancedSecurityPanel inspectionId={id} />
           <VerificationSessionPanel inspectionId={id} />
+
+          <article className="panel">
+            <p className="eyebrow">SITE & LOCATION CONTRACT</p>
+            <SiteMap latitude={item.expectedLatitude} longitude={item.expectedLongitude} radius={item.allowedRadiusMeters} />
+            <div className="definition-grid">
+              <div><span>Location</span><strong>{item.locationName || 'Unnamed site'}</strong><small>{item.locationAddress || 'No address provided'}</small></div>
+              <div><span>Expected coordinates</span><strong>{item.expectedLatitude.toFixed(6)}, {item.expectedLongitude.toFixed(6)}</strong><small>Allowed radius: {item.allowedRadiusMeters} m</small></div>
+            </div>
+          </article>
+
+          <article className="panel">
+            <p className="eyebrow">INSPECTION REQUIREMENTS</p>
+            <h3>{item.inspectionType.replace('_', ' ')}</h3>
+            <p>{item.description || 'No description provided.'}</p>
+            <div className="callout"><strong>Inspector instructions</strong><p>{item.instructions || 'No additional instructions.'}</p></div>
+          </article>
+
           <article className="panel"><p className="eyebrow">ASSIGNMENT HISTORY</p>{item.assignmentHistory.length ? <div className="timeline">{item.assignmentHistory.map((assignment) => <div className="timeline-item" key={assignment.id}><span className="timeline-dot" /><div><strong>{assignment.inspector.name}</strong><p>{assignment.status} · {formatDate(assignment.assignedAt)}</p>{assignment.reason ? <small>{assignment.reason}</small> : null}</div></div>)}</div> : <p className="muted">No assignment has been made yet.</p>}</article>
         </section>
 
