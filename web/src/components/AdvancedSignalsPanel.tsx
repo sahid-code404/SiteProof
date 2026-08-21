@@ -7,7 +7,7 @@ function percent(value: number | null) {
   return value == null ? '—' : `${Math.round(value * 100)}%`
 }
 
-function label(value: string) {
+function words(value: string) {
   return value.replace(/_/g, ' ')
 }
 
@@ -33,53 +33,61 @@ export function AdvancedSignalsPanel({ inspectionId }: { inspectionId: string })
 
   if (!session.data) return null
   if (signals.isLoading) {
-    return <article className="panel"><p className="eyebrow">ADVANCED SIGNALS · PHASE 10</p><p>Checking environment and anomaly intelligence…</p></article>
+    return <article className="panel"><p className="eyebrow">Environment checks</p><p>Loading environment analysis…</p></article>
   }
   if (signals.isError) {
-    return <article className="panel"><p className="eyebrow">ADVANCED SIGNALS · PHASE 10</p><div className="notice error">{signals.error.message}</div></article>
+    return <article className="panel"><p className="eyebrow">Environment checks</p><div className="notice error">{signals.error.message}</div></article>
   }
   if (!signals.data) {
-    return <article className="panel">
-      <p className="eyebrow">ADVANCED SIGNALS · PHASE 10</p>
-      <h3>Not analyzed yet</h3>
-      <p className="muted">Adds privacy-preserving Wi-Fi continuity and deterministic statistical anomaly scoring. Wi-Fi is supporting evidence only and cannot fail verification by itself.</p>
-      {canAnalyze ? <button className="button ghost" disabled={analyze.isPending} onClick={() => analyze.mutate()}>{analyze.isPending ? 'Analyzing…' : 'Run advanced signals'}</button> : null}
-      {analyze.error ? <div className="notice error">{analyze.error.message}</div> : null}
-    </article>
+    return (
+      <article className="panel">
+        <p className="eyebrow">Environment checks</p>
+        <h3>Not analyzed yet</h3>
+        <p className="muted">Compares the capture environment and looks for unusual signal patterns.</p>
+        {canAnalyze ? <button className="button ghost" disabled={analyze.isPending} onClick={() => analyze.mutate()}>{analyze.isPending ? 'Analyzing…' : 'Run analysis'}</button> : null}
+        {analyze.error ? <div className="notice error">{analyze.error.message}</div> : null}
+      </article>
+    )
   }
 
   const data = signals.data
-  return <article className="panel">
-    <p className="eyebrow">ADVANCED SIGNALS · PHASE 10</p>
-    <div className="definition-grid">
-      <div>
-        <span>Environment continuity</span>
-        <strong>{label(data.environmentStatus)}</strong>
-        <small>{percent(data.environmentConsistencyScore)} consistency · confidence {percent(data.environmentConfidence)}</small>
+  return (
+    <article className="panel">
+      <p className="eyebrow">Environment checks</p>
+      <div className="definition-grid">
+        <div>
+          <span>Continuity</span>
+          <strong>{words(data.environmentStatus)}</strong>
+          <small>{percent(data.environmentConsistencyScore)} consistency</small>
+        </div>
+        <div>
+          <span>Environment risk</span>
+          <strong>{percent(data.environmentRiskScore)}</strong>
+          <small>{percent(data.environmentConfidence)} confidence</small>
+        </div>
+        <div>
+          <span>Anomaly check</span>
+          <strong>{words(data.statisticalAnomalyStatus)}</strong>
+          <small>{percent(data.statisticalAnomalyScore)} anomaly score</small>
+        </div>
+        <div>
+          <span>Method</span>
+          <strong>Deterministic</strong>
+          <small>{data.algorithmVersion}</small>
+        </div>
       </div>
-      <div>
-        <span>Environment risk</span>
-        <strong>{percent(data.environmentRiskScore)}</strong>
-        <small>Supporting evidence only</small>
-      </div>
-      <div>
-        <span>Statistical anomaly</span>
-        <strong>{label(data.statisticalAnomalyStatus)}</strong>
-        <small>{percent(data.statisticalAnomalyScore)} anomaly · confidence {percent(data.statisticalAnomalyConfidence)}</small>
-      </div>
-      <div>
-        <span>Model type</span>
-        <strong>Deterministic</strong>
-        <small>No trained black-box model</small>
-      </div>
-    </div>
-    <div className="callout">
-      <strong>Privacy boundary</strong>
-      <p>SSID and raw BSSID are never stored. Nearby access points are session-scoped SHA-256 identifiers used only to compare the start and end of this live capture.</p>
-    </div>
-    {data.reasonCodes.length ? <div className="callout"><strong>Advanced observations</strong><p>{data.reasonCodes.map(label).join(' · ')}</p></div> : <div className="callout"><strong>No elevated advanced-signal warning detected.</strong></div>}
-    {data.reasons.slice(0, 5).map((reason) => <p className="muted" key={reason}>• {reason}</p>)}
-    <div className="badge-row"><span className="badge">{data.algorithmVersion}</span>{canAnalyze ? <button className="button ghost" disabled={analyze.isPending} onClick={() => analyze.mutate()}>{analyze.isPending ? 'Re-analyzing…' : 'Re-run analysis'}</button> : null}</div>
-    {analyze.error ? <div className="notice error">{analyze.error.message}</div> : null}
-  </article>
+
+      <details className="evidence-details">
+        <summary>Privacy & observations</summary>
+        <div className="evidence-details-content">
+          <p className="muted">Wi-Fi network names and raw BSSIDs are not stored. Session-scoped identifiers are used only for capture-to-capture comparison.</p>
+          {data.reasonCodes.length ? <p><strong>Observations:</strong> {data.reasonCodes.map(words).join(' · ')}</p> : <p>No elevated environment warning found.</p>}
+          {data.reasons.slice(0, 5).map((reason) => <p className="muted" key={reason}>• {reason}</p>)}
+        </div>
+      </details>
+
+      {canAnalyze ? <button className="button ghost" disabled={analyze.isPending} onClick={() => analyze.mutate()}>{analyze.isPending ? 'Analyzing…' : 'Run again'}</button> : null}
+      {analyze.error ? <div className="notice error">{analyze.error.message}</div> : null}
+    </article>
+  )
 }
