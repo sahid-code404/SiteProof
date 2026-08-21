@@ -1,5 +1,6 @@
 package com.siteproof.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,8 +11,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -43,18 +44,26 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
     var passwordVisible by remember { mutableStateOf(false) }
     val loading = state is AuthState.Loading
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Box(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 32.dp),
-            contentAlignment = Alignment.Center,
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(SiteProofOrangeGradient)
+            .padding(horizontal = 20.dp, vertical = 28.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().widthIn(max = 460.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 10.dp,
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().widthIn(max = 460.dp),
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 28.dp),
                 verticalArrangement = Arrangement.Center,
             ) {
                 Surface(
-                    modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.size(54.dp),
+                    shape = RoundedCornerShape(16.dp),
                     color = MaterialTheme.colorScheme.primaryContainer,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -62,19 +71,21 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
                             "SP",
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium,
                         )
                     }
                 }
 
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(22.dp))
                 Text("SiteProof", style = MaterialTheme.typography.headlineMedium)
                 Text(
                     "Sign in to view your assigned inspections.",
                     modifier = Modifier.padding(top = 6.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
                 )
 
-                Spacer(Modifier.height(28.dp))
+                Spacer(Modifier.height(26.dp))
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
@@ -85,7 +96,7 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(14.dp))
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
@@ -114,11 +125,11 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
                     )
                 }
 
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(20.dp))
                 Button(
                     onClick = { onLogin(email.trim(), password) },
                     enabled = !loading && email.isNotBlank() && password.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
                 ) {
                     if (loading) {
                         CircularProgressIndicator(
@@ -127,7 +138,7 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
                             color = MaterialTheme.colorScheme.onPrimary,
                         )
                     } else {
-                        Text("Sign in")
+                        Text("Sign in", style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
