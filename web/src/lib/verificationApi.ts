@@ -85,12 +85,14 @@ export type ReviewQueueItem = {
   locationAddress?: string | null
   latitude: number
   longitude: number
+  inspectorName?: string | null
   inspectionStatus: string
   verdict: VerificationVerdict
   score?: number | null
   confidence?: number | null
   engineVersion: string
   calculatedAt?: string | null
+  captureEndedAt?: string | null
   latestReview?: {
     id: string
     decision: ReviewDecision
