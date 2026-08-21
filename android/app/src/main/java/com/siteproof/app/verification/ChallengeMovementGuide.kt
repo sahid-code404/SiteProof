@@ -46,10 +46,12 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-private val GuideGood = Color(0xFF25834D)
-private val GuideWrong = Color(0xFFC9372C)
-private val GuideFar = Color(0xFFB05A00)
-private val GuideOrange = Color(0xFFF56200)
+private val GuideGood = Color(0xFF54D78D)
+private val GuideWrong = Color(0xFFFF7169)
+private val GuideFar = Color(0xFFFFB357)
+private val GuideOrange = Color(0xFFFF7B27)
+private val GuideText = Color(0xFFF8F8FA)
+private val GuideTextMuted = Color(0xFFBFC3CB)
 
 @Composable
 internal fun ChallengeMovementGuide(
@@ -95,7 +97,7 @@ internal fun ChallengeMovementGuide(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900),
+            animation = tween(durationMillis = 920),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "movement-demo",
@@ -119,14 +121,20 @@ internal fun ChallengeMovementGuide(
     Column(
         modifier = Modifier.clearAndSetSemantics { contentDescription = accessibilitySummary },
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
             challengeInstruction(challenge.type),
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = GuideText,
+        )
+        Text(
+            "Keep the site visible while moving the phone",
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+            color = GuideTextMuted,
         )
 
         PhoneMotionGuide(
@@ -149,7 +157,7 @@ internal fun ChallengeMovementGuide(
             progress = { progress },
             modifier = Modifier.fillMaxWidth(),
             color = guideColor,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            trackColor = Color.White.copy(alpha = 0.15f),
         )
 
         Text(
@@ -163,9 +171,9 @@ internal fun ChallengeMovementGuide(
 }
 
 @Composable
-private fun Metric(label: String, value: String, valueColor: Color = MaterialTheme.colorScheme.onSurface) {
+private fun Metric(label: String, value: String, valueColor: Color = GuideText) {
     Column {
-        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, style = MaterialTheme.typography.bodySmall, color = GuideTextMuted)
         Text(value, style = MaterialTheme.typography.titleMedium, color = valueColor, fontWeight = FontWeight.Bold)
     }
 }
@@ -191,12 +199,12 @@ private fun PhoneMotionGuide(
     val arrowTravel = 15f * (cuePhase - 0.5f)
 
     Box(
-        modifier = Modifier.size(width = 250.dp, height = 190.dp),
+        modifier = Modifier.size(width = 250.dp, height = 176.dp),
         contentAlignment = Alignment.Center,
     ) {
         PhoneShape(
             modifier = Modifier
-                .alpha(0.16f)
+                .alpha(0.17f)
                 .graphicsLayer {
                     rotationY = expectedRotationY
                     rotationX = expectedRotationX
@@ -233,13 +241,13 @@ private fun PhoneMotionGuide(
                     scaleY = scaleX
                 }
                 .clip(CircleShape)
-                .background(GuideOrange.copy(alpha = 0.14f))
-                .border(2.dp, GuideOrange.copy(alpha = 0.45f), CircleShape),
+                .background(GuideOrange.copy(alpha = 0.16f))
+                .border(2.dp, GuideOrange.copy(alpha = 0.52f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 movementCue(challengeType),
-                color = if (guideColor == MaterialTheme.colorScheme.onSurfaceVariant) GuideOrange else guideColor,
+                color = guideColor,
                 fontSize = 52.sp,
                 lineHeight = 54.sp,
                 fontWeight = FontWeight.Black,
@@ -252,23 +260,23 @@ private fun PhoneMotionGuide(
 private fun PhoneShape(modifier: Modifier, borderColor: Color) {
     Box(
         modifier = modifier
-            .size(width = 88.dp, height = 146.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color.White.copy(alpha = 0.94f))
-            .border(3.dp, borderColor, RoundedCornerShape(20.dp)),
+            .size(width = 86.dp, height = 142.dp)
+            .clip(RoundedCornerShape(21.dp))
+            .background(Color(0xFF1A1B20).copy(alpha = 0.96f))
+            .border(3.dp, borderColor, RoundedCornerShape(21.dp)),
     ) {
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .size(7.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.onSurfaceVariant),
+                .background(GuideTextMuted),
         )
         Text(
             "TOP",
             modifier = Modifier.align(Alignment.TopCenter),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = GuideTextMuted,
             fontWeight = FontWeight.Bold,
         )
     }
@@ -282,7 +290,6 @@ private fun cueAlignment(type: String) = when (type) {
     else -> Alignment.TopCenter
 }
 
-@Composable
 private fun guidanceColor(status: ChallengeGuidanceStatus): Color = when (status) {
     ChallengeGuidanceStatus.GOOD_RANGE -> GuideGood
     ChallengeGuidanceStatus.WRONG_DIRECTION -> GuideWrong
@@ -291,10 +298,10 @@ private fun guidanceColor(status: ChallengeGuidanceStatus): Color = when (status
 }
 
 internal fun challengeInstruction(type: String): String = when (type) {
-    "TILT_UP" -> "Move the TOP edge away from you"
-    "TILT_DOWN" -> "Move the TOP edge toward you"
-    "ROTATE_RIGHT" -> "Turn the whole phone to your RIGHT"
-    "ROTATE_LEFT" -> "Turn the whole phone to your LEFT"
+    "TILT_UP" -> "Tilt the TOP away from you"
+    "TILT_DOWN" -> "Tilt the TOP toward you"
+    "ROTATE_RIGHT" -> "Rotate the phone RIGHT"
+    "ROTATE_LEFT" -> "Rotate the phone LEFT"
     else -> "Follow the arrow"
 }
 
@@ -334,7 +341,7 @@ internal fun movementVoiceStatus(status: ChallengeGuidanceStatus): String = when
 private fun guidanceLabel(status: ChallengeGuidanceStatus): String = when (status) {
     ChallengeGuidanceStatus.WAITING -> "Follow the arrow"
     ChallengeGuidanceStatus.WRONG_DIRECTION -> "Wrong direction"
-    ChallengeGuidanceStatus.TOO_LITTLE -> "Go further"
+    ChallengeGuidanceStatus.TOO_LITTLE -> "Go a little further"
     ChallengeGuidanceStatus.GOOD_RANGE -> "Hold here"
     ChallengeGuidanceStatus.TOO_FAR -> "Move back slightly"
 }
