@@ -9,8 +9,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -23,7 +23,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.siteproof.app.BuildConfig
 import java.io.File
@@ -34,29 +33,26 @@ fun DevAppUpdateCard(manager: DevAppUpdateManager) {
     if (!BuildConfig.DEBUG) return
 
     val scope = rememberCoroutineScope()
-    var checking by remember { mutableStateOf(false) }
+    var checking by remember { mutableStateOf(true) }
     var downloading by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<AppUpdateInfo?>(null) }
     var downloadedApk by remember { mutableStateOf<File?>(null) }
-    var status by remember { mutableStateOf("Checking for updates…") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var installMessage by remember { mutableStateOf<String?>(null) }
 
     fun checkNow() {
-        if (checking || downloading) return
+        if (downloading) return
         checking = true
-        status = "Checking for updates…"
+        errorMessage = null
+        installMessage = null
         scope.launch {
             runCatching { manager.checkForUpdate() }
                 .onSuccess { available ->
                     update = available
                     downloadedApk = null
-                    status = if (available == null) {
-                        "SiteProof is up to date."
-                    } else {
-                        "Update available: version ${available.versionName}."
-                    }
                 }
                 .onFailure { error ->
-                    status = error.message ?: "Unable to check for updates."
+                    errorMessage = error.message ?: "Could not check for updates."
                 }
             checking = false
         }
@@ -64,116 +60,130 @@ fun DevAppUpdateCard(manager: DevAppUpdateManager) {
 
     LaunchedEffect(Unit) { checkNow() }
 
+    if (checking && update == null) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Checking for updates…", style = MaterialTheme.typography.bodyMedium)
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+        }
+        return
+    }
+
+    if (update == null && errorMessage == null) return
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .padding(16.dp)
+                .semantics { liveRegion = LiveRegionMode.Polite },
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            val available = update
+
+            if (available == null) {
+                Text("Could not check for updates", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    errorMessage.orEmpty(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(onClick = ::checkNow, modifier = Modifier.fillMaxWidth()) { Text("Try again") }
+                return@Column
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
+                    Text("Update available", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "App update",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        "Current version ${BuildConfig.VERSION_NAME}",
+                        "Version ${available.versionName}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                OutlinedButton(onClick = ::checkNow, enabled = !checking && !downloading) {
-                    Text(if (checking) "Checking…" else "Check now")
-                }
+                Text(
+                    "v${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
-            Text(
-                status,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (status.contains("failed", ignoreCase = true) ||
-                    status.contains("unable", ignoreCase = true)
-                ) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            )
-
-            update?.notes?.takeIf { it.isNotBlank() }?.let {
+            available.notes.takeIf { it.isNotBlank() }?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall)
             }
 
             if (downloading) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Text(
-                    "Downloading and verifying the update…",
+                    "Downloading and checking the update…",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
-            val available = update
-            if (available != null) {
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !checking && !downloading,
-                    onClick = {
-                        val existing = downloadedApk
-                        if (existing != null && existing.isFile) {
-                            val result = manager.launchInstaller(existing)
-                            status = if (result == InstallLaunchResult.PERMISSION_REQUIRED) {
-                                "Allow SiteProof to install this update, return here, then tap Install update."
-                            } else {
-                                "Android installer opened. Confirm the update to finish."
+            installMessage?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !checking && !downloading,
+                onClick = {
+                    val existing = downloadedApk
+                    if (existing != null && existing.isFile) {
+                        val result = manager.launchInstaller(existing)
+                        installMessage = if (result == InstallLaunchResult.PERMISSION_REQUIRED) {
+                            "Allow installs from SiteProof, then return and tap Install update."
+                        } else {
+                            "Confirm the update in Android."
+                        }
+                        return@Button
+                    }
+
+                    downloading = true
+                    installMessage = null
+                    scope.launch {
+                        runCatching { manager.download(available) }
+                            .onSuccess { apk ->
+                                downloadedApk = apk
+                                val result = manager.launchInstaller(apk)
+                                installMessage = if (result == InstallLaunchResult.PERMISSION_REQUIRED) {
+                                    "Allow installs from SiteProof, then return and tap Install update."
+                                } else {
+                                    "Confirm the update in Android."
+                                }
                             }
-                            return@Button
-                        }
-
-                        downloading = true
-                        status = "Preparing version ${available.versionName}…"
-                        scope.launch {
-                            runCatching { manager.download(available) }
-                                .onSuccess { apk ->
-                                    downloadedApk = apk
-                                    val result = manager.launchInstaller(apk)
-                                    status = if (result == InstallLaunchResult.PERMISSION_REQUIRED) {
-                                        "Allow SiteProof to install this update, return here, then tap Install update."
-                                    } else {
-                                        "Android installer opened. Confirm the update to finish."
-                                    }
-                                }
-                                .onFailure { error ->
-                                    status = error.message ?: "Update download failed."
-                                }
-                            downloading = false
-                        }
+                            .onFailure { error ->
+                                errorMessage = error.message ?: "Update download failed."
+                                installMessage = errorMessage
+                            }
+                        downloading = false
+                    }
+                },
+            ) {
+                Text(
+                    when {
+                        downloading -> "Downloading…"
+                        downloadedApk != null -> "Install update"
+                        else -> "Update now"
                     },
-                ) {
-                    Text(
-                        when {
-                            downloading -> "Downloading…"
-                            downloadedApk != null -> "Install update"
-                            else -> "Update now"
-                        }
-                    )
-                }
+                )
+            }
 
-                OutlinedButton(
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !checking && !downloading,
-                    onClick = {
-                        update = null
-                        downloadedApk = null
-                        status = "Update postponed. You can check again anytime."
-                    },
-                ) {
-                    Text("Later")
-                }
+            TextButton(
+                modifier = Modifier.align(Alignment.End),
+                enabled = !checking && !downloading,
+                onClick = {
+                    update = null
+                    downloadedApk = null
+                    installMessage = null
+                },
+            ) {
+                Text("Later")
             }
         }
     }
