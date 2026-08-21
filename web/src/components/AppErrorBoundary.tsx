@@ -16,12 +16,12 @@ export class AppErrorBoundary extends Component<Props, State> {
     return (
       <main className="app-error-page" role="alert">
         <div className="app-error-card">
-          <span className="brand-mark large" aria-hidden="true">SP</span>
-          <p className="eyebrow">SiteProof</p>
-          <h1>Something went wrong</h1>
-          <p>Reload the page and try again.</p>
+          <div className="error-orbit" aria-hidden="true">SP</div>
+          <p className="eyebrow">Recovery mode</p>
+          <h1>SiteProof hit an unexpected problem</h1>
+          <p>Your saved inspection data has not been changed. Reload the workspace to reconnect and continue.</p>
           <button className="button primary" type="button" onClick={() => window.location.reload()}>
-            Reload
+            Reload workspace
           </button>
         </div>
       </main>
