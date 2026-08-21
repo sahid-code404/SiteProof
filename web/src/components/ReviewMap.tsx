@@ -45,35 +45,38 @@ export function ReviewMap({ items, selectedId, onSelect }: Props) {
   const center: [number, number] = first ? [first.latitude, first.longitude] : [20.5937, 78.9629]
 
   return (
-    <MapContainer center={center} zoom={5} scrollWheelZoom className="review-map">
-      <TileLayer
-        attribution='&copy; OpenStreetMap contributors'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
-      <FitReviewBounds items={items} />
-      {items.map((item) => {
-        const selected = item.inspectionId === selectedId
-        return (
-          <CircleMarker
-            key={item.inspectionId}
-            center={[item.latitude, item.longitude]}
-            radius={selected ? 10 : 7}
-            pathOptions={{ weight: selected ? 4 : 2, fillOpacity: selected ? 0.9 : 0.7 }}
-            eventHandlers={{ click: () => onSelect?.(item.inspectionId) }}
-          >
-            <Popup>
-              <div className="review-map-popup">
-                <strong>{item.title}</strong>
-                <span>{item.locationName || item.locationAddress || 'Unnamed site'}</span>
-                <span>Inspector: {item.inspectorName || 'Unassigned'}</span>
-                <span>Captured: {capturedText(item.captureEndedAt)}</span>
-                <span>{item.verdict.replace(/_/g, ' ')} · score {scoreText(item.score)} · confidence {confidenceText(item.confidence)}</span>
-                <Link to={`/inspections/${item.inspectionId}`}>Open evidence</Link>
-              </div>
-            </Popup>
-          </CircleMarker>
-        )
-      })}
-    </MapContainer>
+    <div className="review-map-region" role="region" aria-label="Verification site map">
+      <p className="sr-only">Use the evidence queue beside this map for keyboard-accessible site selection and navigation.</p>
+      <MapContainer center={center} zoom={5} scrollWheelZoom className="review-map">
+        <TileLayer
+          attribution='&copy; OpenStreetMap contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        <FitReviewBounds items={items} />
+        {items.map((item) => {
+          const selected = item.inspectionId === selectedId
+          return (
+            <CircleMarker
+              key={item.inspectionId}
+              center={[item.latitude, item.longitude]}
+              radius={selected ? 10 : 7}
+              pathOptions={{ weight: selected ? 4 : 2, fillOpacity: selected ? 0.9 : 0.7 }}
+              eventHandlers={{ click: () => onSelect?.(item.inspectionId) }}
+            >
+              <Popup>
+                <div className="review-map-popup">
+                  <strong>{item.title}</strong>
+                  <span>{item.locationName || item.locationAddress || 'Unnamed site'}</span>
+                  <span>Inspector: {item.inspectorName || 'Unassigned'}</span>
+                  <span>Captured: {capturedText(item.captureEndedAt)}</span>
+                  <span>{item.verdict.replace(/_/g, ' ')} · score {scoreText(item.score)} · confidence {confidenceText(item.confidence)}</span>
+                  <Link to={`/inspections/${item.inspectionId}`}>Open evidence</Link>
+                </div>
+              </Popup>
+            </CircleMarker>
+          )
+        })}
+      </MapContainer>
+    </div>
   )
 }
