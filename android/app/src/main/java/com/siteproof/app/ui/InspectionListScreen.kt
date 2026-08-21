@@ -1,7 +1,9 @@
 package com.siteproof.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,7 +28,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,6 +36,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -67,23 +70,35 @@ fun InspectionListScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(SiteProofOrangeGradient)
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Column {
-                        Text("Inspections")
+                        Text(
+                            "Inspections",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color.White,
+                        )
                         Text(
                             inspectorName,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = Color.White.copy(alpha = 0.84f),
                         )
                     }
-                },
-                actions = {
                     IconButton(onClick = onSignOut) {
-                        Icon(Icons.Default.ExitToApp, contentDescription = "Sign out")
+                        Icon(Icons.Default.ExitToApp, contentDescription = "Sign out", tint = Color.White)
                     }
-                },
-            )
+                }
+            }
         },
     ) { padding ->
         PullToRefreshBox(
@@ -100,8 +115,8 @@ fun InspectionListScreen(
 
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 28.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 28.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         item(key = "app-update") { DevAppUpdateCard(updateManager) }
 
@@ -117,8 +132,9 @@ fun InspectionListScreen(
                             item(key = "active-empty") {
                                 Surface(
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = RoundedCornerShape(14.dp),
                                     color = MaterialTheme.colorScheme.surface,
+                                    shadowElevation = 2.dp,
                                 ) {
                                     Text(
                                         "Nothing needs action right now.",
@@ -166,7 +182,7 @@ private fun OfflineBanner() {
         modifier = Modifier
             .fillMaxWidth()
             .semantics { liveRegion = LiveRegionMode.Polite },
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.10f),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -191,7 +207,7 @@ private fun SectionHeading(title: String, subtitle: String) {
 @Composable
 private fun InspectionCard(inspection: InspectionSummary, onClick: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(modifier = Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -209,6 +225,7 @@ private fun InspectionCard(inspection: InspectionSummary, onClick: () -> Unit) {
             Text(
                 inspection.locationName ?: inspection.locationAddress ?: "${inspection.expectedLatitude}, ${inspection.expectedLongitude}",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
             )
 
             Spacer(Modifier.height(2.dp))
@@ -225,7 +242,7 @@ private fun StatusPill(status: String) {
     ) {
         Text(
             status.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() },
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onPrimaryContainer,
         )
