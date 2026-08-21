@@ -53,7 +53,7 @@ class Settings(BaseSettings):
 
     # Phase 5 visual-motion analysis. The original evidence video is never rewritten;
     # OpenCV works only on derived, down-scaled frames.
-    vision_analysis_version: str = "vision-v1.2"
+    vision_analysis_version: str = "vision-v1.3"
     vision_analysis_fps: float = 12.0
     vision_max_width: int = 960
     # Direction/magnitude are measured only inside the actual challenge interval. Padding
