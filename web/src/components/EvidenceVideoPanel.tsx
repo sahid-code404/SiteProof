@@ -71,17 +71,26 @@ export function EvidenceVideoPanel({ inspectionId }: { inspectionId: string }) {
   }
 
   if (session.isLoading) {
-    return <article className="panel evidence-video-panel"><p className="eyebrow">CAPTURED VIDEO EVIDENCE</p><div className="video-skeleton">Preparing protected evidence…</div></article>
+    return <article className="panel evidence-video-panel" aria-busy="true"><p className="eyebrow">CAPTURED VIDEO EVIDENCE</p><div className="video-skeleton" role="status">Preparing protected evidence…</div></article>
   }
   if (session.isError) {
-    return <article className="panel evidence-video-panel"><p className="eyebrow">CAPTURED VIDEO EVIDENCE</p><div className="notice error">{session.error.message}</div></article>
+    return (
+      <article className="panel evidence-video-panel">
+        <p className="eyebrow">CAPTURED VIDEO EVIDENCE</p>
+        <div className="notice error" role="alert">
+          <strong>Unable to load capture session</strong>
+          <p>{session.error.message}</p>
+          <button className="button ghost" type="button" onClick={() => session.refetch()}>Retry session</button>
+        </div>
+      </article>
+    )
   }
   if (!session.data) return null
 
   const item = session.data
 
   return (
-    <article className="panel evidence-video-panel">
+    <article className="panel evidence-video-panel" aria-busy={loadingVideo || evidence.isLoading}>
       <div className="evidence-video-heading">
         <div>
           <p className="eyebrow">CAPTURED VIDEO EVIDENCE</p>
@@ -96,21 +105,27 @@ export function EvidenceVideoPanel({ inspectionId }: { inspectionId: string }) {
         <div><span>Duration</span><strong>{formatDuration(item.captureDurationMs)}</strong></div>
         <div><span>File</span><strong>{video?.filename ?? 'Video unavailable'}</strong></div>
         <div><span>Size</span><strong>{formatBytes(video?.sizeBytes)}</strong></div>
-        <div><span>Evidence hash</span><strong className="mono-value">{shortHash(video?.sha256)}</strong></div>
+        <div><span>Evidence hash</span><strong className="mono-value video-hash" title={video?.sha256 ?? undefined}>{shortHash(video?.sha256)}</strong></div>
         <div><span>Hash verified</span><strong>{video?.hashVerified ? '✓ Verified' : video ? 'Pending' : '—'}</strong></div>
       </div>
 
-      {evidence.isLoading ? <div className="video-skeleton">Checking video object…</div> : null}
-      {evidence.isError ? <div className="notice error">Unable to load evidence metadata: {evidence.error.message}</div> : null}
+      {evidence.isLoading ? <div className="video-skeleton" role="status">Checking video object…</div> : null}
+      {evidence.isError ? (
+        <div className="notice error" role="alert">
+          <strong>Evidence metadata unavailable</strong>
+          <p>{evidence.error.message}</p>
+          <button className="button ghost" type="button" onClick={() => evidence.refetch()}>Retry metadata</button>
+        </div>
+      ) : null}
 
-      {!evidence.isLoading && !video ? (
+      {!evidence.isLoading && !evidence.isError && !video ? (
         <div className="video-empty-state">
           <strong>Video evidence unavailable</strong>
           <p>The session exists, but no downloadable VIDEO evidence object is currently available.</p>
         </div>
       ) : null}
 
-      {video && !videoUrl ? (
+      {video && !videoUrl && !videoError ? (
         <div className="video-poster-state">
           <div className="video-play-mark" aria-hidden="true">▶</div>
           <strong>Captured evidence ready</strong>
@@ -121,11 +136,19 @@ export function EvidenceVideoPanel({ inspectionId }: { inspectionId: string }) {
         </div>
       ) : null}
 
-      {videoError ? <div className="notice error"><strong>Video unavailable</strong><p>{videoError}</p><button className="button ghost" type="button" onClick={loadVideo}>Retry video</button></div> : null}
+      {videoError ? (
+        <div className="notice error" role="alert">
+          <strong>Video unavailable</strong>
+          <p>{videoError}</p>
+          <div className="video-error-actions">
+            <button className="button ghost" type="button" onClick={loadVideo} disabled={loadingVideo}>{loadingVideo ? 'Retrying…' : 'Retry video'}</button>
+          </div>
+        </div>
+      ) : null}
 
       {videoUrl ? (
         <div className="video-player-shell">
-          <video className="evidence-video-player" src={videoUrl} controls preload="metadata" playsInline />
+          <video className="evidence-video-player" src={videoUrl} controls preload="metadata" playsInline aria-label="Captured field evidence video" />
           <div className="video-player-caption">
             <span>{video?.filename}</span>
             <button className="button ghost" type="button" onClick={loadVideo} disabled={loadingVideo}>Reload protected object</button>
