@@ -113,6 +113,7 @@ def create_verification_session(
             "latitude": inspection.expected_latitude,
             "longitude": inspection.expected_longitude,
             "allowedRadiusMeters": inspection.allowed_radius_meters,
+            "captureDurationSeconds": inspection.capture_duration_seconds,
             "deadline": aware(inspection.deadline).isoformat(),
         },
         created_by_user_id=current_user.id,
@@ -127,7 +128,10 @@ def create_verification_session(
         entity_type="VERIFICATION_SESSION",
         entity_id=session.id,
         action="SESSION_CREATED",
-        metadata={"inspectionId": str(inspection.id)},
+        metadata={
+            "inspectionId": str(inspection.id),
+            "captureDurationSeconds": inspection.capture_duration_seconds,
+        },
     )
     try:
         db.commit()
