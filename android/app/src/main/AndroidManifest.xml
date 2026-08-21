@@ -9,6 +9,8 @@
 
     <application
         android:allowBackup="false"
+        android:icon="@drawable/ic_siteproof_launcher"
+        android:roundIcon="@drawable/ic_siteproof_launcher"
         android:label="SiteProof"
         android:supportsRtl="true"
         android:usesCleartextTraffic="false"
