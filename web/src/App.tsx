@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
+import { SplashScreen } from './components/SplashScreen'
 import { getToken, getStoredUser } from './lib/auth'
 import { DashboardPage } from './pages/DashboardPage'
 import { InspectionDetailPage } from './pages/InspectionDetailPage'
@@ -37,6 +39,16 @@ function ProtectedApp() {
 }
 
 export default function App() {
+  const [splashVisible, setSplashVisible] = useState(true)
+
+  useEffect(() => {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const timer = window.setTimeout(() => setSplashVisible(false), reducedMotion ? 120 : 900)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  if (splashVisible) return <SplashScreen />
+
   return (
     <Routes>
       <Route path="/verify/:token" element={<PublicReceiptPage />} />
