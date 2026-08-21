@@ -49,6 +49,22 @@ def _direction_from_angle(angle: float, horizontal: bool) -> VisualDirection:
     return VisualDirection.UP if angle > 0 else VisualDirection.DOWN
 
 
+def expected_visual_direction(challenge_type: ChallengeType) -> VisualDirection:
+    """Map the Phase 4 physical instruction to the rear-camera visual convention.
+
+    Left/right use physical camera yaw directly. The tilt challenge names describe the
+    movement of the TOP EDGE of a portrait phone, while the visual analyzer labels rear
+    camera optical pitch. Moving the top edge toward the user (TILT_DOWN) pitches the rear
+    camera optical axis UP; moving it away (TILT_UP) pitches the rear camera DOWN.
+    """
+    return {
+        ChallengeType.ROTATE_LEFT: VisualDirection.LEFT,
+        ChallengeType.ROTATE_RIGHT: VisualDirection.RIGHT,
+        ChallengeType.TILT_UP: VisualDirection.DOWN,
+        ChallengeType.TILT_DOWN: VisualDirection.UP,
+    }[challenge_type]
+
+
 def _robust_values(values: list[float]) -> tuple[list[float], int]:
     """Reject isolated frame-pair estimates with a median/MAD temporal filter."""
     if len(values) < 4:
@@ -126,6 +142,14 @@ def analyze_visual_challenge(
         return _empty_outcome(
             continuity=continuity,
             reason="Too few decoded frames for motion analysis.",
+        )
+    if invalid_frame_ratio > settings.vision_max_invalid_frame_ratio:
+        return _empty_outcome(
+            continuity=continuity,
+            reason=(
+                "Video temporal coverage is incomplete inside the challenge window; "
+                "missing/undecodable source frames exceed the evidence threshold."
+            ),
         )
 
     grays = [preprocess_frame(frame.image, settings.vision_max_width) for frame in frames]
@@ -249,6 +273,8 @@ def analyze_visual_challenge(
         direction_signal = "AFFINE_ROTATION_FALLBACK"
 
     direction = _direction_from_angle(total_signed_angle, horizontal)
+    expected_direction = expected_visual_direction(challenge_type)
+    direction_matches_challenge = direction == expected_direction
     dominant_sign = 1.0 if total_signed_angle >= 0 else -1.0
     meaningful_angles = [value for value in signed_angles if abs(value) >= 0.05]
     sign_support = [
@@ -298,6 +324,12 @@ def analyze_visual_challenge(
     if direction == VisualDirection.NONE or abs(total_signed_angle) < 2.0:
         status = VisualAnalysisStatus.INCONCLUSIVE
         reasons.append("Global visual movement was too small to assign a reliable direction.")
+    elif not direction_matches_challenge:
+        status = VisualAnalysisStatus.INCONCLUSIVE
+        reasons.append(
+            f"Detected visual direction {direction.value} does not match the "
+            f"challenge-expected camera direction {expected_direction.value}."
+        )
     elif confidence < 0.45:
         status = VisualAnalysisStatus.INCONCLUSIVE
         reasons.append("Visual motion confidence is below the analysis threshold.")
@@ -354,6 +386,8 @@ def analyze_visual_challenge(
         "motionCurve": motion_curve,
         "pairEstimates": pair_diagnostics,
         "directionSignal": direction_signal,
+        "expectedVisualDirection": expected_direction.value,
+        "directionMatchesChallenge": direction_matches_challenge,
         "translationAngleDegrees": round(translation_total, 3),
         "accumulatedAffineRotationDegrees": round(affine_rotation_total, 3),
         "directStartEndOpticalFlow": (
@@ -385,9 +419,10 @@ def analyze_visual_challenge(
             int(round(median(raw_tracked_counts))) if raw_tracked_counts else 0
         ),
         "coordinateConvention": (
-            "RIGHT/LEFT primarily infer physical camera yaw opposite horizontal image translation; "
-            "UP/DOWN infer physical pitch from vertical image translation. Pure image-plane affine "
-            "rotation is a labelled fallback, not a Phase 6 sensor comparison."
+            "RIGHT/LEFT infer physical rear-camera yaw opposite horizontal image translation. "
+            "UP/DOWN label rear-camera optical pitch from vertical image translation. Phase 4 "
+            "TILT_UP/TILT_DOWN names describe portrait-phone top-edge motion, so their expected "
+            "rear-camera directions are DOWN/UP respectively."
         ),
     }
 
