@@ -1,5 +1,6 @@
 package com.siteproof.app.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -60,9 +61,10 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
         )
         Surface(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 28.dp).widthIn(max = 460.dp),
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-            shadowElevation = 14.dp,
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+            border = BorderStroke(1.dp, androidx.compose.ui.graphics.Color.White.copy(alpha = 0.82f)),
+            shadowElevation = 12.dp,
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 28.dp),
@@ -92,7 +94,7 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(16.dp),
                 )
                 Spacer(Modifier.height(14.dp))
                 OutlinedTextField(
@@ -109,7 +111,7 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
                     enabled = !loading,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(16.dp),
                 )
 
                 if (state is AuthState.Error) {
@@ -121,7 +123,7 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
                     onClick = { onLogin(email.trim(), password) },
                     enabled = !loading && email.isNotBlank() && password.isNotBlank(),
                     modifier = Modifier.fillMaxWidth().height(54.dp),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(16.dp),
                 ) {
                     if (loading) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
