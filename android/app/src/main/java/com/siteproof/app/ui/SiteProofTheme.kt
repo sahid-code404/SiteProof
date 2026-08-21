@@ -45,7 +45,7 @@ private val SiteProofTypography = Typography(
         fontSize = 28.sp,
         lineHeight = 34.sp,
         fontWeight = FontWeight.SemiBold,
-        letterSpacing = (-0.4).sp,
+        letterSpacing = (-0.4f).sp,
     ),
     titleLarge = TextStyle(
         fontSize = 21.sp,
