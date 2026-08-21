@@ -7,6 +7,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const user = getStoredUser()
   const canReview = user?.role === 'ADMIN' || user?.role === 'REVIEWER'
+  const canManage = user?.role === 'ADMIN'
 
   function signOut() {
     clearSession()
@@ -18,7 +19,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <a className="skip-link" href="#main-content">Skip to content</a>
       <aside className="sidebar" aria-label="SiteProof navigation">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">SP</span>
+          <img className="brand-logo" src="/siteproof-icon.svg" alt="" aria-hidden="true" />
           <div>
             <strong>SiteProof</strong>
             <small>Field verification</small>
@@ -29,6 +30,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <NavLink to="/" end>Overview</NavLink>
           {canReview ? <NavLink to="/review">Review</NavLink> : null}
           <NavLink to="/inspections">Inspections</NavLink>
+          {canManage ? <NavLink to="/inspectors">Inspectors</NavLink> : null}
         </nav>
 
         <div className="sidebar-user">
