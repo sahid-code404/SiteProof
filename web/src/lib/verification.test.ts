@@ -8,17 +8,19 @@ import {
   verdictMessage,
 } from './verification'
 
-describe('Phase 7 verification presentation', () => {
-  it('uses precise non-overconfident verdict language', () => {
-    expect(verdictLabel('VERIFIED')).toBe('✓ VERIFIED')
-    expect(verdictMessage('VERIFIED')).toContain('configured SiteProof policy')
-    expect(verdictMessage('FLAGGED')).toContain('contradictory evidence')
-    expect(verdictMessage('INCONCLUSIVE')).toContain('Insufficient reliable evidence')
+describe('verification presentation', () => {
+  it('uses clear, restrained verdict language', () => {
+    expect(verdictLabel('VERIFIED')).toBe('Verified')
+    expect(verdictLabel('REVIEW_REQUIRED')).toBe('Review required')
+    expect(verdictMessage('VERIFIED')).toContain('meets the verification policy')
+    expect(verdictMessage('FLAGGED')).toContain('contradiction or warning')
+    expect(verdictMessage('INCONCLUSIVE')).toContain('not enough reliable evidence')
   })
 
-  it('keeps report signal names human-readable', () => {
-    expect(signalLabel('VISUAL_INERTIAL_CONSISTENCY')).toBe('Camera ↔ Sensor Consistency')
-    expect(signalStatusLabel('PARTIAL')).toBe('⚠ PARTIAL')
+  it('keeps signal names and states easy to scan', () => {
+    expect(signalLabel('VISUAL_INERTIAL_CONSISTENCY')).toBe('Sensor & camera match')
+    expect(signalLabel('CHALLENGE_COMPLETION')).toBe('Movement steps')
+    expect(signalStatusLabel('PARTIAL')).toBe('Partial')
   })
 
   it('rounds only for display while preserving weighted contribution detail', () => {
