@@ -6,41 +6,41 @@ import type {
 
 export function verdictLabel(verdict: VerificationVerdict) {
   return {
-    VERIFIED: '✓ VERIFIED',
-    REVIEW_REQUIRED: '⚠ REVIEW REQUIRED',
-    FLAGGED: '⚠ FLAGGED',
-    INCONCLUSIVE: '? INCONCLUSIVE',
+    VERIFIED: 'Verified',
+    REVIEW_REQUIRED: 'Review required',
+    FLAGGED: 'Flagged',
+    INCONCLUSIVE: 'Inconclusive',
   }[verdict]
 }
 
 export function verdictMessage(verdict: VerificationVerdict) {
   return {
-    VERIFIED: 'Evidence strongly satisfies the configured SiteProof policy.',
-    REVIEW_REQUIRED: 'Some signals require human review.',
-    FLAGGED: 'Strong contradictory evidence was detected.',
-    INCONCLUSIVE: 'Insufficient reliable evidence was available.',
+    VERIFIED: 'The available evidence meets the verification policy.',
+    REVIEW_REQUIRED: 'One or more signals need a reviewer to check them.',
+    FLAGGED: 'The evidence contains a strong contradiction or warning.',
+    INCONCLUSIVE: 'There is not enough reliable evidence for a clear result.',
   }[verdict]
 }
 
 export function signalLabel(type: VerificationSignalType) {
   return {
     LOCATION: 'Location',
-    SESSION_TIME: 'Session / Time',
-    CHALLENGE_COMPLETION: 'Random Challenges',
-    SENSOR_QUALITY: 'Sensor Evidence',
-    VISUAL_MOTION: 'Visual Evidence',
-    SCENE_CONTINUITY: 'Scene Continuity',
-    VISUAL_INERTIAL_CONSISTENCY: 'Camera ↔ Sensor Consistency',
+    SESSION_TIME: 'Session time',
+    CHALLENGE_COMPLETION: 'Movement steps',
+    SENSOR_QUALITY: 'Motion sensors',
+    VISUAL_MOTION: 'Camera motion',
+    SCENE_CONTINUITY: 'Scene continuity',
+    VISUAL_INERTIAL_CONSISTENCY: 'Sensor & camera match',
   }[type]
 }
 
 export function signalStatusLabel(status: VerificationSignalStatus) {
   return {
-    PASS: '✓ PASS',
-    PARTIAL: '⚠ PARTIAL',
-    FAIL: '✕ FAIL',
-    INCONCLUSIVE: '? INCONCLUSIVE',
-    UNAVAILABLE: '— UNAVAILABLE',
+    PASS: 'Pass',
+    PARTIAL: 'Partial',
+    FAIL: 'Fail',
+    INCONCLUSIVE: 'Inconclusive',
+    UNAVAILABLE: 'Unavailable',
   }[status]
 }
 
