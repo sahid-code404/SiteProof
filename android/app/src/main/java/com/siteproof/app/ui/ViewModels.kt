@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.siteproof.app.data.InspectionDetail
 import com.siteproof.app.data.InspectionRepository
 import com.siteproof.app.data.InspectionSummary
+import com.siteproof.app.data.SessionExpiredException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,6 +43,11 @@ class AuthViewModel(private val repository: InspectionRepository) : ViewModel() 
         repository.signOut()
         _state.value = AuthState.Idle
     }
+
+    fun expireSession() {
+        repository.signOut()
+        _state.value = AuthState.Idle
+    }
 }
 
 data class InspectionsState(
@@ -51,7 +57,10 @@ data class InspectionsState(
     val error: String? = null,
 )
 
-class InspectionsViewModel(private val repository: InspectionRepository) : ViewModel() {
+class InspectionsViewModel(
+    private val repository: InspectionRepository,
+    private val onSessionExpired: () -> Unit = {},
+) : ViewModel() {
     private val _state = MutableStateFlow(InspectionsState())
     val state: StateFlow<InspectionsState> = _state.asStateFlow()
 
@@ -63,6 +72,9 @@ class InspectionsViewModel(private val repository: InspectionRepository) : ViewM
             _state.value = try {
                 val result = repository.loadInspections()
                 InspectionsState(loading = false, items = result.items, offline = result.offline)
+            } catch (error: SessionExpiredException) {
+                onSessionExpired()
+                InspectionsState(loading = false)
             } catch (error: Exception) {
                 InspectionsState(loading = false, error = error.message ?: "Unable to load inspections.")
             }
@@ -81,6 +93,7 @@ data class InspectionDetailState(
 class InspectionDetailViewModel(
     private val repository: InspectionRepository,
     private val inspectionId: String,
+    private val onSessionExpired: () -> Unit = {},
 ) : ViewModel() {
     private val _state = MutableStateFlow(InspectionDetailState())
     val state: StateFlow<InspectionDetailState> = _state.asStateFlow()
@@ -93,6 +106,9 @@ class InspectionDetailViewModel(
             _state.value = try {
                 val (item, offline) = repository.loadInspection(inspectionId)
                 InspectionDetailState(loading = false, item = item, offline = offline)
+            } catch (error: SessionExpiredException) {
+                onSessionExpired()
+                InspectionDetailState(loading = false)
             } catch (error: Exception) {
                 InspectionDetailState(loading = false, error = error.message ?: "Unable to load inspection.")
             }
@@ -113,6 +129,9 @@ class InspectionDetailViewModel(
                 action()
                 val (item, offline) = repository.loadInspection(inspectionId)
                 _state.value = InspectionDetailState(loading = false, item = item, offline = offline)
+            } catch (error: SessionExpiredException) {
+                onSessionExpired()
+                _state.value = InspectionDetailState(loading = false)
             } catch (error: Exception) {
                 _state.value = _state.value.copy(
                     actionInProgress = false,
