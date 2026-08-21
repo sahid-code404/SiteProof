@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -101,8 +102,11 @@ def _response(
 @router.get("/review-queue", response_model=ReviewQueueResponse)
 def review_queue(
     search: str | None = Query(default=None, max_length=200),
+    inspector: str | None = Query(default=None, max_length=200),
     verdict: VerificationVerdict | None = None,
     reviewed: bool | None = None,
+    date_from: datetime | None = Query(default=None, alias="dateFrom"),
+    date_to: datetime | None = Query(default=None, alias="dateTo"),
     limit: int = Query(default=100, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.ADMIN, UserRole.REVIEWER)),
@@ -111,8 +115,11 @@ def review_queue(
         db,
         current_user,
         search=search,
+        inspector=inspector,
         verdict=verdict,
         reviewed=reviewed,
+        date_from=date_from,
+        date_to=date_to,
         limit=limit,
     )
 
