@@ -22,11 +22,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -106,59 +108,125 @@ fun VerificationScreen(
 
     Scaffold { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
-            when (val current = state) {
-                VerificationUiState.PermissionIntro -> PermissionIntro(onBack, ::requestPermissions)
-                VerificationUiState.Preparing -> Loading("Acquiring fresh location and preparing verification…")
-                is VerificationUiState.Ready -> ReadyCapture(
-                    current.prepared,
-                    lifecycleOwner,
-                    viewModel::bindCamera,
-                    viewModel::startCapture,
-                    { viewModel.cancelPrepared(onBack) },
-                )
-                is VerificationUiState.ChallengeLoading -> LiveLoading(
-                    current.prepared,
-                    lifecycleOwner,
-                    viewModel::bindCamera,
-                    "Requesting an unpredictable server challenge…",
-                    { showAbortDialog = true },
-                )
-                is VerificationUiState.ChallengeActive -> ChallengeActiveScreen(
-                    current,
-                    lifecycleOwner,
-                    viewModel::bindCamera,
-                    { showAbortDialog = true },
-                )
-                is VerificationUiState.ChallengeChecking -> LiveLoading(
-                    current.prepared,
-                    lifecycleOwner,
-                    viewModel::bindCamera,
-                    "Checking movement with the server…",
-                    { showAbortDialog = true },
-                )
-                is VerificationUiState.ChallengeNetworkWait -> NetworkWaitScreen(
-                    current,
-                    lifecycleOwner,
-                    viewModel::bindCamera,
-                    viewModel::retryChallengeConnection,
-                    { showAbortDialog = true },
-                )
-                is VerificationUiState.ChallengeResultState -> ChallengeResultScreen(
-                    current.prepared,
-                    current.result,
-                    lifecycleOwner,
-                    viewModel::bindCamera,
-                    viewModel::retryChallenge,
-                    { showAbortDialog = true },
-                )
-                is VerificationUiState.Captured -> CaptureResult(current, viewModel::retryUpload, onBack)
-                is VerificationUiState.Error -> ErrorState(
-                    current.message,
-                    current.canRetry,
-                    viewModel::retryVerification,
-                    onBack,
-                )
+            val current = state
+            val prepared = cameraPrepared(current)
+            if (prepared != null) {
+                // One session-scoped AndroidView owns the camera preview from READY until the
+                // recording has fully stopped. Challenge state changes only replace Compose
+                // overlays; they never replace or retarget the CameraX preview surface.
+                key(prepared.session.sessionId) {
+                    PersistentCameraHost(
+                        state = current,
+                        prepared = prepared,
+                        lifecycleOwner = lifecycleOwner,
+                        bindCamera = viewModel::bindCamera,
+                        onStart = viewModel::startCapture,
+                        onBack = { viewModel.cancelPrepared(onBack) },
+                        retryConnection = viewModel::retryChallengeConnection,
+                        retryChallenge = viewModel::retryChallenge,
+                        onAbort = { showAbortDialog = true },
+                    )
+                }
+            } else {
+                when (current) {
+                    VerificationUiState.PermissionIntro -> PermissionIntro(onBack, ::requestPermissions)
+                    VerificationUiState.Preparing -> Loading("Acquiring fresh location and preparing verification…")
+                    is VerificationUiState.Captured -> CaptureResult(current, viewModel::retryUpload, onBack)
+                    is VerificationUiState.Error -> ErrorState(
+                        current.message,
+                        current.canRetry,
+                        viewModel::retryVerification,
+                        onBack,
+                    )
+                    else -> Unit
+                }
             }
+        }
+    }
+}
+
+private fun cameraPrepared(state: VerificationUiState): VerificationCaptureCoordinator.Prepared? = when (state) {
+    is VerificationUiState.Ready -> state.prepared
+    is VerificationUiState.ChallengeLoading -> state.prepared
+    is VerificationUiState.ChallengeActive -> state.prepared
+    is VerificationUiState.ChallengeChecking -> state.prepared
+    is VerificationUiState.ChallengeNetworkWait -> state.prepared
+    is VerificationUiState.ChallengeResultState -> state.prepared
+    else -> null
+}
+
+@Composable
+private fun PersistentCameraHost(
+    state: VerificationUiState,
+    prepared: VerificationCaptureCoordinator.Prepared,
+    lifecycleOwner: LifecycleOwner,
+    bindCamera: (PreviewView, LifecycleOwner) -> Unit,
+    onStart: () -> Unit,
+    onBack: () -> Unit,
+    retryConnection: () -> Unit,
+    retryChallenge: () -> Unit,
+    onAbort: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize()) {
+        // This AndroidView stays at the same composition slot for the whole capture. It is
+        // deliberately not nested inside challenge-specific UI states.
+        CameraPreview(
+            lifecycleOwner = lifecycleOwner,
+            bindCamera = bindCamera,
+            modifier = Modifier.fillMaxSize(),
+        )
+
+        Surface(
+            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+            tonalElevation = 4.dp,
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    if (state is VerificationUiState.Ready) "SITE VERIFICATION" else "LIVE VERIFICATION",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    prepared.inspection.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
+                )
+                if (state !is VerificationUiState.Ready) {
+                    Text(
+                        "Continuous camera recording · keep the inspection site visible",
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+
+        when (state) {
+            is VerificationUiState.Ready -> ReadyOverlay(prepared, onStart, onBack)
+            is VerificationUiState.ChallengeLoading -> LiveLoadingOverlay(
+                "Requesting an unpredictable server challenge…",
+                onAbort,
+            )
+            is VerificationUiState.ChallengeActive -> ChallengeActiveOverlay(state, onAbort)
+            is VerificationUiState.ChallengeChecking -> LiveLoadingOverlay(
+                "Checking movement with the server…",
+                onAbort,
+            )
+            is VerificationUiState.ChallengeNetworkWait -> NetworkWaitOverlay(
+                state,
+                retryConnection,
+                onAbort,
+            )
+            is VerificationUiState.ChallengeResultState -> ChallengeResultOverlay(
+                state.result,
+                retryChallenge,
+                onAbort,
+            )
+            else -> Unit
         }
     }
 }
@@ -183,109 +251,115 @@ private fun PermissionIntro(onBack: () -> Unit, onContinue: () -> Unit) {
 }
 
 @Composable
-private fun ReadyCapture(
+private fun ReadyOverlay(
     prepared: VerificationCaptureCoordinator.Prepared,
-    lifecycleOwner: LifecycleOwner,
-    bindCamera: (PreviewView, LifecycleOwner) -> Unit,
     onStart: () -> Unit,
     onBack: () -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().padding(20.dp)) {
-        Text("SITE VERIFICATION", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Text(prepared.inspection.title, style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(12.dp))
-        CameraPreview(lifecycleOwner, bindCamera, Modifier.fillMaxWidth().weight(1f))
-        Spacer(Modifier.height(12.dp))
-        StatusRow("GPS", "${prepared.location.accuracyLabel} · ±${prepared.location.location.accuracyMeters.roundToInt()} m")
-        StatusRow("Distance", "${prepared.location.distanceMeters.roundToInt()} m / ${prepared.inspection.allowedRadiusMeters} m allowed")
-        StatusRow("Accelerometer", if (prepared.capabilities.accelerometer) "Ready" else "Unavailable")
-        StatusRow("Gyroscope", if (prepared.capabilities.gyroscope) "Ready" else "Unavailable")
-        StatusRow("Rotation vector", if (prepared.capabilities.rotationVector) "Ready" else "Unavailable · reduced confidence")
-        Text("Keep the site visible while following three short animated movement challenges.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 12.dp))
-        Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text("START LIVE VERIFICATION") }
-        TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Back") }
+    Surface(
+        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        tonalElevation = 6.dp,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            StatusRow("GPS", "${prepared.location.accuracyLabel} · ±${prepared.location.location.accuracyMeters.roundToInt()} m")
+            StatusRow("Distance", "${prepared.location.distanceMeters.roundToInt()} m / ${prepared.inspection.allowedRadiusMeters} m allowed")
+            StatusRow("Accelerometer", if (prepared.capabilities.accelerometer) "Ready" else "Unavailable")
+            StatusRow("Gyroscope", if (prepared.capabilities.gyroscope) "Ready" else "Unavailable")
+            StatusRow("Rotation vector", if (prepared.capabilities.rotationVector) "Ready" else "Unavailable · reduced confidence")
+            Text(
+                "The camera surface now stays fixed for the entire verification. Challenge instructions appear as overlays.",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(vertical = 10.dp),
+            )
+            Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text("START LIVE VERIFICATION") }
+            TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Back") }
+        }
     }
 }
 
 @Composable
-private fun ChallengeActiveScreen(
+private fun ChallengeActiveOverlay(
     state: VerificationUiState.ChallengeActive,
-    lifecycleOwner: LifecycleOwner,
-    bindCamera: (PreviewView, LifecycleOwner) -> Unit,
     onAbort: () -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            "CHALLENGE ${state.challenge.sequenceNumber} OF ${state.challenge.totalChallenges}",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Text(
-            "Keep the inspection site visible while moving the phone.",
-            style = MaterialTheme.typography.bodySmall,
-            textAlign = TextAlign.Center,
-        )
-        CameraPreview(lifecycleOwner, bindCamera, Modifier.fillMaxWidth().height(205.dp))
-        Spacer(Modifier.height(10.dp))
-        ChallengeMovementGuide(state.challenge, state.guidance)
-        Text(
-            state.feedback,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 5.dp),
-        )
-        Text(
-            "${ceil(state.remainingMs / 1000.0).toInt()} sec remaining",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(top = 5.dp),
-        )
-        TextButton(onClick = onAbort) { Text("Abort verification") }
+    Surface(
+        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        tonalElevation = 6.dp,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "CHALLENGE ${state.challenge.sequenceNumber} OF ${state.challenge.totalChallenges}",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            ChallengeMovementGuide(state.challenge, state.guidance)
+            Text(
+                state.feedback,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 5.dp),
+            )
+            Text(
+                "${ceil(state.remainingMs / 1000.0).toInt()} sec remaining",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            TextButton(onClick = onAbort) { Text("Abort verification") }
+        }
     }
 }
 
 @Composable
-private fun LiveLoading(
-    prepared: VerificationCaptureCoordinator.Prepared,
-    lifecycleOwner: LifecycleOwner,
-    bindCamera: (PreviewView, LifecycleOwner) -> Unit,
-    message: String,
-    onAbort: () -> Unit,
-) {
-    Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("LIVE VERIFICATION", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Text(prepared.inspection.title, style = MaterialTheme.typography.titleMedium)
-        CameraPreview(lifecycleOwner, bindCamera, Modifier.fillMaxWidth().weight(1f))
-        CircularProgressIndicator(modifier = Modifier.padding(top = 16.dp))
-        Text(message, textAlign = TextAlign.Center, modifier = Modifier.padding(12.dp))
-        TextButton(onClick = onAbort) { Text("Abort verification") }
+private fun LiveLoadingOverlay(message: String, onAbort: () -> Unit) {
+    Surface(
+        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+        tonalElevation = 6.dp,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            CircularProgressIndicator()
+            Text(message, textAlign = TextAlign.Center, modifier = Modifier.padding(10.dp))
+            TextButton(onClick = onAbort) { Text("Abort verification") }
+        }
     }
 }
 
 @Composable
-private fun NetworkWaitScreen(
+private fun NetworkWaitOverlay(
     state: VerificationUiState.ChallengeNetworkWait,
-    lifecycleOwner: LifecycleOwner,
-    bindCamera: (PreviewView, LifecycleOwner) -> Unit,
     retry: () -> Unit,
     onAbort: () -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("CONNECTION LOST", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
-        CameraPreview(lifecycleOwner, bindCamera, Modifier.fillMaxWidth().weight(1f))
-        Text(state.message, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 16.dp))
-        Text("No future challenge is available until the server reconnects.", style = MaterialTheme.typography.bodySmall)
-        Button(onClick = retry, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) { Text("RETRY CONNECTION") }
-        TextButton(onClick = onAbort) { Text("Abort verification") }
+    Surface(
+        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.93f),
+        tonalElevation = 6.dp,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("CONNECTION LOST", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
+            Text(state.message, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 10.dp))
+            Text("The same continuous camera recording remains active while reconnecting.", style = MaterialTheme.typography.bodySmall)
+            Button(onClick = retry, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) { Text("RETRY CONNECTION") }
+            TextButton(onClick = onAbort) { Text("Abort verification") }
+        }
     }
 }
 
 @Composable
-private fun ChallengeResultScreen(
-    prepared: VerificationCaptureCoordinator.Prepared,
+private fun ChallengeResultOverlay(
     result: ChallengeValidationResult,
-    lifecycleOwner: LifecycleOwner,
-    bindCamera: (PreviewView, LifecycleOwner) -> Unit,
     retryChallenge: () -> Unit,
     onAbort: () -> Unit,
 ) {
@@ -302,18 +376,24 @@ private fun ChallengeResultScreen(
             "No challenge retry remains. Continuing with the recorded result."
         }
     }
-    Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("LIVE VERIFICATION", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Text(prepared.inspection.title, style = MaterialTheme.typography.titleMedium)
-        CameraPreview(lifecycleOwner, bindCamera, Modifier.fillMaxWidth().weight(1f))
-        Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp))
-        Text(detail, textAlign = TextAlign.Center, modifier = Modifier.padding(8.dp))
-        if (result.result != "PASS" && result.retryAllowed) {
-            Button(onClick = retryChallenge, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                Text("RETRY CHALLENGE")
+    Surface(
+        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        tonalElevation = 6.dp,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+            Text(detail, textAlign = TextAlign.Center, modifier = Modifier.padding(8.dp))
+            if (result.result != "PASS" && result.retryAllowed) {
+                Button(onClick = retryChallenge, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                    Text("RETRY CHALLENGE")
+                }
             }
+            TextButton(onClick = onAbort) { Text("Abort verification") }
         }
-        TextButton(onClick = onAbort) { Text("Abort verification") }
     }
 }
 
@@ -335,7 +415,14 @@ private fun CameraPreview(
 ) {
     AndroidView(
         modifier = modifier,
-        factory = { context -> PreviewView(context).also { bindCamera(it, lifecycleOwner) } },
+        factory = { context ->
+            PreviewView(context).apply {
+                // TextureView-compatible mode lets Compose draw challenge controls above the
+                // camera without introducing another camera surface between state transitions.
+                implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                scaleType = PreviewView.ScaleType.FILL_CENTER
+            }.also { bindCamera(it, lifecycleOwner) }
+        },
     )
 }
 
