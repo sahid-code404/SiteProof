@@ -25,6 +25,7 @@ import com.siteproof.app.verification.upload.EvidenceUploadWorker
 import java.io.File
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -262,13 +263,20 @@ class VerificationCaptureCoordinator(
         val capture = checkNotNull(active) { "No capture is active." }
         check(activeChallenge == null) { "Current challenge must finish before capture stops." }
         try {
+            val requestedMinimumMs = capture.prepared.inspection.captureDurationSeconds
+                .coerceIn(10, 45) * 1_000L
+            val remainingMinimumMs = (requestedMinimumMs - captureElapsedMs()).coerceAtLeast(0L)
+            if (remainingMinimumMs > 0L) delay(remainingMinimumMs)
+
             val cameraResult = cameraManager.stopRecording()
             val sensorCounts = sensorRecorder.stop()
             val locations = locationRecorder.stopCapture()
             // CameraX's encoded-media duration is the authoritative duration of capture.mp4.
             // Wall-clock start/end anchors are packaged separately for Phase 5 calibration.
             val durationMs = cameraResult.recordedDurationNs / 1_000_000L
-            require(durationMs >= 8_000L) { "Capture must be at least 8 seconds." }
+            require(durationMs >= requestedMinimumMs - 750L) {
+                "Capture ended before the configured ${capture.prepared.inspection.captureDurationSeconds} second minimum."
+            }
             require(durationMs <= 60_000L) { "Capture exceeded the 60 second maximum." }
             require(locations.isNotEmpty()) { "No GPS samples were recorded during capture." }
             val locationSummary = locationRecorder.writePackage(
