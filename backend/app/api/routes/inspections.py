@@ -19,12 +19,12 @@ from app.schemas.inspection import (
     InspectionUpdate,
     ReassignmentRequest,
 )
+from app.services.dashboard_service import dashboard_summary
 from app.services.inspection_service import (
     acknowledge_inspection,
     assign_inspector,
     cancel_inspection,
     create_inspection,
-    dashboard_summary,
     get_inspection,
     list_inspections,
     mark_ready,
