@@ -91,24 +91,24 @@ fun InspectionDetailScreen(
                         .padding(padding)
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 16.dp)
+                        .padding(horizontal = 16.dp, vertical = 18.dp)
                         .animateContentSize(),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     if (state.offline) {
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(18.dp),
                             color = MaterialTheme.colorScheme.tertiaryContainer,
                         ) {
-                            Column(Modifier.padding(14.dp)) {
+                            Column(Modifier.padding(15.dp)) {
                                 Text("Offline", color = MaterialTheme.colorScheme.onTertiaryContainer, fontWeight = FontWeight.SemiBold)
                                 Text("Showing the last synced copy.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
 
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                         Text(item.title, style = MaterialTheme.typography.headlineMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             DetailChip(item.status)
@@ -155,11 +155,11 @@ fun InspectionDetailScreen(
 @Composable
 private fun ReferenceCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().shadow(6.dp, RoundedCornerShape(16.dp)),
-        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().shadow(4.dp, RoundedCornerShape(20.dp)),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
     ) {
-        Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
     }
 }
 
@@ -172,32 +172,46 @@ private fun InspectionAction(
     onReady: () -> Unit,
     onStartVerification: () -> Unit,
 ) {
+    val shape = RoundedCornerShape(16.dp)
     when (status) {
-        "ASSIGNED" -> Button(onClick = onAcknowledge, enabled = !actionInProgress && !offline, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text(if (actionInProgress) "Updating…" else "Acknowledge") }
-        "ACKNOWLEDGED" -> Button(onClick = onReady, enabled = !actionInProgress && !offline, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text(if (actionInProgress) "Updating…" else "Mark ready") }
-        "READY" -> Button(onClick = onStartVerification, enabled = !offline, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Start verification") }
+        "ASSIGNED" -> Button(onClick = onAcknowledge, enabled = !actionInProgress && !offline, modifier = Modifier.fillMaxWidth().height(54.dp), shape = shape) { Text(if (actionInProgress) "Updating…" else "Acknowledge") }
+        "ACKNOWLEDGED" -> Button(onClick = onReady, enabled = !actionInProgress && !offline, modifier = Modifier.fillMaxWidth().height(54.dp), shape = shape) { Text(if (actionInProgress) "Updating…" else "Mark ready") }
+        "READY" -> Button(onClick = onStartVerification, enabled = !offline, modifier = Modifier.fillMaxWidth().height(54.dp), shape = shape) { Text("Start verification") }
     }
 }
 
 @Composable
 private fun DetailField(label: String, value: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodyLarge)
+        Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
     }
 }
 
 @Composable
 private fun DetailChip(value: String) {
-    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-        Text(value.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+    val normalized = value.uppercase()
+    val (background, foreground) = when {
+        normalized in setOf("READY", "APPROVED") -> Color(0xFFE8F5EC) to Color(0xFF216A3C)
+        normalized in setOf("REJECTED", "CANCELLED", "CRITICAL") -> Color(0xFFFDECEC) to Color(0xFFA42B25)
+        normalized in setOf("HIGH", "PROCESSING", "EVIDENCE_UPLOADING") -> Color(0xFFFFF3DE) to Color(0xFF8B5809)
+        normalized in setOf("ASSIGNED", "ACKNOWLEDGED") -> Color(0xFFEEF3FA) to Color(0xFF365E91)
+        else -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Surface(shape = RoundedCornerShape(999.dp), color = background) {
+        Text(
+            value.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() },
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelLarge,
+            color = foreground,
+        )
     }
 }
 
 @Composable
 private fun StatusMessage(message: String) {
-    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-        Text(message, modifier = Modifier.padding(14.dp), color = MaterialTheme.colorScheme.onPrimaryContainer)
+    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+        Text(message, modifier = Modifier.padding(15.dp), color = MaterialTheme.colorScheme.onPrimaryContainer)
     }
 }
 
@@ -214,6 +228,6 @@ private fun MissingDetail(modifier: Modifier, message: String, onRetry: () -> Un
     Column(modifier = modifier.fillMaxSize().padding(28.dp), verticalArrangement = Arrangement.Center) {
         Text("Could not load inspection", style = MaterialTheme.typography.headlineMedium)
         Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 12.dp))
-        Button(onClick = onRetry) { Text("Try again") }
+        Button(onClick = onRetry, shape = RoundedCornerShape(16.dp)) { Text("Try again") }
     }
 }
