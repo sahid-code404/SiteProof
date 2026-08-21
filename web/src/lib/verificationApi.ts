@@ -76,6 +76,35 @@ export type VerificationResponse = {
   } | null
 }
 
+export type ReviewQueueItem = {
+  inspectionId: string
+  sessionId: string
+  resultId: string
+  title: string
+  locationName?: string | null
+  locationAddress?: string | null
+  latitude: number
+  longitude: number
+  inspectionStatus: string
+  verdict: VerificationVerdict
+  score?: number | null
+  confidence?: number | null
+  engineVersion: string
+  calculatedAt?: string | null
+  latestReview?: {
+    id: string
+    decision: ReviewDecision
+    reason: string
+    reviewerUserId: string
+    createdAt: string
+  } | null
+}
+
+export type ReviewQueueResponse = {
+  items: ReviewQueueItem[]
+  total: number
+}
+
 async function verificationRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken()
   const headers = new Headers(init.headers)
@@ -98,6 +127,11 @@ async function verificationRequest<T>(path: string, init: RequestInit = {}): Pro
 
 export function getSessionVerification(sessionId: string): Promise<VerificationResponse> {
   return verificationRequest(`/sessions/${sessionId}/verification`)
+}
+
+export function getReviewQueue(params: URLSearchParams): Promise<ReviewQueueResponse> {
+  const query = params.toString()
+  return verificationRequest(`/review-queue${query ? `?${query}` : ''}`)
 }
 
 export function recalculateSessionVerification(sessionId: string): Promise<VerificationResponse> {
