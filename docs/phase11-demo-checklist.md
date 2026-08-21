@@ -11,6 +11,23 @@ This checklist is for the final SiteProof SIH demo and release rehearsal. It doe
 - Android device can reach the backend over the selected test network.
 - At least one known VERIFIED inspection, one FLAGGED/attention case, and one receipt-history case are available.
 
+## Android final-freeze check
+
+- Fresh install signs in and loads assigned inspections.
+- Pull-to-refresh works online and the cached inspection list remains readable offline.
+- Update card uses user-facing wording (`App update`, `Update now`, `Later`) and does not expose field-test/debug terminology.
+- Update download shows progress activity, verifies the APK, and opens the Android installer without uninstalling the current app first.
+- Camera and location permission introduction explains why both permissions are required.
+- Camera preview remains continuous from READY through all challenge overlays and final recording stop.
+- Backgrounding/interruption aborts the live proof safely rather than silently resuming a stale challenge.
+- Network loss during a live challenge preserves the same continuous recording and offers an explicit retry connection action.
+- Failed or inconclusive challenge validation offers a fresh challenge retry only when the server allows it.
+- Challenge UI shows instruction, animated phone/arrow, target angle, measured angle, progress, and a readable status such as GOOD, WRONG WAY, or TOO FAR.
+- TalkBack receives a concise challenge summary containing direction, target, measured angle, guidance state, and progress.
+- Upload interruption keeps evidence locally and exposes a retry action.
+- Back navigation during live capture asks before aborting the verification.
+- No double-start, double-submit, duplicate upload, preview-surface swap, or crash occurs during repeated real-device runs.
+
 ## Primary demo path
 
 1. Sign in to the SiteProof control desk.
@@ -52,6 +69,7 @@ Do not hard-code Test 10 identifiers into UI code or seed scripts. Display whate
 - Confirm dynamic loading/error states use status/alert semantics where appropriate.
 - Enable reduced-motion preference and confirm the UI remains usable without transition dependence.
 - Test a narrow viewport (approximately 360–390 px) and a tablet viewport before the demo.
+- Android TalkBack: sign in, open an inspection, start verification, follow one movement challenge, use retry, and finish or abort without unlabeled controls.
 
 ## Demo integrity rules
 
