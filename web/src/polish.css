@@ -200,6 +200,109 @@ td { padding: 14px 16px; }
 .video-empty-state,
 .video-skeleton { border-radius: 12px; }
 
+.technical-evidence,
+.evidence-details { overflow: hidden; }
+.technical-evidence > summary,
+.evidence-details > summary,
+.danger-details > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.technical-evidence > summary::-webkit-details-marker,
+.evidence-details > summary::-webkit-details-marker,
+.danger-details > summary::-webkit-details-marker { display: none; }
+.technical-evidence > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.technical-evidence > summary span { display: grid; gap: 4px; }
+.technical-evidence > summary small { color: var(--muted); font-weight: 400; }
+.technical-evidence-content { display: grid; gap: 14px; margin-top: 16px; }
+.technical-evidence-content > .panel { box-shadow: none; background: var(--surface-soft); }
+
+.verification-summary-heading,
+.receipt-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+}
+.verification-summary-heading h2,
+.receipt-heading h2 { margin: 0 0 4px; }
+.verification-key-metrics,
+.receipt-key-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.verification-key-metrics > div,
+.receipt-key-metrics > div,
+.receipt-detail-list > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.verification-key-metrics span,
+.receipt-key-metrics span,
+.receipt-detail-list span { font-size: 11px; color: var(--muted); }
+
+.review-decision-box {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+}
+.review-decision-box p { margin: 0; }
+.review-decision-actions,
+.receipt-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.evidence-details {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.evidence-details > summary {
+  color: #355044;
+  font-weight: 700;
+  font-size: 13px;
+}
+.evidence-details-content { display: grid; gap: 12px; margin-top: 12px; }
+.signal-breakdown-list { display: grid; gap: 8px; }
+.signal-breakdown-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 16px;
+  padding: 12px;
+  background: var(--surface-soft);
+  border-radius: 10px;
+}
+.signal-breakdown-row > div { display: grid; gap: 2px; }
+.signal-breakdown-row small { color: var(--muted); }
+.signal-breakdown-row p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 12px; }
+
+.receipt-heading .badge-row { justify-content: flex-end; }
+.receipt-detail-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.receipt-history-list { display: grid; gap: 8px; }
+.receipt-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  background: var(--surface-soft);
+  border-radius: 10px;
+}
+.receipt-history-row > div:first-child { display: grid; gap: 3px; }
+.receipt-history-row small { color: var(--muted); }
+.danger-details > summary { color: var(--danger); font-weight: 700; }
+.danger-details[open] { display: grid; gap: 10px; }
+
 .login-page { grid-template-columns: minmax(0, .9fr) minmax(420px, .65fr); background: #f5f6f3; }
 .login-visual {
   min-height: 100vh;
@@ -265,6 +368,19 @@ td { padding: 14px 16px; }
   .review-advanced-grid { grid-template-columns: 1fr; }
   .metric-grid { grid-template-columns: 1fr 1fr; }
   .dashboard-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 700px) {
+  .verification-summary-heading,
+  .receipt-heading { flex-direction: column; }
+  .verification-key-metrics,
+  .receipt-key-metrics { grid-template-columns: 1fr 1fr; }
+  .receipt-key-metrics > div:last-child { grid-column: 1 / -1; }
+  .receipt-detail-list { grid-template-columns: 1fr; }
+  .receipt-history-row { grid-template-columns: 1fr; }
+  .receipt-heading .badge-row { justify-content: flex-start; }
+  .review-decision-actions .button,
+  .receipt-actions .button { flex: 1; }
 }
 
 @media (max-width: 520px) {
