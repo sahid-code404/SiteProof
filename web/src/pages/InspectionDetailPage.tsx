@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { SiteMap } from '../components/SiteMap'
 import { StatusBadge } from '../components/StatusBadge'
+import { VerificationReportPanel } from '../components/VerificationReportPanel'
 import { VerificationSessionPanel } from '../components/VerificationSessionPanel'
 import { assignInspection, cancelInspection, getInspection, getInspectors, reassignInspection } from '../lib/api'
 import { getStoredUser } from '../lib/auth'
@@ -37,7 +38,7 @@ export function InspectionDetailPage() {
   const item = inspection.data
   const canAssign = canManage && item.status === 'DRAFT'
   const canReassign = canManage && ['ASSIGNED', 'ACKNOWLEDGED', 'READY'].includes(item.status)
-  const canCancel = canManage && item.status !== 'CANCELLED'
+  const canCancel = canManage && !['CANCELLED', 'APPROVED', 'REJECTED'].includes(item.status)
   const actionError = assign.error ?? reassign.error ?? cancel.error
 
   return (
@@ -51,6 +52,7 @@ export function InspectionDetailPage() {
         <section className="detail-main">
           <article className="panel"><p className="eyebrow">SITE</p><SiteMap latitude={item.expectedLatitude} longitude={item.expectedLongitude} radius={item.allowedRadiusMeters} /><div className="definition-grid"><div><span>Location</span><strong>{item.locationName || 'Unnamed site'}</strong><small>{item.locationAddress || 'No address provided'}</small></div><div><span>Coordinates</span><strong>{item.expectedLatitude.toFixed(6)}, {item.expectedLongitude.toFixed(6)}</strong><small>Allowed radius: {item.allowedRadiusMeters} m</small></div></div></article>
           <article className="panel"><p className="eyebrow">REQUIREMENTS</p><h3>{item.inspectionType.replace('_', ' ')}</h3><p>{item.description || 'No description provided.'}</p><div className="callout"><strong>Inspector instructions</strong><p>{item.instructions || 'No additional instructions.'}</p></div></article>
+          <VerificationReportPanel inspectionId={id} />
           <VerificationSessionPanel inspectionId={id} />
           <article className="panel"><p className="eyebrow">ASSIGNMENT HISTORY</p>{item.assignmentHistory.length ? <div className="timeline">{item.assignmentHistory.map((assignment) => <div className="timeline-item" key={assignment.id}><span className="timeline-dot" /><div><strong>{assignment.inspector.name}</strong><p>{assignment.status} · {formatDate(assignment.assignedAt)}</p>{assignment.reason ? <small>{assignment.reason}</small> : null}</div></div>)}</div> : <p className="muted">No assignment has been made yet.</p>}</article>
         </section>
