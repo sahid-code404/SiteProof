@@ -21,6 +21,15 @@ from app.models.inspection import (
 )
 from app.models.inspector import Inspector
 from app.models.organization import Organization
+from app.models.receipt import (
+    EvidenceManifest,
+    ReceiptLifecycleStatus,
+    ReceiptProcessStatus,
+    ReceiptType,
+    SignedReceipt,
+    SigningKey,
+    SigningKeyStatus,
+)
 from app.models.trust import (
     ReviewDecision,
     ReviewDecisionType,
@@ -56,6 +65,7 @@ __all__ = [
     "ConsistencyStatus",
     "EvidenceFile",
     "EvidenceFileType",
+    "EvidenceManifest",
     "EvidenceUploadStatus",
     "FusionAnalysisStatus",
     "Inspection",
@@ -67,8 +77,14 @@ __all__ = [
     "MismatchReason",
     "MotionDirection",
     "Organization",
+    "ReceiptLifecycleStatus",
+    "ReceiptProcessStatus",
+    "ReceiptType",
     "ReviewDecision",
     "ReviewDecisionType",
+    "SignedReceipt",
+    "SigningKey",
+    "SigningKeyStatus",
     "User",
     "UserRole",
     "VerificationChallenge",

@@ -10,15 +10,17 @@ from app.api.router import api_router
 from app.api.routes.health import router as health_router
 from app.core.config import get_settings
 from app.core.errors import SiteProofError
+from app.services.receipt_signing import validate_production_signing_configuration
 
 settings = get_settings()
+validate_production_signing_configuration()
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 app = FastAPI(
     title=settings.app_name,
-    version="0.2.0",
+    version="0.5.0",
     description="SiteProof field inspection management and verification API.",
 )
 

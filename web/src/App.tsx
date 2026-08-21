@@ -6,6 +6,8 @@ import { InspectionDetailPage } from './pages/InspectionDetailPage'
 import { InspectionFormPage } from './pages/InspectionFormPage'
 import { InspectionsPage } from './pages/InspectionsPage'
 import { LoginPage } from './pages/LoginPage'
+import { PublicReceiptPage } from './pages/PublicReceiptPage'
+import { ReceiptDetailPage } from './pages/ReceiptDetailPage'
 
 function ProtectedApp() {
   if (!getToken()) return <Navigate to="/login" replace />
@@ -22,6 +24,7 @@ function ProtectedApp() {
         <Route path="/inspections/new" element={canManage ? <InspectionFormPage /> : <Navigate to="/inspections" replace />} />
         <Route path="/inspections/:id/edit" element={canManage ? <InspectionFormPage /> : <Navigate to="/inspections" replace />} />
         <Route path="/inspections/:id" element={<InspectionDetailPage />} />
+        <Route path="/receipts/:id" element={<ReceiptDetailPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>
@@ -31,6 +34,7 @@ function ProtectedApp() {
 export default function App() {
   return (
     <Routes>
+      <Route path="/verify/:token" element={<PublicReceiptPage />} />
       <Route path="/login" element={getToken() ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route path="/*" element={<ProtectedApp />} />
     </Routes>
