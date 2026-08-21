@@ -13,6 +13,7 @@ def motion_kind(challenge_type: ChallengeType) -> MotionKind:
 
 
 def expected_direction(challenge_type: ChallengeType) -> MotionDirection:
+    """Return the physical challenge direction used by Phase 4 sensor evidence."""
     return {
         ChallengeType.ROTATE_LEFT: MotionDirection.LEFT,
         ChallengeType.ROTATE_RIGHT: MotionDirection.RIGHT,
@@ -32,17 +33,41 @@ def opposite_direction(direction: MotionDirection) -> MotionDirection:
     }[direction]
 
 
-def normalize_visual_to_camera_motion(direction: str) -> MotionDirection:
-    """Normalize Phase 5 output to physical camera semantics in one dedicated place.
+def _uses_optical_tilt_labels(analysis_version: str) -> bool:
+    """Phase 5 v1.2+ labels tilt using rear-camera optical pitch.
 
-    Phase 5 already returns physical camera LEFT/RIGHT/UP/DOWN rather than raw optical-flow
-    direction. Keeping this function explicit prevents future sign inversions from being
-    scattered through fusion code if the Phase 5 representation changes.
+    The challenge name describes movement of the portrait phone's TOP EDGE, while the
+    camera analyzer labels the rear-camera optical axis. Those are opposite for tilt:
+    TILT_UP -> camera DOWN, TILT_DOWN -> camera UP. Fusion converts that representation
+    back to the physical challenge convention before comparing it with sensor evidence.
     """
+    prefix = "vision-v"
+    if not analysis_version.startswith(prefix):
+        return True
     try:
-        return MotionDirection(direction)
+        return float(analysis_version[len(prefix) :]) >= 1.2
+    except ValueError:
+        return True
+
+
+def normalize_visual_to_camera_motion(
+    direction: str,
+    *,
+    challenge_type: ChallengeType,
+    analysis_version: str,
+) -> MotionDirection:
+    try:
+        normalized = MotionDirection(direction)
     except ValueError:
         return MotionDirection.NONE
+
+    if (
+        challenge_type in {ChallengeType.TILT_UP, ChallengeType.TILT_DOWN}
+        and _uses_optical_tilt_labels(analysis_version)
+        and normalized in {MotionDirection.UP, MotionDirection.DOWN}
+    ):
+        return opposite_direction(normalized)
+    return normalized
 
 
 def _peak(curve: tuple[MotionCurvePoint, ...]) -> int | None:
@@ -99,7 +124,10 @@ def normalize_sensor_motion(
     )
 
 
-def normalize_visual_motion(result: VisualMotionResult, challenge: VerificationChallenge) -> MotionEstimate:
+def normalize_visual_motion(
+    result: VisualMotionResult,
+    challenge: VerificationChallenge,
+) -> MotionEstimate:
     diagnostics = result.diagnostics_json or {}
     raw_curve = diagnostics.get("motionCurve") or []
     curve: list[MotionCurvePoint] = []
@@ -109,11 +137,20 @@ def normalize_visual_motion(result: VisualMotionResult, challenge: VerificationC
         time_ms = item.get("timeMs")
         magnitude = item.get("magnitudePx")
         if isinstance(time_ms, (int, float)) and isinstance(magnitude, (int, float)):
-            curve.append(MotionCurvePoint(time_ms=int(round(time_ms)), value=max(0.0, float(magnitude))))
+            curve.append(
+                MotionCurvePoint(
+                    time_ms=int(round(time_ms)),
+                    value=max(0.0, float(magnitude)),
+                )
+            )
     curve.sort(key=lambda item: item.time_ms)
 
     return MotionEstimate(
-        direction=normalize_visual_to_camera_motion(result.visual_direction.value).value,
+        direction=normalize_visual_to_camera_motion(
+            result.visual_direction.value,
+            challenge_type=challenge.challenge_type,
+            analysis_version=result.analysis_version,
+        ).value,
         angular_change_deg=(
             abs(float(result.estimated_rotation_degrees))
             if result.estimated_rotation_degrees is not None
