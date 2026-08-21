@@ -17,11 +17,11 @@ export class AppErrorBoundary extends Component<Props, State> {
       <main className="app-error-page" role="alert">
         <div className="app-error-card">
           <span className="brand-mark large" aria-hidden="true">SP</span>
-          <p className="eyebrow">SITEPROOF RECOVERY</p>
-          <h1>This screen could not be displayed.</h1>
-          <p>The current evidence has not been changed. Reload the application to restore the control desk.</p>
+          <p className="eyebrow">SiteProof</p>
+          <h1>Something went wrong</h1>
+          <p>Reload the page and try again.</p>
           <button className="button primary" type="button" onClick={() => window.location.reload()}>
-            Reload SiteProof
+            Reload
           </button>
         </div>
       </main>
