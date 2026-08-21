@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { AdvancedSecurityPanel } from '../components/AdvancedSecurityPanel'
 import { AdvancedSignalsPanel } from '../components/AdvancedSignalsPanel'
+import { EvidenceVideoPanel } from '../components/EvidenceVideoPanel'
 import { ReceiptPanel } from '../components/ReceiptPanel'
 import { SiteMap } from '../components/SiteMap'
 import { StatusBadge } from '../components/StatusBadge'
@@ -17,7 +18,9 @@ function formatDate(value: string) {
 
 export function InspectionDetailPage() {
   const { id = '' } = useParams()
-  const canManage = getStoredUser()?.role === 'ADMIN'
+  const user = getStoredUser()
+  const canManage = user?.role === 'ADMIN'
+  const canReview = user?.role === 'ADMIN' || user?.role === 'REVIEWER'
   const queryClient = useQueryClient()
   const [inspectorId, setInspectorId] = useState('')
   const [reason, setReason] = useState('')
@@ -29,6 +32,7 @@ export function InspectionDetailPage() {
     queryClient.invalidateQueries({ queryKey: ['inspection', id] })
     queryClient.invalidateQueries({ queryKey: ['inspections'] })
     queryClient.invalidateQueries({ queryKey: ['inspection-summary'] })
+    queryClient.invalidateQueries({ queryKey: ['review-workspace'] })
     queryClient.invalidateQueries({ queryKey: ['verification-session', id] })
   }
 
@@ -52,13 +56,17 @@ export function InspectionDetailPage() {
           <h1>{item.title}</h1>
           <div className="badge-row"><StatusBadge value={item.status} /><StatusBadge value={item.priority} />{item.isOverdue ? <span className="badge badge-overdue">OVERDUE</span> : null}</div>
         </div>
-        {canManage && ['DRAFT', 'ASSIGNED', 'ACKNOWLEDGED', 'READY'].includes(item.status) ? <Link className="button ghost" to={`/inspections/${id}/edit`}>Edit inspection</Link> : null}
+        <div className="heading-actions">
+          {canReview ? <Link className="button ghost" to="/review">Reviewer workspace</Link> : null}
+          {canManage && ['DRAFT', 'ASSIGNED', 'ACKNOWLEDGED', 'READY'].includes(item.status) ? <Link className="button ghost" to={`/inspections/${id}/edit`}>Edit inspection</Link> : null}
+        </div>
       </section>
 
       <div className="detail-grid">
         <section className="detail-main">
           <VerificationReportPanel inspectionId={id} />
           <ReceiptPanel inspectionId={id} />
+          <EvidenceVideoPanel inspectionId={id} />
           <AdvancedSecurityPanel inspectionId={id} />
           <AdvancedSignalsPanel inspectionId={id} />
           <VerificationSessionPanel inspectionId={id} />
