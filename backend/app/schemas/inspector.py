@@ -13,6 +13,17 @@ class InspectorCreate(APIModel):
     phone: str | None = Field(default=None, max_length=40)
 
 
+class InspectorUpdate(APIModel):
+    full_name: str | None = Field(default=None, min_length=2, max_length=160)
+    employee_code: str | None = Field(default=None, max_length=80)
+    phone: str | None = Field(default=None, max_length=40)
+    active: bool | None = None
+
+
+class InspectorPasswordReset(APIModel):
+    password: str = Field(min_length=8, max_length=200)
+
+
 class InspectorResponse(APIModel):
     id: uuid.UUID
     user_id: uuid.UUID
