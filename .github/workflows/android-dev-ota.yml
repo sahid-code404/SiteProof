@@ -6,6 +6,7 @@ on:
       - phase5-visual-motion
       - phase9-advanced-security
       - phase10-environment-anomaly
+      - phase11-final-polish
     paths:
       - 'android/**'
       - '.github/workflows/android-dev-ota.yml'
@@ -36,7 +37,7 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Resolve field-test version and API
+      - name: Resolve update version and API
         id: version
         shell: bash
         run: |
@@ -71,7 +72,7 @@ jobs:
             "versionName": "${{ steps.version.outputs.name }}",
             "apkUrl": "https://github.com/sahid-code404/SiteProof/releases/download/dev-latest/SiteProof-debug.apk",
             "sha256": "$SHA256",
-            "notes": "Field-test update $SHORT_SHA. Downloaded APK is SHA-256 verified before Android installation."
+            "notes": "Phase 11 update $SHORT_SHA. The downloaded APK is SHA-256 verified before Android installation."
           }
           JSON
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
@@ -98,4 +99,4 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "SiteProof Dev OTA ${{ steps.version.outputs.name }}" \
             --prerelease \
-            --notes "Development-only OTA build for com.siteproof.app.dev. SHA-256: ${{ steps.package.outputs.sha256 }}"
+            --notes "Development OTA build for com.siteproof.app.dev. SHA-256: ${{ steps.package.outputs.sha256 }}"
