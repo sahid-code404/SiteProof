@@ -25,6 +25,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.siteproof.app.data.InspectionSummary
@@ -90,17 +93,27 @@ fun InspectionListScreen(
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        item(key = "dev-update") {
+                        item(key = "app-update") {
                             DevAppUpdateCard(updateManager)
                         }
                         if (state.offline) {
-                            item {
-                                Text(
-                                    "Offline — showing last synced data",
-                                    color = MaterialTheme.colorScheme.tertiary,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    modifier = Modifier.padding(bottom = 4.dp),
-                                )
+                            item(key = "offline-status") {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .semantics { liveRegion = LiveRegionMode.Polite },
+                                ) {
+                                    Text(
+                                        "Offline — showing last synced data",
+                                        color = MaterialTheme.colorScheme.tertiary,
+                                        style = MaterialTheme.typography.labelLarge,
+                                    )
+                                    Text(
+                                        "Pull to refresh after the connection returns.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
 
@@ -168,12 +181,6 @@ private fun InspectionCard(inspection: InspectionSummary, onClick: () -> Unit) {
             Spacer(Modifier.height(12.dp))
             Text("Deadline", style = MaterialTheme.typography.labelSmall)
             Text(formatDeadline(inspection.deadline), style = MaterialTheme.typography.bodyMedium)
-            Text(
-                "Distance unavailable",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 6.dp),
-            )
         }
     }
 }
@@ -188,7 +195,13 @@ private fun EmptyState() {
 
 @Composable
 private fun ErrorState(message: String, onRetry: () -> Unit) {
-    Column(modifier = Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp)
+            .semantics { liveRegion = LiveRegionMode.Assertive },
+        verticalArrangement = Arrangement.Center,
+    ) {
         Text("Unable to load inspections.", style = MaterialTheme.typography.headlineSmall)
         Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 12.dp))
         Button(onClick = onRetry) { Text("Retry") }
