@@ -6,6 +6,10 @@ from app.services.fusion.comparators import MagnitudeComparison, TimingCompariso
 from app.services.fusion.domain import CurveComparison, FusionDecision, MotionEstimate
 
 
+_POOR_VISUAL_OVERRIDE_MIN_CONFIDENCE = 0.75
+_POOR_VISUAL_OVERRIDE_MIN_CONTINUITY = 0.85
+
+
 def _weighted_score(
     components: dict[str, float | None],
     weights: dict[str, float],
@@ -62,6 +66,18 @@ def decide_fusion(
     raw, coverage = _weighted_score(components, settings.fusion_score_weights)
     fusion_confidence = _source_confidence(sensor.confidence, visual.confidence, coverage)
 
+    continuity_anomaly = (
+        scene_continuity_score < settings.fusion_min_scene_continuity_score
+        or freeze_duration_ms >= settings.fusion_scene_freeze_warning_ms
+    )
+    recoverable_poor_visual = (
+        visual_input_valid
+        and visual.quality == "POOR"
+        and visual.confidence >= _POOR_VISUAL_OVERRIDE_MIN_CONFIDENCE
+        and scene_continuity_score >= _POOR_VISUAL_OVERRIDE_MIN_CONTINUITY
+        and freeze_duration_ms < settings.fusion_scene_freeze_warning_ms
+    )
+
     low_sensor = (
         not sensor_input_valid
         or sensor.confidence < settings.fusion_min_sensor_confidence
@@ -70,16 +86,24 @@ def decide_fusion(
     low_visual = (
         not visual_input_valid
         or visual.confidence < settings.fusion_min_visual_confidence
-        or visual.quality == "POOR"
+        or (visual.quality == "POOR" and not recoverable_poor_visual)
     )
     if low_sensor:
         mismatch.append(MismatchReason.LOW_SENSOR_QUALITY.value)
-    if low_visual:
+    if low_visual or recoverable_poor_visual:
         mismatch.append(MismatchReason.LOW_VISUAL_QUALITY.value)
 
-    if scene_continuity_score < settings.fusion_min_scene_continuity_score or (
-        freeze_duration_ms >= settings.fusion_scene_freeze_warning_ms
-    ):
+    if recoverable_poor_visual:
+        # The Phase 5 POOR label includes photometric sharpness/brightness checks. A clean,
+        # high-confidence, continuous RANSAC motion estimate remains usable for consistency
+        # comparison, but the warning is retained and confidence is slightly attenuated.
+        fusion_confidence *= 0.95
+        explanations.append(
+            "Visual image quality was labeled poor, but motion confidence and scene "
+            "continuity were strong enough to keep the camera signal comparable."
+        )
+
+    if continuity_anomaly:
         mismatch.append(MismatchReason.SCENE_CONTINUITY_ANOMALY.value)
         # Continuity is supporting evidence only; it lowers confidence rather than deciding
         # the cross-signal state by itself.
@@ -131,7 +155,9 @@ def decide_fusion(
     mismatch = list(dict.fromkeys(mismatch))
 
     if sensor.direction == visual.direction and sensor.direction not in {"NONE", "MIXED"}:
-        explanations.append(f"Both sources detected {sensor.direction.lower()} physical camera movement.")
+        explanations.append(
+            f"Both sources detected {sensor.direction.lower()} physical camera movement."
+        )
     elif opposite:
         explanations.append(
             f"Sensor motion was {sensor.direction.lower()} while camera motion was {visual.direction.lower()}."
