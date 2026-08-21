@@ -115,11 +115,10 @@ export function ReviewWorkspacePage() {
 
           <div className="review-card-list">
             {items.map((item) => (
-              <button
-                type="button"
+              <article
                 className={`review-card ${selectedId === item.inspectionId ? 'selected' : ''}`}
                 key={item.inspectionId}
-                onClick={() => setSelectedId(item.inspectionId)}
+                onMouseEnter={() => setSelectedId(item.inspectionId)}
               >
                 <div className="review-card-topline">
                   <div>
@@ -135,9 +134,12 @@ export function ReviewWorkspacePage() {
                 </div>
                 <div className="review-card-footer">
                   <span className={reviewClass(item.latestReview?.decision)}>{item.latestReview ? item.latestReview.decision.replace(/_/g, ' ') : 'PENDING REVIEW'}</span>
-                  <Link className="button ghost" to={`/inspections/${item.inspectionId}`} onClick={(event) => event.stopPropagation()}>Open evidence</Link>
+                  <div className="review-card-actions">
+                    <button className="review-card-focus" type="button" onClick={() => setSelectedId(item.inspectionId)}>Show on map</button>
+                    <Link className="button ghost" to={`/inspections/${item.inspectionId}`}>Open evidence</Link>
+                  </div>
                 </div>
-              </button>
+              </article>
             ))}
           </div>
         </article>
