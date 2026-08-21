@@ -44,6 +44,7 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
     queryFn: () => getLatestVerificationSession(inspectionId),
     refetchInterval: 5000,
   })
+
   const verification = useQuery({
     queryKey: ['siteproof-verification', session.data?.id],
     queryFn: () => getSessionVerification(session.data!.id),
@@ -66,9 +67,9 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
     mutationFn: () => recalculateSessionVerification(session.data!.id),
     onSuccess: refresh,
   })
+
   const review = useMutation({
-    mutationFn: (decision: ReviewDecision) =>
-      submitInspectionReview(inspectionId, session.data!.id, decision, reviewReason),
+    mutationFn: (decision: ReviewDecision) => submitInspectionReview(inspectionId, session.data!.id, decision, reviewReason),
     onSuccess: () => {
       setReviewReason('')
       refresh()
@@ -77,10 +78,10 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
 
   if (!session.data) return null
   if (verification.isLoading) {
-    return <article className="panel"><p className="eyebrow">AUTOMATED VERIFICATION</p><p>Preparing explainable verification result…</p></article>
+    return <article className="panel"><p className="eyebrow">Verification</p><p>Preparing result…</p></article>
   }
   if (verification.isError) {
-    return <article className="panel"><p className="eyebrow">AUTOMATED VERIFICATION</p><div className="notice error">{verification.error.message}</div></article>
+    return <article className="panel"><p className="eyebrow">Verification</p><div className="notice error">{verification.error.message}</div></article>
   }
   if (!verification.data) return null
 
@@ -88,12 +89,12 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
   if (data.status !== 'COMPLETED' || !data.verdict) {
     return (
       <article className="panel">
-        <p className="eyebrow">AUTOMATED VERIFICATION · CURRENT STATE</p>
-        <h3>{words(data.status)}</h3>
-        <p className="muted">The trust engine is waiting for the required evidence set. No premature verdict or score is issued.</p>
+        <p className="eyebrow">Verification</p>
+        <h2>{words(data.status)}</h2>
+        <p className="muted">Waiting for the evidence needed to calculate a result.</p>
         {canRecalculate ? (
           <button className="button ghost" disabled={recalculate.isPending} onClick={() => recalculate.mutate()}>
-            {recalculate.isPending ? 'Rechecking…' : 'Recalculate current engine'}
+            {recalculate.isPending ? 'Checking…' : 'Check again'}
           </button>
         ) : null}
       </article>
@@ -101,111 +102,110 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
   }
 
   const score = displayScore(data.score)
+
   return (
-    <article className="panel">
-      <p className="eyebrow">AUTOMATED VERIFICATION · IMMUTABLE RESULT</p>
-      <div className="badge-row">
+    <article className="panel verification-summary-panel">
+      <div className="verification-summary-heading">
+        <div>
+          <p className="eyebrow">Verification</p>
+          <h2>{verdictLabel(data.verdict)}</h2>
+          <p className="muted">{verdictMessage(data.verdict)}</p>
+        </div>
         <span className={verdictBadgeClass(data.verdict)}>{verdictLabel(data.verdict)}</span>
-        <span className="badge">CONFIDENCE {percentage(data.confidence)}</span>
-        <span className="badge">{data.policy?.engineVersion ?? 'ENGINE UNKNOWN'}</span>
       </div>
 
-      <div className="definition-grid">
-        <div>
-          <span>Final verdict</span>
-          <strong className="large-text">{verdictLabel(data.verdict)}</strong>
-          <small>{verdictMessage(data.verdict)}</small>
-        </div>
-        <div>
-          <span>Verification score</span>
-          <strong className="large-text">{score ?? '—'} / 100</strong>
-          <small>Deterministic policy score before hard-rule constraints.</small>
-        </div>
-        <div>
-          <span>Overall confidence</span>
-          <strong className="large-text">{percentage(data.confidence)}</strong>
-          <small>Reliability of the evidence used by the current engine.</small>
-        </div>
-        <div>
-          <span>Engine & policy</span>
-          <strong>{data.policy?.engineVersion ?? '—'}</strong>
-          <small>{data.policy?.name ?? 'Policy'} · {data.policy?.version ?? '—'}</small>
-        </div>
+      <div className="verification-key-metrics">
+        <div><span>Score</span><strong>{score ?? '—'} / 100</strong></div>
+        <div><span>Confidence</span><strong>{percentage(data.confidence)}</strong></div>
+        <div><span>Engine</span><strong>{data.policy?.engineVersion ?? '—'}</strong></div>
       </div>
 
       {data.hardRules.length ? (
         <div className="notice error">
-          <strong>DETERMINISTIC POLICY OVERRIDE</strong>
+          <strong>Policy rule triggered</strong>
           <p>{data.hardRules.join(' · ')}</p>
-          <small>Automatic VERIFIED status was blocked by one or more hard rules.</small>
-        </div>
-      ) : (
-        <div className="notice"><strong>No hard-rule override triggered.</strong> The verdict is based on the weighted evidence policy shown below.</div>
-      )}
-
-      <div className="callout">
-        <strong>SCORE BREAKDOWN</strong>
-        <p className="muted">Signal scores are normalized to 0–1 before weighting. Confidence is shown independently from score.</p>
-        {data.signals.map((signal) => (
-          <div className="challenge-row" key={signal.type}>
-            <div>
-              <strong>{signalLabel(signal.type)}</strong>
-              <small>{signalStatusLabel(signal.status)}{signal.required ? ' · required' : ' · supporting'}</small>
-            </div>
-            <div>
-              <strong>{contributionText(signal.contribution, signal.weight)}</strong>
-              <small>confidence {percentage(signal.confidence)}</small>
-            </div>
-            <small>{signal.reasonSummary}</small>
-          </div>
-        ))}
-      </div>
-
-      <div className="callout">
-        <strong>WHY THIS RESULT</strong>
-        {data.summary ? <p>{data.summary}</p> : null}
-        {data.summaryReasons.map((reason) => <p key={reason}>• {reason}</p>)}
-        {data.warnings.map((warning) => <p key={warning}>⚠ {warning}</p>)}
-      </div>
-
-      {data.limitations.length ? (
-        <div className="callout">
-          <strong>LIMITATIONS</strong>
-          {data.limitations.map((item) => <p className="muted" key={item}>{item}</p>)}
         </div>
       ) : null}
 
       {canReview ? (
-        <div className="callout">
-          <strong>REVIEWER DECISION · SEPARATE AUDIT EVENT</strong>
-          <p className="muted">A reviewer decision never overwrites the automated result or its signed receipt. It is recorded as a separate operational action.</p>
+        <div className="review-decision-box">
+          <div>
+            <strong>Reviewer decision</strong>
+            <p className="muted">Reviewer actions are stored separately from the automated result.</p>
+          </div>
           {data.latestReview ? (
-            <p><strong>Latest reviewer action:</strong> {words(data.latestReview.decision)} · {data.latestReview.reason || 'No reviewer note supplied.'}</p>
+            <p><strong>{words(data.latestReview.decision)}</strong>{data.latestReview.reason ? ` · ${data.latestReview.reason}` : ''}</p>
           ) : null}
           <textarea
-            rows={3}
-            placeholder="Reviewer note (required for reject or recapture)"
+            rows={2}
+            placeholder="Add a note for reject or recapture"
             value={reviewReason}
             onChange={(event) => setReviewReason(event.target.value)}
           />
-          <div className="badge-row">
-            <button className="button primary" disabled={review.isPending} onClick={() => review.mutate('APPROVED')}>Accept verification</button>
+          <div className="review-decision-actions">
+            <button className="button primary" disabled={review.isPending} onClick={() => review.mutate('APPROVED')}>Accept</button>
+            <button className="button ghost" disabled={review.isPending || reviewReason.trim().length < 8} onClick={() => review.mutate('RECAPTURE_REQUIRED')}>Recapture</button>
             <button className="button danger" disabled={review.isPending || reviewReason.trim().length < 8} onClick={() => review.mutate('REJECTED')}>Reject</button>
-            <button className="button ghost" disabled={review.isPending || reviewReason.trim().length < 8} onClick={() => review.mutate('RECAPTURE_REQUIRED')}>Request recapture</button>
           </div>
           {review.error ? <div className="notice error">{review.error.message}</div> : null}
         </div>
       ) : null}
 
-      {canRecalculate ? (
-        <div className="callout">
-          <strong>ADMINISTRATOR</strong>
-          <p className="muted">Recalculation is idempotent for the same policy and engine. When the engine version changes, historical results and receipts remain preserved.</p>
-          <button className="button ghost" disabled={recalculate.isPending} onClick={() => recalculate.mutate()}>
-            {recalculate.isPending ? 'Rechecking…' : 'Recalculate current engine'}
-          </button>
-          {recalculate.error ? <div className="notice error">{recalculate.error.message}</div> : null}
+      <details className="evidence-details">
+        <summary>How this result was calculated</summary>
+        <div className="evidence-details-content">
+          {data.summary ? <p>{data.summary}</p> : null}
+
+          <div className="signal-breakdown-list">
+            {data.signals.map((signal) => (
+              <div className="signal-breakdown-row" key={signal.type}>
+                <div>
+                  <strong>{signalLabel(signal.type)}</strong>
+                  <small>{signalStatusLabel(signal.status)} · {signal.required ? 'required' : 'supporting'}</small>
+                </div>
+                <div>
+                  <strong>{contributionText(signal.contribution, signal.weight)}</strong>
+                  <small>{percentage(signal.confidence)} confidence</small>
+                </div>
+                <p>{signal.reasonSummary}</p>
+              </div>
+            ))}
+          </div>
+
+          {data.summaryReasons.length ? (
+            <div>
+              <strong>Key reasons</strong>
+              {data.summaryReasons.map((reason) => <p key={reason}>• {reason}</p>)}
+            </div>
+          ) : null}
+
+          {data.warnings.length ? (
+            <div>
+              <strong>Warnings</strong>
+              {data.warnings.map((warning) => <p key={warning}>• {warning}</p>)}
+            </div>
+          ) : null}
+
+          {data.limitations.length ? (
+            <div>
+              <strong>Limitations</strong>
+              {data.limitations.map((item) => <p className="muted" key={item}>{item}</p>)}
+            </div>
+          ) : null}
         </div>
+      </details>
+
+      {canRecalculate ? (
+        <details className="evidence-details admin-details">
+          <summary>Admin tools</summary>
+          <div className="evidence-details-content">
+            <p className="muted">Recalculate using the current verification engine. Previous results stay in history.</p>
+            <button className="button ghost" disabled={recalculate.isPending} onClick={() => recalculate.mutate()}>
+              {recalculate.isPending ? 'Checking…' : 'Recalculate'}
+            </button>
+            {recalculate.error ? <div className="notice error">{recalculate.error.message}</div> : null}
+          </div>
+        </details>
       ) : null}
     </article>
   )
