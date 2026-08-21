@@ -35,6 +35,11 @@ function confidenceText(value?: number | null) {
   return typeof value === 'number' ? `${Math.round(value * 100)}%` : '—'
 }
 
+function capturedText(value?: string | null) {
+  if (!value) return 'Capture time unavailable'
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+}
+
 export function ReviewMap({ items, selectedId, onSelect }: Props) {
   const first = items[0]
   const center: [number, number] = first ? [first.latitude, first.longitude] : [20.5937, 78.9629]
@@ -60,6 +65,8 @@ export function ReviewMap({ items, selectedId, onSelect }: Props) {
               <div className="review-map-popup">
                 <strong>{item.title}</strong>
                 <span>{item.locationName || item.locationAddress || 'Unnamed site'}</span>
+                <span>Inspector: {item.inspectorName || 'Unassigned'}</span>
+                <span>Captured: {capturedText(item.captureEndedAt)}</span>
                 <span>{item.verdict.replace(/_/g, ' ')} · score {scoreText(item.score)} · confidence {confidenceText(item.confidence)}</span>
                 <Link to={`/inspections/${item.inspectionId}`}>Open evidence</Link>
               </div>
