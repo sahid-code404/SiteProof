@@ -22,8 +22,8 @@ from app.services.audit_service import record_audit
 from app.services.session_common import viewable_session
 from app.services.verification.queue import list_review_queue
 from app.services.verification.review import create_review_decision, latest_review_for_result
+from app.services.verification.security_gate import engine_version_for_session
 from app.services.verification.service import (
-    ENGINE_VERSION,
     calculate_verification,
     get_scoped_result,
     signal_rows,
@@ -149,25 +149,28 @@ def recalculate_verification(
     session = db.get(VerificationSession, session_id)
     if session is None or session.organization_id != current_user.organization_id:
         raise SiteProofError(404, "SESSION_NOT_FOUND", "Verification session was not found.")
+    expected_engine = engine_version_for_session(db, session.id)
     result = calculate_verification(
         db,
         session.id,
         actor_user_id=current_user.id,
         force=True,
     )
-    if result.engine_version != ENGINE_VERSION:
+    if result.engine_version != expected_engine:
         raise SiteProofError(
             409,
             "ENGINE_VERSION_CONFLICT",
-            "Verification engine version changed.",
+            "Verification engine version changed while the calculation was starting.",
         )
+    # Recalculate is now immutable: it may finish an incomplete row or create a result for a
+    # newer engine version, but a completed automated decision is never reset in place.
     record_audit(
         db,
         organization_id=session.organization_id,
         actor_user_id=current_user.id,
         entity_type="VERIFICATION_RESULT",
         entity_id=result.id,
-        action="VERIFICATION_RECALCULATED",
+        action="VERIFICATION_RECALCULATION_REQUESTED",
         metadata={
             "engineVersion": result.engine_version,
             "policyVersion": result.policy_version,
