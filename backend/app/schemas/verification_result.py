@@ -77,12 +77,14 @@ class ReviewQueueItem(APIModel):
     location_address: str | None = None
     latitude: float
     longitude: float
+    inspector_name: str | None = None
     inspection_status: InspectionStatus
     verdict: VerificationVerdict
     score: float | None = None
     confidence: float | None = None
     engine_version: str
     calculated_at: datetime | None = None
+    capture_ended_at: datetime | None = None
     latest_review: ReviewDecisionResponse | None = None
 
 
