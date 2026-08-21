@@ -39,7 +39,7 @@ export function LoginPage() {
 
       <section className="login-panel">
         <form className="login-form" onSubmit={submit} aria-busy={mutation.isPending}>
-          <span className="brand-mark large" aria-hidden="true">SP</span>
+          <img className="login-brand-logo" src="/siteproof-icon.svg" alt="" aria-hidden="true" />
           <div>
             <p className="eyebrow">Welcome back</p>
             <h2>Sign in</h2>
