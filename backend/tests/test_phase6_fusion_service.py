@@ -6,6 +6,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.core.security import hash_password
 from app.models.challenge import ChallengeType, VerificationChallenge
 from app.models.fusion import ConsistencyStatus, FusionAnalysisStatus, VisualInertialResult
@@ -38,11 +39,13 @@ from tests.phase4_helpers import synthetic_sensor_body
 
 
 def _expected_visual_direction(challenge_type: ChallengeType) -> VisualDirection:
+    # Phase 5 v1.2+ reports rear-camera optical pitch for tilt, which is opposite the
+    # physical top-edge challenge label. Fusion normalizes this at its boundary.
     return {
         ChallengeType.ROTATE_RIGHT: VisualDirection.RIGHT,
         ChallengeType.ROTATE_LEFT: VisualDirection.LEFT,
-        ChallengeType.TILT_UP: VisualDirection.UP,
-        ChallengeType.TILT_DOWN: VisualDirection.DOWN,
+        ChallengeType.TILT_UP: VisualDirection.DOWN,
+        ChallengeType.TILT_DOWN: VisualDirection.UP,
     }[challenge_type]
 
 
@@ -189,7 +192,7 @@ def _prepare_fusion_inputs(client, db, tmp_path: Path):
                 organization_id=session.organization_id,
                 session_id=session.id,
                 challenge_id=challenge.id,
-                analysis_version="vision-v1.0",
+                analysis_version=get_settings().vision_analysis_version,
                 analysis_status=VisualAnalysisStatus.SUCCESS,
                 visual_direction=_expected_visual_direction(challenge.challenge_type),
                 visual_quality=VisualQuality.GOOD,
@@ -210,7 +213,7 @@ def _prepare_fusion_inputs(client, db, tmp_path: Path):
                         "challengeStartSessionMs": start_ms,
                         "challengeEndSessionMs": start_ms + 2000,
                     },
-                    "reasons": ["Synthetic Phase 5 fixture for fusion integration test."],
+                    "reasons": ["Synthetic current Phase 5 fixture for fusion integration test."],
                 },
             )
         )
@@ -267,7 +270,6 @@ def test_phase4_plus_phase5_inputs_produce_persisted_idempotent_fusion_and_api(
     assert all(row.motion_curve_correlation is not None for row in rows)
     assert all(row.fusion_confidence is not None for row in rows)
 
-    # Current fusion version is idempotent.
     analyze_session_fusion(db, session.id, storage=data["storage"])
     second_count = len(
         list(
@@ -293,7 +295,6 @@ def test_phase4_plus_phase5_inputs_produce_persisted_idempotent_fusion_and_api(
     assert body["summary"]["meanConsistencyScore"] is not None
     assert all(item["sensorCurve"] for item in body["challenges"])
     assert all(item["visualCurve"] for item in body["challenges"])
-    # Phase 6 response intentionally exposes no final SiteProof verdict.
     assert "verified" not in json.dumps(body).lower()
     assert "trustScore" not in body
 
