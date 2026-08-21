@@ -1,0 +1,122 @@
+.review-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dashboard-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.accent-panel .dashboard-actions .button {
+  margin-top: 0;
+}
+
+.accent-panel .dashboard-actions .button.ghost {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: transparent;
+  color: #f7fbf8;
+}
+
+.dashboard-review-link {
+  width: 100%;
+  margin-top: 14px;
+}
+
+.recent-decision-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.recent-decision-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #e2e8e3;
+  border-radius: 14px;
+  background: #fafcfa;
+}
+
+.recent-decision-card:hover {
+  border-color: #b7c5ba;
+  box-shadow: 0 8px 22px rgba(20, 34, 29, 0.06);
+}
+
+.recent-decision-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.recent-decision-topline > div:first-child {
+  min-width: 0;
+}
+
+.recent-decision-topline small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.recent-decision-metrics {
+  display: grid;
+  grid-template-columns: 0.65fr 0.75fr minmax(0, 1.6fr);
+  gap: 8px;
+}
+
+.recent-decision-metrics > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: #f0f4f1;
+}
+
+.recent-decision-metrics small {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.recent-decision-metrics strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .review-card-actions,
+  .dashboard-actions {
+    width: 100%;
+  }
+
+  .review-card-actions .button,
+  .dashboard-actions .button {
+    flex: 1;
+  }
+
+  .recent-decision-topline {
+    flex-direction: column;
+  }
+
+  .recent-decision-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .recent-decision-metrics > span:last-child {
+    grid-column: 1 / -1;
+  }
+}
