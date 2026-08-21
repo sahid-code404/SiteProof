@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 
 import cv2
@@ -49,6 +50,19 @@ def inspect_video(path: Path, settings: Settings) -> VideoMetadata:
     )
 
 
+def _presentation_time_ms(capture: cv2.VideoCapture, frame_index: int, source_fps: float) -> float:
+    """Return the decoded frame's real presentation time when OpenCV exposes it.
+
+    CAP_PROP_POS_MSEC is backed by FFmpeg timestamps for CameraX MP4/H.264 on the field
+    devices we support. Falling back to frame_index/FPS keeps analysis operational on an
+    OpenCV backend that does not expose timestamps, but normal evidence processing uses PTS.
+    """
+    reported = float(capture.get(cv2.CAP_PROP_POS_MSEC))
+    if math.isfinite(reported) and reported >= 0.0:
+        return reported
+    return frame_index / source_fps * 1000.0
+
+
 def _decode_window_attempt(
     path: Path,
     *,
@@ -57,16 +71,19 @@ def _decode_window_attempt(
     start_ms: int,
     end_ms: int,
     source_fps: float,
-    step: int,
+    analysis_fps: float,
     video_start_relative_ms: int,
     seek_frame: int,
 ) -> tuple[list[VisualFrame], float]:
-    """Decode a window after seeking to a safe pre-roll frame.
+    """Decode using real MP4 presentation timestamps and measure missing source frames.
 
     Android CameraX commonly writes H.264/H.265 MP4s with sparse keyframes. Seeking
     directly to a late challenge frame can leave some OpenCV/FFmpeg builds without
-    enough decoder reference frames. Starting before the requested window lets the
-    decoder warm up while still returning only frames from the challenge itself.
+    enough decoder reference frames, so decoding begins from a safe pre-roll.
+
+    Critically, challenge membership and timestamps are based on decoded PTS, not
+    frame_index/FPS. A real multi-second encoder stall therefore remains visible to the
+    evidence pipeline instead of being compressed away by frame-number arithmetic.
     """
     capture = cv2.VideoCapture(str(path))
     if not capture.isOpened():
@@ -75,21 +92,25 @@ def _decode_window_attempt(
     if seek_frame > 0:
         capture.set(cv2.CAP_PROP_POS_FRAMES, seek_frame)
         reported = int(round(capture.get(cv2.CAP_PROP_POS_FRAMES)))
-        # Some backends report zero after an imprecise keyframe seek. In that case,
-        # decode forward from the beginning rather than pretending we are at seek_frame.
         frame_index = reported if 0 <= reported <= seek_frame else seek_frame
     else:
         frame_index = 0
 
     frames: list[VisualFrame] = []
-    attempted = 0
-    failed = 0
+    failed_reads = 0
     consecutive_failures = 0
+    source_frames_in_window = 0
+    estimated_missing_frames = 0
+    nominal_interval_ms = 1000.0 / source_fps
+    sample_interval_ms = 1000.0 / max(1.0, analysis_fps)
+    next_sample_ms = float(start_ms)
+    previous_pts_ms: float | None = None
+
     try:
         while frame_index <= end_frame:
             ok, image = capture.read()
             if not ok or image is None or image.size == 0:
-                failed += 1
+                failed_reads += 1
                 consecutive_failures += 1
                 frame_index += 1
                 if consecutive_failures > 5:
@@ -97,25 +118,45 @@ def _decode_window_attempt(
                 continue
 
             consecutive_failures = 0
-            if frame_index >= start_frame and (frame_index - start_frame) % step == 0:
-                attempted += 1
-                video_time_ms = int(round(frame_index / source_fps * 1000.0))
-                if video_time_ms > end_ms:
-                    break
-                if video_time_ms >= start_ms:
+            video_time = _presentation_time_ms(capture, frame_index, source_fps)
+
+            if previous_pts_ms is not None and video_time > previous_pts_ms:
+                if previous_pts_ms >= start_ms and video_time <= end_ms + nominal_interval_ms:
+                    delta_ms = video_time - previous_pts_ms
+                    if delta_ms > nominal_interval_ms * 2.5:
+                        estimated_missing_frames += max(
+                            1,
+                            int(round(delta_ms / nominal_interval_ms)) - 1,
+                        )
+            previous_pts_ms = video_time
+
+            if video_time > end_ms + nominal_interval_ms:
+                break
+
+            if start_ms <= video_time <= end_ms:
+                source_frames_in_window += 1
+                if video_time + 0.001 >= next_sample_ms:
+                    rounded_time_ms = int(round(video_time))
                     frames.append(
                         VisualFrame(
                             frame_index=frame_index,
-                            video_time_ms=video_time_ms,
-                            session_time_ms=video_start_relative_ms + video_time_ms,
+                            video_time_ms=rounded_time_ms,
+                            session_time_ms=video_start_relative_ms + rounded_time_ms,
                             image=image,
                         )
                     )
+                    while next_sample_ms <= video_time + 0.001:
+                        next_sample_ms += sample_interval_ms
+
             frame_index += 1
     finally:
         capture.release()
 
-    invalid_ratio = failed / max(1, attempted + failed)
+    denominator = max(
+        1,
+        source_frames_in_window + estimated_missing_frames + failed_reads,
+    )
+    invalid_ratio = (estimated_missing_frames + failed_reads) / float(denominator)
     return frames, min(1.0, invalid_ratio)
 
 
@@ -133,7 +174,6 @@ def sample_window(
 
     source_fps = metadata.fps
     analysis_fps = min(max(settings.vision_analysis_fps, 1.0), source_fps)
-    step = max(1, int(round(source_fps / analysis_fps)))
     start_frame = min(
         metadata.frame_count - 1,
         max(0, int(start_ms / 1000.0 * source_fps)),
@@ -157,7 +197,7 @@ def sample_window(
         start_ms=start_ms,
         end_ms=end_ms,
         source_fps=source_fps,
-        step=step,
+        analysis_fps=analysis_fps,
         video_start_relative_ms=video_start_relative_ms,
         seek_frame=seek_frame,
     )
@@ -172,7 +212,7 @@ def sample_window(
             start_ms=start_ms,
             end_ms=end_ms,
             source_fps=source_fps,
-            step=step,
+            analysis_fps=analysis_fps,
             video_start_relative_ms=video_start_relative_ms,
             seek_frame=0,
         )
