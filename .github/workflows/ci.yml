@@ -37,9 +37,9 @@ jobs:
       - run: pip install -e '.[dev]'
       - name: Verify fresh migration
         run: alembic upgrade head
-      - name: Verify Phase 5 downgrade and re-upgrade
+      - name: Verify Phase 6 downgrade and re-upgrade
         run: |
-          alembic downgrade 0004_phase4_challenges
+          alembic downgrade 0005_phase5_visual_motion
           alembic upgrade head
       - run: ruff check app tests alembic
       - run: pytest -q
