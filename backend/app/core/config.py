@@ -53,7 +53,7 @@ class Settings(BaseSettings):
 
     # Phase 5 visual-motion analysis. The original evidence video is never rewritten;
     # OpenCV works only on derived, down-scaled frames.
-    vision_analysis_version: str = "vision-v1.1"
+    vision_analysis_version: str = "vision-v1.2"
     vision_analysis_fps: float = 12.0
     vision_max_width: int = 960
     # Direction/magnitude are measured only inside the actual challenge interval. Padding
@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     vision_motion_threshold_px: float = 1.5
     vision_timeline_tolerance_ms: int = 300
     vision_video_duration_tolerance_ms: int = 1500
+    # Missing source frames are estimated from actual MP4 presentation timestamps. If more
+    # than this fraction of a challenge window is missing/undecodable, visual direction is
+    # evidence-incomplete and must be INCONCLUSIVE rather than a high-confidence SUCCESS.
+    vision_max_invalid_frame_ratio: float = 0.20
     vision_assumed_horizontal_fov_degrees: float = 65.0
     vision_max_duration_seconds: int = 90
     vision_max_frame_count: int = 5000
