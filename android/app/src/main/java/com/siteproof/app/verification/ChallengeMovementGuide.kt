@@ -38,9 +38,10 @@ import com.siteproof.app.verification.sensors.ChallengeMovementGuidance
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-private val GuideGood = Color(0xFF2F6B4D)
-private val GuideWrong = Color(0xFFA9362E)
-private val GuideFar = Color(0xFF986313)
+private val GuideGood = Color(0xFF25834D)
+private val GuideWrong = Color(0xFFC9372C)
+private val GuideFar = Color(0xFFB05A00)
+private val GuideOrange = Color(0xFFF56200)
 
 @Composable
 internal fun ChallengeMovementGuide(
@@ -52,7 +53,7 @@ internal fun ChallengeMovementGuide(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1100),
+            animation = tween(durationMillis = 900),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "movement-demo",
@@ -76,19 +77,21 @@ internal fun ChallengeMovementGuide(
     Column(
         modifier = Modifier.clearAndSetSemantics { contentDescription = accessibilitySummary },
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
             challengeInstruction(challenge.type),
             style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface,
         )
 
         PhoneMotionGuide(
             challengeType = challenge.type,
             targetDegrees = targetDegrees.toFloat(),
             poseFraction = poseFraction,
+            cuePhase = demo,
             guideColor = guideColor,
         )
 
@@ -104,13 +107,14 @@ internal fun ChallengeMovementGuide(
             progress = { progress },
             modifier = Modifier.fillMaxWidth(),
             color = guideColor,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
         )
 
         Text(
             guidanceLabel(guidance.status),
             color = guideColor,
             style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
     }
@@ -120,7 +124,7 @@ internal fun ChallengeMovementGuide(
 private fun Metric(label: String, value: String, valueColor: Color = MaterialTheme.colorScheme.onSurface) {
     Column {
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.titleMedium, color = valueColor)
+        Text(value, style = MaterialTheme.typography.titleMedium, color = valueColor, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -129,6 +133,7 @@ private fun PhoneMotionGuide(
     challengeType: String,
     targetDegrees: Float,
     poseFraction: Float,
+    cuePhase: Float,
     guideColor: Color,
 ) {
     val expectedRotationY = when (challengeType) {
@@ -141,14 +146,15 @@ private fun PhoneMotionGuide(
         "TILT_DOWN" -> targetDegrees
         else -> 0f
     }
+    val arrowTravel = 15f * (cuePhase - 0.5f)
 
     Box(
-        modifier = Modifier.size(width = 220.dp, height = 170.dp),
+        modifier = Modifier.size(width = 250.dp, height = 190.dp),
         contentAlignment = Alignment.Center,
     ) {
         PhoneShape(
             modifier = Modifier
-                .alpha(0.18f)
+                .alpha(0.16f)
                 .graphicsLayer {
                     rotationY = expectedRotationY
                     rotationX = expectedRotationX
@@ -166,13 +172,37 @@ private fun PhoneMotionGuide(
             borderColor = guideColor,
         )
 
-        Text(
-            movementCue(challengeType),
-            modifier = Modifier.align(cueAlignment(challengeType)),
-            color = guideColor,
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Bold,
-        )
+        Box(
+            modifier = Modifier
+                .align(cueAlignment(challengeType))
+                .size(68.dp)
+                .graphicsLayer {
+                    translationX = when (challengeType) {
+                        "ROTATE_RIGHT" -> arrowTravel
+                        "ROTATE_LEFT" -> -arrowTravel
+                        else -> 0f
+                    }
+                    translationY = when (challengeType) {
+                        "TILT_UP" -> -arrowTravel
+                        "TILT_DOWN" -> arrowTravel
+                        else -> 0f
+                    }
+                    scaleX = 0.96f + cuePhase * 0.08f
+                    scaleY = scaleX
+                }
+                .clip(CircleShape)
+                .background(GuideOrange.copy(alpha = 0.14f))
+                .border(2.dp, GuideOrange.copy(alpha = 0.45f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                movementCue(challengeType),
+                color = if (guideColor == MaterialTheme.colorScheme.onSurfaceVariant) GuideOrange else guideColor,
+                fontSize = 52.sp,
+                lineHeight = 54.sp,
+                fontWeight = FontWeight.Black,
+            )
+        }
     }
 }
 
@@ -180,10 +210,10 @@ private fun PhoneMotionGuide(
 private fun PhoneShape(modifier: Modifier, borderColor: Color) {
     Box(
         modifier = modifier
-            .size(width = 86.dp, height = 142.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .border(3.dp, borderColor, RoundedCornerShape(18.dp)),
+            .size(width = 88.dp, height = 146.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color.White.copy(alpha = 0.94f))
+            .border(3.dp, borderColor, RoundedCornerShape(20.dp)),
     ) {
         Box(
             modifier = Modifier
@@ -197,7 +227,7 @@ private fun PhoneShape(modifier: Modifier, borderColor: Color) {
             modifier = Modifier.align(Alignment.TopCenter),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
         )
     }
 }
@@ -215,15 +245,23 @@ private fun guidanceColor(status: ChallengeGuidanceStatus): Color = when (status
     ChallengeGuidanceStatus.GOOD_RANGE -> GuideGood
     ChallengeGuidanceStatus.WRONG_DIRECTION -> GuideWrong
     ChallengeGuidanceStatus.TOO_FAR -> GuideFar
-    else -> MaterialTheme.colorScheme.onSurfaceVariant
+    else -> GuideOrange
 }
 
 internal fun challengeInstruction(type: String): String = when (type) {
-    "TILT_UP" -> "Move the TOP edge away from you"
-    "TILT_DOWN" -> "Move the TOP edge toward you"
-    "ROTATE_RIGHT" -> "Turn the whole phone to your RIGHT"
-    "ROTATE_LEFT" -> "Turn the whole phone to your LEFT"
-    else -> "Follow the movement shown"
+    "TILT_UP" -> "Tilt the TOP of the phone away from you"
+    "TILT_DOWN" -> "Tilt the TOP of the phone toward you"
+    "ROTATE_RIGHT" -> "Rotate the phone RIGHT"
+    "ROTATE_LEFT" -> "Rotate the phone LEFT"
+    else -> "Follow the arrow"
+}
+
+internal fun movementVoiceInstruction(type: String): String = when (type) {
+    "ROTATE_RIGHT" -> "Rotate right"
+    "ROTATE_LEFT" -> "Rotate left"
+    "TILT_UP" -> "Tilt up"
+    "TILT_DOWN" -> "Tilt down"
+    else -> "Follow the arrow"
 }
 
 private fun movementCue(type: String): String = when (type) {
@@ -243,10 +281,18 @@ private fun measuredDegreesLabel(guidance: ChallengeMovementGuidance): String {
     }
 }
 
+internal fun movementVoiceStatus(status: ChallengeGuidanceStatus): String = when (status) {
+    ChallengeGuidanceStatus.WAITING -> ""
+    ChallengeGuidanceStatus.WRONG_DIRECTION -> "Wrong direction"
+    ChallengeGuidanceStatus.TOO_LITTLE -> "Go further"
+    ChallengeGuidanceStatus.GOOD_RANGE -> "Hold here"
+    ChallengeGuidanceStatus.TOO_FAR -> "Move back slightly"
+}
+
 private fun guidanceLabel(status: ChallengeGuidanceStatus): String = when (status) {
     ChallengeGuidanceStatus.WAITING -> "Follow the arrow"
     ChallengeGuidanceStatus.WRONG_DIRECTION -> "Wrong direction"
-    ChallengeGuidanceStatus.TOO_LITTLE -> "Keep moving"
+    ChallengeGuidanceStatus.TOO_LITTLE -> "Go further"
     ChallengeGuidanceStatus.GOOD_RANGE -> "Hold here"
     ChallengeGuidanceStatus.TOO_FAR -> "Move back slightly"
 }
