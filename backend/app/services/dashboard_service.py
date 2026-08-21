@@ -34,7 +34,7 @@ def _latest_results(db: Session, current_user: User) -> dict[object, Verificatio
 
 
 def dashboard_summary(db: Session, current_user: User) -> DashboardSummary:
-    """Phase 11 dashboard summary built from the latest immutable result per inspection.
+    """Return Phase 11 dashboard data from the latest result per inspection.
 
     Historical verification results and superseded receipts remain queryable, but they do
     not inflate current dashboard verdict counts.
@@ -67,10 +67,14 @@ def dashboard_summary(db: Session, current_user: User) -> DashboardSummary:
 
     latest_completed = completed[:6]
     inspection_ids = [row.inspection_id for row in latest_completed]
-    inspections = {
-        row.id: row
-        for row in db.scalars(select(Inspection).where(Inspection.id.in_(inspection_ids))).all()
-    } if inspection_ids else {}
+    inspections = (
+        {
+            row.id: row
+            for row in db.scalars(select(Inspection).where(Inspection.id.in_(inspection_ids))).all()
+        }
+        if inspection_ids
+        else {}
+    )
 
     result_ids = [row.id for row in latest_completed]
     receipts_by_result: dict[object, SignedReceipt] = {}
@@ -107,14 +111,15 @@ def dashboard_summary(db: Session, current_user: User) -> DashboardSummary:
         )
 
     completed_count = len(completed)
-    return DashboardSummary(
-        **base.model_dump(),
-        verified=verified,
-        review_required=review_required,
-        flagged=flagged,
-        inconclusive=inconclusive,
-        verification_processing=processing,
-        verification_completed=completed_count,
-        verification_rate=round((verified / completed_count) * 100, 1) if completed_count else 0.0,
-        latest_verifications=latest_items,
+    return base.model_copy(
+        update={
+            "verified": verified,
+            "review_required": review_required,
+            "flagged": flagged,
+            "inconclusive": inconclusive,
+            "verification_processing": processing,
+            "verification_completed": completed_count,
+            "verification_rate": round((verified / completed_count) * 100, 1) if completed_count else 0.0,
+            "latest_verifications": latest_items,
+        }
     )
