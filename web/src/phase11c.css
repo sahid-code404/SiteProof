@@ -1,0 +1,45 @@
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 2000;
+  transform: translateY(-160%);
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #16201d;
+  box-shadow: 0 8px 24px rgba(20, 34, 29, 0.18);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.skip-link:focus { transform: translateY(0); }
+
+.network-banner {
+  position: sticky;
+  top: 68px;
+  z-index: 850;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-bottom: 1px solid #efc5c1;
+  background: #fff3f1;
+  color: #8f2c24;
+  font-size: 12px;
+}
+
+.network-banner span { color: #6f4a46; }
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid #5a813f;
+  outline-offset: 3px;
+}
+
+.button,
+.sidebar nav a,
+.review-card-focus { min-height: 44px; }
+
+.sidebar nav a { display: flex; align-items: center; }
+#main-content:focus { outline: none; }
