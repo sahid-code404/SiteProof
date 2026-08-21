@@ -25,6 +25,13 @@ function words(value: string) {
   return value.replace(/_/g, ' ')
 }
 
+function verdictBadgeClass(verdict?: string | null) {
+  if (verdict === 'VERIFIED') return 'badge badge-ready'
+  if (verdict === 'FLAGGED') return 'badge badge-critical'
+  if (verdict === 'REVIEW_REQUIRED') return 'badge badge-high'
+  return 'badge'
+}
+
 export function VerificationReportPanel({ inspectionId }: { inspectionId: string }) {
   const role = getStoredUser()?.role
   const canReview = role === 'ADMIN' || role === 'REVIEWER'
@@ -51,6 +58,8 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
     queryClient.invalidateQueries({ queryKey: ['siteproof-verification', session.data?.id] })
     queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] })
     queryClient.invalidateQueries({ queryKey: ['inspections'] })
+    queryClient.invalidateQueries({ queryKey: ['inspection-summary'] })
+    queryClient.invalidateQueries({ queryKey: ['receipts', session.data?.id] })
   }
 
   const recalculate = useMutation({
@@ -68,10 +77,10 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
 
   if (!session.data) return null
   if (verification.isLoading) {
-    return <article className="panel"><p className="eyebrow">SITEPROOF VERIFICATION</p><p>Preparing explainable verification result…</p></article>
+    return <article className="panel"><p className="eyebrow">AUTOMATED VERIFICATION</p><p>Preparing explainable verification result…</p></article>
   }
   if (verification.isError) {
-    return <article className="panel"><p className="eyebrow">SITEPROOF VERIFICATION</p><div className="notice error">{verification.error.message}</div></article>
+    return <article className="panel"><p className="eyebrow">AUTOMATED VERIFICATION</p><div className="notice error">{verification.error.message}</div></article>
   }
   if (!verification.data) return null
 
@@ -79,12 +88,12 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
   if (data.status !== 'COMPLETED' || !data.verdict) {
     return (
       <article className="panel">
-        <p className="eyebrow">SITEPROOF VERIFICATION</p>
+        <p className="eyebrow">AUTOMATED VERIFICATION · CURRENT STATE</p>
         <h3>{words(data.status)}</h3>
-        <p className="muted">The trust engine waits for required upstream evidence. It does not issue a premature score.</p>
+        <p className="muted">The trust engine is waiting for the required evidence set. No premature verdict or score is issued.</p>
         {canRecalculate ? (
           <button className="button ghost" disabled={recalculate.isPending} onClick={() => recalculate.mutate()}>
-            {recalculate.isPending ? 'Rechecking…' : 'Recalculate current version'}
+            {recalculate.isPending ? 'Rechecking…' : 'Recalculate current engine'}
           </button>
         ) : null}
       </article>
@@ -94,41 +103,49 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
   const score = displayScore(data.score)
   return (
     <article className="panel">
-      <p className="eyebrow">SITEPROOF VERIFICATION · EXPLAINABLE RESULT</p>
+      <p className="eyebrow">AUTOMATED VERIFICATION · IMMUTABLE RESULT</p>
+      <div className="badge-row">
+        <span className={verdictBadgeClass(data.verdict)}>{verdictLabel(data.verdict)}</span>
+        <span className="badge">CONFIDENCE {percentage(data.confidence)}</span>
+        <span className="badge">{data.policy?.engineVersion ?? 'ENGINE UNKNOWN'}</span>
+      </div>
+
       <div className="definition-grid">
         <div>
-          <span>Verification Score</span>
-          <strong className="large-text">{score ?? '—'} / 100</strong>
-          <small>Raw deterministic policy score; hard rules constrain verdict separately.</small>
-        </div>
-        <div>
-          <span>Verdict</span>
+          <span>Final verdict</span>
           <strong className="large-text">{verdictLabel(data.verdict)}</strong>
           <small>{verdictMessage(data.verdict)}</small>
         </div>
         <div>
-          <span>Overall confidence</span>
-          <strong>{percentage(data.confidence)}</strong>
-          <small>Reliability of the evidence used for this assessment.</small>
+          <span>Verification score</span>
+          <strong className="large-text">{score ?? '—'} / 100</strong>
+          <small>Deterministic policy score before hard-rule constraints.</small>
         </div>
         <div>
-          <span>Policy</span>
-          <strong>{data.policy?.name ?? '—'}</strong>
-          <small>Policy {data.policy?.version ?? '—'} · {data.policy?.engineVersion ?? '—'}</small>
+          <span>Overall confidence</span>
+          <strong className="large-text">{percentage(data.confidence)}</strong>
+          <small>Reliability of the evidence used by the current engine.</small>
+        </div>
+        <div>
+          <span>Engine & policy</span>
+          <strong>{data.policy?.engineVersion ?? '—'}</strong>
+          <small>{data.policy?.name ?? 'Policy'} · {data.policy?.version ?? '—'}</small>
         </div>
       </div>
 
       {data.hardRules.length ? (
         <div className="notice error">
-          <strong>Policy Override</strong>
+          <strong>DETERMINISTIC POLICY OVERRIDE</strong>
           <p>{data.hardRules.join(' · ')}</p>
-          <small>Automatic VERIFIED status was blocked by deterministic policy rules.</small>
+          <small>Automatic VERIFIED status was blocked by one or more hard rules.</small>
         </div>
-      ) : null}
+      ) : (
+        <div className="notice"><strong>No hard-rule override triggered.</strong> The verdict is based on the weighted evidence policy shown below.</div>
+      )}
 
       <div className="callout">
         <strong>SCORE BREAKDOWN</strong>
-        <p className="muted">Signal scores are normalized to 0–1 before configured weighting. Confidence is shown separately.</p>
+        <p className="muted">Signal scores are normalized to 0–1 before weighting. Confidence is shown independently from score.</p>
         {data.signals.map((signal) => (
           <div className="challenge-row" key={signal.type}>
             <div>
@@ -160,10 +177,10 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
 
       {canReview ? (
         <div className="callout">
-          <strong>HUMAN REVIEW DECISION</strong>
-          <p className="muted">Human operational approval remains distinct from the automated SiteProof verdict.</p>
+          <strong>REVIEWER DECISION · SEPARATE AUDIT EVENT</strong>
+          <p className="muted">A reviewer decision never overwrites the automated result or its signed receipt. It is recorded as a separate operational action.</p>
           {data.latestReview ? (
-            <p><strong>Latest:</strong> {words(data.latestReview.decision)} · {data.latestReview.reason || 'No reviewer note supplied.'}</p>
+            <p><strong>Latest reviewer action:</strong> {words(data.latestReview.decision)} · {data.latestReview.reason || 'No reviewer note supplied.'}</p>
           ) : null}
           <textarea
             rows={3}
@@ -172,7 +189,7 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
             onChange={(event) => setReviewReason(event.target.value)}
           />
           <div className="badge-row">
-            <button className="button primary" disabled={review.isPending} onClick={() => review.mutate('APPROVED')}>Approve</button>
+            <button className="button primary" disabled={review.isPending} onClick={() => review.mutate('APPROVED')}>Accept verification</button>
             <button className="button danger" disabled={review.isPending || reviewReason.trim().length < 8} onClick={() => review.mutate('REJECTED')}>Reject</button>
             <button className="button ghost" disabled={review.isPending || reviewReason.trim().length < 8} onClick={() => review.mutate('RECAPTURE_REQUIRED')}>Request recapture</button>
           </div>
@@ -183,9 +200,9 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
       {canRecalculate ? (
         <div className="callout">
           <strong>ADMINISTRATOR</strong>
-          <p className="muted">Same policy + engine calculation is idempotent. Historical results are preserved when a future policy or engine version changes.</p>
+          <p className="muted">Recalculation is idempotent for the same policy and engine. When the engine version changes, historical results and receipts remain preserved.</p>
           <button className="button ghost" disabled={recalculate.isPending} onClick={() => recalculate.mutate()}>
-            {recalculate.isPending ? 'Rechecking…' : 'Recalculate current version'}
+            {recalculate.isPending ? 'Rechecking…' : 'Recalculate current engine'}
           </button>
           {recalculate.error ? <div className="notice error">{recalculate.error.message}</div> : null}
         </div>
