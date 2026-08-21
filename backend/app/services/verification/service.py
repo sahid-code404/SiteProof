@@ -24,7 +24,7 @@ from app.services.verification.collectors import SignalCollector
 from app.services.verification.policy import get_or_create_default_policy, policy_from_row
 from app.services.verification.scoring import calculate_score, resolve_decision
 
-ENGINE_VERSION = "verification-engine-v1.0"
+ENGINE_VERSION = "verification-engine-v1.1"
 LIMITATIONS = [
     "The SiteProof score is confidence derived from configured multi-signal policy, not legal certainty.",
     "The result depends on phone hardware, scene quality, upstream algorithms, and policy configuration.",
