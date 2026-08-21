@@ -14,8 +14,8 @@ export class AppErrorBoundary extends Component<Props, State> {
     if (!this.state.hasError) return this.props.children
 
     return (
-      <main className="fatal-error" role="alert">
-        <div className="fatal-error-card">
+      <main className="app-error-page" role="alert">
+        <div className="app-error-card">
           <span className="brand-mark large" aria-hidden="true">SP</span>
           <p className="eyebrow">SITEPROOF RECOVERY</p>
           <h1>This screen could not be displayed.</h1>
