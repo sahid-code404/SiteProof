@@ -3,6 +3,7 @@ from datetime import datetime
 
 from pydantic import Field
 
+from app.models.inspection import InspectionStatus
 from app.models.trust import (
     ReviewDecisionType,
     VerificationProcessingStatus,
@@ -65,3 +66,26 @@ class ReviewRequest(APIModel):
     session_id: uuid.UUID
     decision: ReviewDecisionType
     reason: str = Field(default="", max_length=2000)
+
+
+class ReviewQueueItem(APIModel):
+    inspection_id: uuid.UUID
+    session_id: uuid.UUID
+    result_id: uuid.UUID
+    title: str
+    location_name: str | None = None
+    location_address: str | None = None
+    latitude: float
+    longitude: float
+    inspection_status: InspectionStatus
+    verdict: VerificationVerdict
+    score: float | None = None
+    confidence: float | None = None
+    engine_version: str
+    calculated_at: datetime | None = None
+    latest_review: ReviewDecisionResponse | None = None
+
+
+class ReviewQueueResponse(APIModel):
+    items: list[ReviewQueueItem] = Field(default_factory=list)
+    total: int
