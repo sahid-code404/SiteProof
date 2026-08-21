@@ -58,7 +58,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {canManage ? (
             <div className={`nav-group ${inspectorsActive ? 'open' : ''}`}>
               <NavLink to="/inspectors"><NavIcon path="people"/><span>Inspectors</span><span className="nav-chevron">⌄</span></NavLink>
-              {inspectorsActive ? <div className="nav-submenu" aria-label="Inspector management"><a href="#all-inspectors">All Inspectors</a><a href="#add-inspector">Add Inspector</a><a href="#password-management">Change Passwords</a></div> : null}
+              {inspectorsActive ? <div className="nav-submenu" aria-label="Inspector management"><a href="#all-inspectors">All inspectors</a></div> : null}
             </div>
           ) : null}
         </nav>
