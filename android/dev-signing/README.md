@@ -5,3 +5,5 @@
 It exists so repeatedly built field-test APKs can update in place instead of forcing inspectors to uninstall the app between test builds. The key is intentionally not a production secret and must never be used for the production package `com.siteproof.app`, Play App Signing, or any release build.
 
 The debug keystore credentials are declared in `app/build.gradle.kts` and are suitable only for this local/CI development channel.
+
+Pushing an Android change to `phase5-visual-motion` publishes a new SHA-256-verified `dev-latest` field-test OTA build for the in-app updater.
