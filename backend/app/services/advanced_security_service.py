@@ -8,6 +8,7 @@ import cv2
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.errors import SiteProofError
 from app.models.advanced_security import (
     AdvancedProcessStatus,
@@ -18,7 +19,13 @@ from app.models.advanced_security import (
     RiskLevel,
     SensorAnomalyResult,
 )
-from app.models.fusion import ConsistencyStatus, VisualInertialResult
+from app.models.challenge import VerificationChallenge
+from app.models.fusion import (
+    ConsistencyStatus,
+    MismatchReason,
+    MotionDirection,
+    VisualInertialResult,
+)
 from app.models.verification import EvidenceFile, EvidenceFileType, EvidenceUploadStatus, VerificationSession
 from app.models.visual_motion import VisualMotionResult
 from app.services.audit_service import record_audit
@@ -30,7 +37,7 @@ from app.services.verification.advanced.location_risk import analyze_location_sa
 from app.services.verification.advanced.replay_risk import analyze_frames
 from app.services.verification.advanced.sensor_anomaly import analyze_sensor_stream
 
-ANALYSIS_VERSION = "advanced-security-v1.0"
+ANALYSIS_VERSION = "advanced-security-v1.1"
 MAX_SENSOR_BYTES = 64 * 1024 * 1024
 MAX_LOCATION_BYTES = 8 * 1024 * 1024
 MAX_METADATA_BYTES = 2 * 1024 * 1024
@@ -79,25 +86,80 @@ def _sample_video_frames(path, *, max_frames: int = VIDEO_SAMPLE_COUNT) -> list[
         capture.release()
 
 
+def _fusion_row_replay_risk(row: VisualInertialResult) -> float:
+    """Map one Phase 6 result to replay risk without confusing camera metrology with liveness.
+
+    Phase 5's visual angle is an approximate projective estimate. A hand jerk, rolling-shutter
+    artifact or feature-window truncation can make that angle much smaller than the gyroscope
+    angle while both sources still agree on physical direction. That is useful verification
+    quality evidence, but it is not by itself strong evidence that a screen replay occurred.
+    """
+    reasons = set(row.mismatch_reasons_json or [])
+    same_direction = (
+        row.sensor_direction == row.visual_direction
+        and row.sensor_direction not in {MotionDirection.NONE, MotionDirection.MIXED}
+    )
+
+    if MismatchReason.OPPOSITE_DIRECTION.value in reasons:
+        return 1.0
+
+    motion_absence_reasons = {
+        MismatchReason.VISUAL_WITHOUT_SENSOR_MOTION.value,
+        MismatchReason.SENSOR_WITHOUT_VISUAL_MOTION.value,
+    }
+    if reasons & motion_absence_reasons and not same_direction:
+        return 0.95
+
+    if row.effective_consistency_score is not None:
+        disagreement = max(0.0, min(1.0, 1.0 - float(row.effective_consistency_score)))
+    elif row.consistency_status == ConsistencyStatus.MISMATCH:
+        disagreement = 0.75
+    elif row.consistency_status == ConsistencyStatus.PARTIALLY_CONSISTENT:
+        disagreement = 0.45
+    elif row.consistency_status == ConsistencyStatus.INCONCLUSIVE:
+        disagreement = 0.40
+    else:
+        disagreement = 0.0
+
+    if same_direction:
+        # Same-direction disagreement is a corroborating quality/timing signal. Cap it below
+        # the strong replay threshold so magnitude/timing noise cannot independently accuse.
+        return min(disagreement, 0.55)
+    if row.consistency_status == ConsistencyStatus.MISMATCH:
+        return max(disagreement, 0.75)
+    return disagreement
+
+
 def _fusion_mismatch_score(db: Session, session_id: uuid.UUID) -> float:
-    rows = list(
+    challenge_rows = list(
         db.scalars(
-            select(VisualInertialResult).where(VisualInertialResult.session_id == session_id)
+            select(VerificationChallenge)
+            .where(VerificationChallenge.session_id == session_id)
+            .order_by(
+                VerificationChallenge.sequence_number,
+                VerificationChallenge.attempt_number,
+            )
         ).all()
     )
-    scores: list[float] = []
-    for row in rows:
-        if row.consistency_status == ConsistencyStatus.MISMATCH:
-            scores.append(1.0)
-        elif row.effective_consistency_score is not None:
-            scores.append(max(0.0, min(1.0, 1.0 - row.effective_consistency_score)))
-        elif row.consistency_status == ConsistencyStatus.PARTIALLY_CONSISTENT:
-            scores.append(0.45)
-        elif row.consistency_status == ConsistencyStatus.INCONCLUSIVE:
-            scores.append(0.50)
-        else:
-            scores.append(0.0)
-    return max(scores, default=0.0)
+    latest: dict[int, VerificationChallenge] = {}
+    for challenge in challenge_rows:
+        current = latest.get(challenge.sequence_number)
+        if current is None or challenge.attempt_number > current.attempt_number:
+            latest[challenge.sequence_number] = challenge
+    latest_ids = {challenge.id for challenge in latest.values()}
+    if not latest_ids:
+        return 0.0
+
+    rows = list(
+        db.scalars(
+            select(VisualInertialResult).where(
+                VisualInertialResult.session_id == session_id,
+                VisualInertialResult.fusion_version == get_settings().fusion_analysis_version,
+                VisualInertialResult.challenge_id.in_(latest_ids),
+            )
+        ).all()
+    )
+    return max((_fusion_row_replay_risk(row) for row in rows), default=0.0)
 
 
 def _duplicate_frame_ratio(db: Session, session_id: uuid.UUID) -> float:
