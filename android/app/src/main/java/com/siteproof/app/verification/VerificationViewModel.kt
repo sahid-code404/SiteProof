@@ -235,7 +235,7 @@ class VerificationViewModel(
                 if (now >= baselineEnd && movementSeenAt == null && coordinator.movementDetected()) {
                     movementSeenAt = now
                 }
-                val settledEnough = movementSeenAt?.let { now - it >= 1_800L } == true
+                val settledEnough = movementSeenAt?.let { now - it >= 3_000L } == true
                 if (settledEnough || remaining <= 1_200L) break
                 delay(100)
             }
