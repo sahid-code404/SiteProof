@@ -184,8 +184,8 @@ export function InspectionFormPage() {
       setClientError(validationError)
       return
     }
-    if (!Number.isInteger(captureDurationSeconds) || captureDurationSeconds < 10 || captureDurationSeconds > 45) {
-      setClientError('Video length must be between 10 and 45 seconds.')
+    if (!Number.isInteger(captureDurationSeconds) || captureDurationSeconds < 10 || captureDurationSeconds > 75) {
+      setClientError('Video length must be a whole number between 10 and 75 seconds.')
       return
     }
 
@@ -257,14 +257,26 @@ export function InspectionFormPage() {
         <section className="form-card">
           <div className="simple-section-title"><h2>Timing & capture</h2><p>Choose the required video length and when the inspection is due.</p></div>
           <div className="field-grid">
-            <label>Required video length
-              <select value={form.captureDurationSeconds} onChange={(event) => update('captureDurationSeconds', event.target.value)}>
-                <option value="15">15 seconds</option>
-                <option value="20">20 seconds</option>
-                <option value="30">30 seconds · recommended</option>
-                <option value="45">45 seconds</option>
-              </select>
-              <small>The app keeps one continuous video while the movement checks are completed.</small>
+            <label>Required video length (seconds)
+              <input
+                type="number"
+                min="10"
+                max="75"
+                step="1"
+                list="capture-duration-presets"
+                value={form.captureDurationSeconds}
+                onChange={(event) => update('captureDurationSeconds', event.target.value)}
+                required
+              />
+              <datalist id="capture-duration-presets">
+                <option value="15" />
+                <option value="20" />
+                <option value="30" />
+                <option value="45" />
+                <option value="60" />
+                <option value="75" />
+              </datalist>
+              <small>Choose a preset or enter any whole number from 10–75 seconds. The inspector app shows the required time before capture and a live remaining-time counter while recording.</small>
             </label>
             <label>Deadline<input type="datetime-local" value={form.deadline} onChange={(event) => update('deadline', event.target.value)} required /></label>
           </div>
