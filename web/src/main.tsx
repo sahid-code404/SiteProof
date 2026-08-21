@@ -6,6 +6,7 @@ import 'leaflet/dist/leaflet.css'
 import App from './App'
 import './styles.css'
 import './phase11.css'
+import './phase11b.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {
