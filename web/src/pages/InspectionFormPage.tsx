@@ -7,6 +7,8 @@ import { reverseLocation, searchLocation, type GeocodingResult } from '../lib/ge
 import { validateInspectionInput } from '../lib/inspectionValidation'
 import '../location-search.css'
 
+type CaptureInspectionPayload = InspectionPayload & { captureDurationSeconds: number }
+
 type FormState = {
   title: string
   description: string
@@ -17,6 +19,7 @@ type FormState = {
   locationName: string
   locationAddress: string
   radius: string
+  captureDurationSeconds: string
   deadline: string
   instructions: string
 }
@@ -31,6 +34,7 @@ const initialState: FormState = {
   locationName: '',
   locationAddress: '',
   radius: '100',
+  captureDurationSeconds: '30',
   deadline: '',
   instructions: '',
 }
@@ -57,7 +61,7 @@ export function InspectionFormPage() {
 
   useEffect(() => {
     if (!existing.data) return
-    const item = existing.data
+    const item = existing.data as typeof existing.data & { captureDurationSeconds?: number }
     setForm({
       title: item.title,
       description: item.description ?? '',
@@ -68,13 +72,14 @@ export function InspectionFormPage() {
       locationName: item.locationName ?? '',
       locationAddress: item.locationAddress ?? '',
       radius: String(item.allowedRadiusMeters),
+      captureDurationSeconds: String(item.captureDurationSeconds ?? 30),
       deadline: toLocalInput(item.deadline),
       instructions: item.instructions ?? '',
     })
   }, [existing.data])
 
   const mutation = useMutation({
-    mutationFn: (payload: InspectionPayload) => editing ? updateInspection(id!, payload) : createInspection(payload),
+    mutationFn: (payload: CaptureInspectionPayload) => editing ? updateInspection(id!, payload) : createInspection(payload),
     onSuccess(data) {
       queryClient.invalidateQueries({ queryKey: ['inspections'] })
       queryClient.invalidateQueries({ queryKey: ['inspection-summary'] })
@@ -163,6 +168,7 @@ export function InspectionFormPage() {
     const latitude = Number(form.latitude)
     const longitude = Number(form.longitude)
     const radius = Number(form.radius)
+    const captureDurationSeconds = Number(form.captureDurationSeconds)
     const validationError = validateInspectionInput({
       title: form.title,
       latitude,
@@ -172,6 +178,10 @@ export function InspectionFormPage() {
     })
     if (validationError) {
       setClientError(validationError)
+      return
+    }
+    if (!Number.isInteger(captureDurationSeconds) || captureDurationSeconds < 10 || captureDurationSeconds > 300) {
+      setClientError('Video length must be between 10 seconds and 5 minutes.')
       return
     }
 
@@ -188,6 +198,7 @@ export function InspectionFormPage() {
         address: form.locationAddress.trim() || undefined,
       },
       allowedRadiusMeters: radius,
+      captureDurationSeconds,
       deadline: new Date(form.deadline).toISOString(),
       instructions: form.instructions.trim() || undefined,
     })
@@ -205,15 +216,12 @@ export function InspectionFormPage() {
       <section className="page-heading">
         <p className="eyebrow">{editing ? 'Edit inspection' : 'New inspection'}</p>
         <h1>{editing ? 'Update inspection' : 'Create inspection'}</h1>
-        <p>Set the work, site and deadline. You can assign an inspector after saving.</p>
+        <p>Set the work, site, video length and deadline. You can assign an inspector after saving.</p>
       </section>
 
       <form className="form-layout" onSubmit={submit}>
         <section className="form-card">
-          <div className="simple-section-title">
-            <h2>Work</h2>
-            <p>What needs to be checked?</p>
-          </div>
+          <div className="simple-section-title"><h2>Work</h2><p>What needs to be checked?</p></div>
           <label className="wide">Title<input minLength={3} maxLength={150} value={form.title} onChange={(event) => update('title', event.target.value)} required /></label>
           <label className="wide">Description<textarea rows={3} maxLength={5000} value={form.description} onChange={(event) => update('description', event.target.value)} /></label>
           <div className="field-grid">
@@ -223,56 +231,42 @@ export function InspectionFormPage() {
         </section>
 
         <section className="form-card">
-          <div className="simple-section-title">
-            <h2>Site</h2>
-            <p>Search for the site, use your location or choose a point on the map.</p>
-          </div>
-
+          <div className="simple-section-title"><h2>Site</h2><p>Search for the site, use your location or choose a point on the map.</p></div>
           <div className="location-tools">
-            <label className="location-search-field">Search
-              <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Road, landmark, area or city" onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void searchSite() } }} />
-            </label>
+            <label className="location-search-field">Search<input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Road, landmark, area or city" onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void searchSite() } }} /></label>
             <div className="location-search-actions">
               <button className="button primary" type="button" disabled={searching} onClick={() => void searchSite()}>{searching ? 'Searching…' : 'Search'}</button>
               <button className="button ghost" type="button" disabled={locating} onClick={useCurrentLocation}>{locating ? 'Locating…' : 'Use my location'}</button>
             </div>
           </div>
-
-          {searchResults.length > 0 ? (
-            <div className="location-results" role="list">
-              {searchResults.map((result) => (
-                <button className="location-result" type="button" role="listitem" key={`${result.latitude}-${result.longitude}-${result.displayName}`} onClick={() => applyLocation(result)}>
-                  <strong>{result.name}</strong>
-                  <small>{result.displayName}</small>
-                </button>
-              ))}
-            </div>
-          ) : null}
+          {searchResults.length > 0 ? <div className="location-results" role="list">{searchResults.map((result) => <button className="location-result" type="button" role="listitem" key={`${result.latitude}-${result.longitude}-${result.displayName}`} onClick={() => applyLocation(result)}><strong>{result.name}</strong><small>{result.displayName}</small></button>)}</div> : null}
           {locationError ? <div className="notice error">{locationError}</div> : null}
-
           <SiteMap latitude={latitude} longitude={longitude} radius={radius} editable onChange={(lat, lng) => setForm((current) => ({ ...current, latitude: lat.toFixed(6), longitude: lng.toFixed(6) }))} />
-
           <div className="field-grid">
             <label>Site name<input maxLength={200} value={form.locationName} onChange={(event) => update('locationName', event.target.value)} placeholder="Central Avenue" /></label>
             <label>Capture radius (m)<input type="number" min="10" max="5000" value={form.radius} onChange={(event) => update('radius', event.target.value)} required /></label>
           </div>
           <label className="wide">Address<input maxLength={500} value={form.locationAddress} onChange={(event) => update('locationAddress', event.target.value)} placeholder="Kolkata, West Bengal" /></label>
-
-          <details className="form-advanced-details">
-            <summary>Coordinates</summary>
-            <div className="field-grid">
-              <label>Latitude<input type="number" step="0.000001" min="-90" max="90" value={form.latitude} onChange={(event) => update('latitude', event.target.value)} required /></label>
-              <label>Longitude<input type="number" step="0.000001" min="-180" max="180" value={form.longitude} onChange={(event) => update('longitude', event.target.value)} required /></label>
-            </div>
-          </details>
+          <details className="form-advanced-details"><summary>Coordinates</summary><div className="field-grid"><label>Latitude<input type="number" step="0.000001" min="-90" max="90" value={form.latitude} onChange={(event) => update('latitude', event.target.value)} required /></label><label>Longitude<input type="number" step="0.000001" min="-180" max="180" value={form.longitude} onChange={(event) => update('longitude', event.target.value)} required /></label></div></details>
         </section>
 
         <section className="form-card">
-          <div className="simple-section-title">
-            <h2>Timing & instructions</h2>
-            <p>When is it due and what should the inspector know?</p>
+          <div className="simple-section-title"><h2>Timing & capture</h2><p>Choose the required video length and when the inspection is due.</p></div>
+          <div className="field-grid">
+            <label>Required video length
+              <select value={form.captureDurationSeconds} onChange={(event) => update('captureDurationSeconds', event.target.value)}>
+                <option value="15">15 seconds</option>
+                <option value="20">20 seconds</option>
+                <option value="30">30 seconds · recommended</option>
+                <option value="45">45 seconds</option>
+                <option value="60">1 minute</option>
+                <option value="90">1 minute 30 seconds</option>
+                <option value="120">2 minutes</option>
+              </select>
+              <small>The app keeps one continuous video while the movement checks are completed.</small>
+            </label>
+            <label>Deadline<input type="datetime-local" value={form.deadline} onChange={(event) => update('deadline', event.target.value)} required /></label>
           </div>
-          <label>Deadline<input type="datetime-local" value={form.deadline} onChange={(event) => update('deadline', event.target.value)} required /></label>
           <label className="wide">Inspector instructions<textarea rows={5} maxLength={5000} value={form.instructions} onChange={(event) => update('instructions', event.target.value)} /></label>
         </section>
 
