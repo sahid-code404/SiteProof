@@ -25,15 +25,18 @@ def test_admin_configures_capture_duration_and_inspector_receives_it(client, db)
     updated = client.patch(
         f"/api/v1/inspections/{created['id']}",
         headers=admin_headers,
-        json={"captureDurationSeconds": 20},
+        json={"captureDurationSeconds": 63},
     )
     assert updated.status_code == 200, updated.text
-    assert updated.json()["captureDurationSeconds"] == 20
+    assert updated.json()["captureDurationSeconds"] == 63
 
 
 def test_capture_duration_validation(client, db):
     identities = seed_identity_set(db)
     headers = login(client, identities["admin_a"])
+
+    custom = create_inspection(client, headers, captureDurationSeconds=75)
+    assert custom["captureDurationSeconds"] == 75
 
     too_short = client.post(
         "/api/v1/inspections",
@@ -58,7 +61,7 @@ def test_capture_duration_validation(client, db):
             "inspectionType": "GENERAL",
             "location": {"latitude": 22.5726, "longitude": 88.3639},
             "allowedRadiusMeters": 100,
-            "captureDurationSeconds": 46,
+            "captureDurationSeconds": 76,
             "deadline": "2099-01-01T00:00:00Z",
             "priority": "MEDIUM",
         },
