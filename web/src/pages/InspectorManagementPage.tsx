@@ -23,12 +23,20 @@ function shortId(id: string) {
   return id.split('-')[0].toUpperCase()
 }
 
+function StatIcon({ type }: { type: 'total' | 'active' | 'inactive' | 'id' }) {
+  if (type === 'total') return <span className="stat-icon peach">👥</span>
+  if (type === 'active') return <span className="stat-icon mint">●</span>
+  if (type === 'inactive') return <span className="stat-icon rose">○</span>
+  return <span className="stat-icon amber">ID</span>
+}
+
 export function InspectorManagementPage() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [createForm, setCreateForm] = useState<InspectorCreatePayload>(emptyCreate)
+  const [confirmCreatePassword, setConfirmCreatePassword] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
@@ -54,6 +62,7 @@ export function InspectorManagementPage() {
     mutationFn: createInspector,
     onSuccess: (created) => {
       setCreateForm(emptyCreate)
+      setConfirmCreatePassword('')
       setSelectedId(created.id)
       setSuccessMessage(`${created.name} can now sign in to the Android app.`)
       refresh()
@@ -79,6 +88,7 @@ export function InspectorManagementPage() {
 
   function submitCreate(event: FormEvent) {
     event.preventDefault()
+    if (createForm.password !== confirmCreatePassword) return
     setSuccessMessage(null)
     createMutation.mutate({
       ...createForm,
@@ -96,50 +106,50 @@ export function InspectorManagementPage() {
     passwordMutation.mutate({ id: selected.id, nextPassword: password })
   }
 
+  const total = inspectors.data?.totalItems ?? 0
+  const active = allInspectors.filter((item) => item.active).length
+  const inactive = allInspectors.filter((item) => !item.active).length
+  const withId = allInspectors.filter((item) => item.employeeCode).length
+
   return (
     <div className="page-stack inspector-management-page">
-      <header className="page-heading inspector-page-heading">
+      <header className="page-heading inspector-page-heading entrance-up">
         <div>
-          <p className="eyebrow">Team access</p>
           <h1>Inspectors</h1>
-          <p>Invite inspectors, see their account ID, and manage access without exposing stored passwords.</p>
+          <p>Manage inspectors and their access.</p>
         </div>
-        <a className="button primary" href="#add-inspector">Add inspector</a>
+        <a className="button primary add-inspector-button" href="#add-inspector"><span aria-hidden="true">＋</span> Add Inspector</a>
       </header>
 
-      {successMessage ? <div className="notice success" role="status">{successMessage}</div> : null}
+      {successMessage ? <div className="notice success entrance-up" role="status">{successMessage}</div> : null}
 
       <section className="inspector-stats" aria-label="Inspector account summary">
-        <div className="metric-card"><span>Shown</span><strong>{inspectors.data?.totalItems ?? 0}</strong></div>
-        <div className="metric-card"><span>Active</span><strong>{allInspectors.filter((item) => item.active).length}</strong></div>
-        <div className="metric-card"><span>Inactive</span><strong>{allInspectors.filter((item) => !item.active).length}</strong></div>
+        <article className="metric-card inspector-stat-card entrance-up delay-1"><StatIcon type="total"/><div><span>Total Inspectors</span><strong>{total}</strong><small>All accounts</small></div></article>
+        <article className="metric-card inspector-stat-card entrance-up delay-2"><StatIcon type="active"/><div><span>Active Inspectors</span><strong>{active}</strong><small>Can sign in</small></div></article>
+        <article className="metric-card inspector-stat-card entrance-up delay-3"><StatIcon type="inactive"/><div><span>Inactive</span><strong>{inactive}</strong><small>Access disabled</small></div></article>
+        <article className="metric-card inspector-stat-card entrance-up delay-4"><StatIcon type="id"/><div><span>Inspector IDs</span><strong>{withId}</strong><small>IDs assigned</small></div></article>
       </section>
 
-      <section className="panel inspector-list-panel">
-        <div className="section-heading-row">
+      <section className="panel inspector-list-panel entrance-up" id="all-inspectors">
+        <div className="section-heading-row inspector-list-heading">
           <div>
-            <h2>Inspector accounts</h2>
-            <p className="muted">Select an inspector to manage their password or account status.</p>
+            <h2>All Inspectors</h2>
+            <p className="muted">Select an inspector to manage access.</p>
           </div>
-        </div>
-
-        <div className="inspector-toolbar">
-          <label className="field inspector-search-field">
-            <span>Search</span>
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Name, email, or inspector ID"
-            />
-          </label>
-          <label className="field inspector-status-filter">
-            <span>Status</span>
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}>
-              <option value="all">All inspectors</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </label>
+          <div className="inspector-toolbar compact-toolbar">
+            <label className="field search-box">
+              <span className="sr-only">Search inspectors</span>
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search inspector…" />
+            </label>
+            <label className="field status-box">
+              <span className="sr-only">Status</span>
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}>
+                <option value="all">All Status</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </label>
+          </div>
         </div>
 
         {inspectors.isLoading ? <p className="muted">Loading inspectors…</p> : null}
@@ -157,17 +167,19 @@ export function InspectorManagementPage() {
                   <th>Name</th>
                   <th>Email</th>
                   <th>Status</th>
-                  <th><span className="sr-only">Actions</span></th>
+                  <th>Phone</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {allInspectors.map((inspector) => (
                   <tr key={inspector.id} className={selectedId === inspector.id ? 'selected' : ''}>
-                    <td><code>INSP-{shortId(inspector.id)}</code></td>
-                    <td><strong>{inspector.name}</strong>{inspector.employeeCode ? <small>{inspector.employeeCode}</small> : null}</td>
+                    <td><code>{inspector.employeeCode || `INSP-${shortId(inspector.id)}`}</code></td>
+                    <td><strong>{inspector.name}</strong></td>
                     <td>{inspector.email}</td>
                     <td><span className={`status-dot-label ${inspector.active ? 'active' : 'inactive'}`}>{inspector.active ? 'Active' : 'Inactive'}</span></td>
-                    <td><button className="button ghost compact" type="button" onClick={() => setSelectedId(inspector.id)}>Manage</button></td>
+                    <td>{inspector.phone || <span className="muted">—</span>}</td>
+                    <td><button className="kebab-button" type="button" onClick={() => setSelectedId(inspector.id)} aria-label={`Manage ${inspector.name}`}>•••</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -177,51 +189,41 @@ export function InspectorManagementPage() {
       </section>
 
       <div className="inspector-management-grid">
-        <section className="panel" id="add-inspector">
-          <p className="eyebrow">New account</p>
-          <h2>Add inspector</h2>
-          <p className="muted">Create a login for the Android field app.</p>
-          <form className="stack-form" onSubmit={submitCreate}>
-            <label className="field"><span>Full name</span><input required minLength={2} value={createForm.fullName} onChange={(event) => setCreateForm({ ...createForm, fullName: event.target.value })} /></label>
-            <label className="field"><span>Email</span><input required type="email" autoComplete="off" value={createForm.email} onChange={(event) => setCreateForm({ ...createForm, email: event.target.value })} /></label>
-            <label className="field"><span>Inspector / employee ID <small>optional</small></span><input value={createForm.employeeCode ?? ''} onChange={(event) => setCreateForm({ ...createForm, employeeCode: event.target.value })} placeholder="e.g. INSP-1042" /></label>
-            <label className="field"><span>Phone <small>optional</small></span><input type="tel" value={createForm.phone ?? ''} onChange={(event) => setCreateForm({ ...createForm, phone: event.target.value })} /></label>
-            <label className="field"><span>Initial password</span><input required minLength={8} type="password" autoComplete="new-password" value={createForm.password} onChange={(event) => setCreateForm({ ...createForm, password: event.target.value })} /><small>At least 8 characters.</small></label>
-            <button className="button primary" disabled={createMutation.isPending} type="submit">{createMutation.isPending ? 'Creating…' : 'Create inspector'}</button>
-            {createMutation.error ? <div className="notice error">{createMutation.error.message}</div> : null}
+        <section className="panel form-showcase entrance-up" id="add-inspector">
+          <h2>Add New Inspector</h2>
+          <p className="muted">Create a new inspector account.</p>
+          <form className="stack-form two-column-form" onSubmit={submitCreate}>
+            <label className="field"><span>Full Name</span><input required minLength={2} placeholder="e.g. Rohan Verma" value={createForm.fullName} onChange={(event) => setCreateForm({ ...createForm, fullName: event.target.value })} /></label>
+            <label className="field"><span>Initial Password</span><input required minLength={8} type="password" autoComplete="new-password" value={createForm.password} onChange={(event) => setCreateForm({ ...createForm, password: event.target.value })} /><small>Minimum 8 characters</small></label>
+            <label className="field"><span>Email Address</span><input required type="email" placeholder="e.g. rohan.verma@site.com" autoComplete="off" value={createForm.email} onChange={(event) => setCreateForm({ ...createForm, email: event.target.value })} /></label>
+            <label className="field"><span>Confirm Password</span><input required minLength={8} type="password" autoComplete="new-password" value={confirmCreatePassword} onChange={(event) => setConfirmCreatePassword(event.target.value)} /></label>
+            <label className="field"><span>Inspector ID</span><input value={createForm.employeeCode ?? ''} onChange={(event) => setCreateForm({ ...createForm, employeeCode: event.target.value })} placeholder="e.g. INSP-1006" /><small>Unique ID for the inspector</small></label>
+            <label className="field"><span>Status</span><select value="active" disabled><option>Active</option></select></label>
+            <label className="field"><span>Phone Number <small>(Optional)</small></span><input type="tel" placeholder="e.g. +91 98765 43210" value={createForm.phone ?? ''} onChange={(event) => setCreateForm({ ...createForm, phone: event.target.value })} /></label>
+            <label className="field"><span>Role</span><select value="inspector" disabled><option>Inspector</option></select></label>
+            {confirmCreatePassword && createForm.password !== confirmCreatePassword ? <p className="field-error span-all">Passwords do not match.</p> : null}
+            {createMutation.error ? <div className="notice error span-all">{createMutation.error.message}</div> : null}
+            <div className="form-actions span-all"><button className="button ghost" type="reset" onClick={() => { setCreateForm(emptyCreate); setConfirmCreatePassword('') }}>Cancel</button><button className="button primary" disabled={createMutation.isPending || createForm.password !== confirmCreatePassword} type="submit">{createMutation.isPending ? 'Creating…' : 'Create Inspector'}</button></div>
           </form>
         </section>
 
-        <section className="panel inspector-access-panel">
-          <p className="eyebrow">Account access</p>
-          <h2>Password & status</h2>
+        <section className="panel form-showcase inspector-access-panel entrance-up" id="password-management">
+          <h2>Change Inspector Password</h2>
+          <p className="muted">Set a new password for an inspector.</p>
           {!selected ? (
-            <div className="empty-state compact"><h3>Select an inspector</h3><p>Use Manage in the table above.</p></div>
+            <div className="empty-state compact"><h3>Select an inspector</h3><p>Use the ••• button in the table above.</p></div>
           ) : (
             <>
               <div className="selected-inspector-card">
                 <div className="inspector-avatar" aria-hidden="true">{selected.name.slice(0, 1).toUpperCase()}</div>
-                <div><strong>{selected.name}</strong><span>{selected.email}</span><code>INSP-{shortId(selected.id)}</code></div>
+                <div><strong>{selected.name}</strong><span>{selected.email}</span><code>{selected.employeeCode || `INSP-${shortId(selected.id)}`}</code></div>
               </div>
-
-              <div className="account-status-row">
-                <div><strong>Account status</strong><p className="muted">Inactive inspectors cannot sign in.</p></div>
-                <button
-                  className={`button ${selected.active ? 'ghost' : 'primary'}`}
-                  disabled={accountMutation.isPending}
-                  type="button"
-                  onClick={() => accountMutation.mutate({ id: selected.id, active: !selected.active })}
-                >
-                  {selected.active ? 'Deactivate' : 'Activate'}
-                </button>
-              </div>
-
               <form className="stack-form password-reset-form" onSubmit={submitPassword}>
-                <div><strong>Set a new password</strong><p className="muted">Passwords are never shown or recoverable. Setting a new one replaces the previous password.</p></div>
-                <label className="field"><span>New password</span><input required minLength={8} type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-                <label className="field"><span>Confirm password</span><input required minLength={8} type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
+                <label className="field"><span>New Password</span><input required minLength={8} type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /><small>Minimum 8 characters</small></label>
+                <label className="field"><span>Confirm New Password</span><input required minLength={8} type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
                 {confirmPassword && password !== confirmPassword ? <p className="field-error">Passwords do not match.</p> : null}
-                <button className="button primary" disabled={passwordMutation.isPending || password.length < 8 || password !== confirmPassword} type="submit">{passwordMutation.isPending ? 'Updating…' : 'Update password'}</button>
+                <div className="account-status-row"><div><strong>Account status</strong><p className="muted">{selected.active ? 'Active and able to sign in.' : 'Inactive and blocked from sign in.'}</p></div><button className={`button ${selected.active ? 'ghost' : 'primary'}`} disabled={accountMutation.isPending} type="button" onClick={() => accountMutation.mutate({ id: selected.id, active: !selected.active })}>{selected.active ? 'Deactivate' : 'Activate'}</button></div>
+                <div className="form-actions"><button className="button ghost" type="button" onClick={() => { setPassword(''); setConfirmPassword('') }}>Cancel</button><button className="button primary" disabled={passwordMutation.isPending || password.length < 8 || password !== confirmPassword} type="submit">{passwordMutation.isPending ? 'Updating…' : 'Update Password'}</button></div>
                 {passwordMutation.error ? <div className="notice error">{passwordMutation.error.message}</div> : null}
                 {accountMutation.error ? <div className="notice error">{accountMutation.error.message}</div> : null}
               </form>
