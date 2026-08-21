@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     preferred_location_accuracy_meters: float = 30.0
 
     challenge_count: int = 3
-    challenge_timeout_seconds: int = 15
+    challenge_timeout_seconds: int = 18
     challenge_baseline_ms: int = 500
     challenge_settling_ms: int = 350
     challenge_min_gyro_samples: int = 12
@@ -40,9 +40,6 @@ class Settings(BaseSettings):
     rotation_max_target_degrees: float = 55.0
     tilt_min_target_degrees: float = 22.0
     tilt_max_target_degrees: float = 45.0
-    # Android sensor coordinates in portrait: X points right, Y points toward the top.
-    # These signs are explicit configuration so genuine device trials can tune semantics
-    # without changing validation code. Defaults follow the current portrait convention.
     rotation_right_sign: float = -1.0
     tilt_down_sign: float = 1.0
     challenge_direction_weight: float = 0.30
@@ -51,15 +48,12 @@ class Settings(BaseSettings):
     challenge_timing_weight: float = 0.10
     challenge_smoothness_weight: float = 0.10
 
-    # Phase 5 visual-motion analysis. The original evidence video is never rewritten;
-    # OpenCV works only on derived, down-scaled frames.
-    vision_analysis_version: str = "vision-v1.2"
+    # Phase 5 accepted visual-motion analysis.
+    vision_analysis_version: str = "vision-v1.4"
     vision_analysis_fps: float = 12.0
     vision_max_width: int = 960
-    # Direction/magnitude are measured only inside the actual challenge interval. Padding
-    # allowed the user's return/reposition movement to contaminate the next/previous result.
-    vision_pre_challenge_padding_ms: int = 0
-    vision_post_challenge_padding_ms: int = 0
+    vision_pre_challenge_padding_ms: int = 200
+    vision_post_challenge_padding_ms: int = 200
     vision_min_features: int = 40
     vision_max_features: int = 600
     vision_grid_rows: int = 4
@@ -73,9 +67,6 @@ class Settings(BaseSettings):
     vision_motion_threshold_px: float = 1.5
     vision_timeline_tolerance_ms: int = 300
     vision_video_duration_tolerance_ms: int = 1500
-    # Missing source frames are estimated from actual MP4 presentation timestamps. If more
-    # than this fraction of a challenge window is missing/undecodable, visual direction is
-    # evidence-incomplete and must be INCONCLUSIVE rather than a high-confidence SUCCESS.
     vision_max_invalid_frame_ratio: float = 0.20
     vision_assumed_horizontal_fov_degrees: float = 65.0
     vision_max_duration_seconds: int = 90
@@ -87,6 +78,34 @@ class Settings(BaseSettings):
     vision_consistency_weight: float = 0.25
     vision_coverage_weight: float = 0.15
     vision_continuity_weight: float = 0.10
+
+    # Phase 6 deterministic visual-inertial consistency.
+    fusion_analysis_version: str = "fusion-v1.0"
+    fusion_resample_hz: float = 20.0
+    fusion_max_alignment_lag_ms: int = 500
+    fusion_strong_angle_error_deg: float = 8.0
+    fusion_max_angle_error_deg: float = 25.0
+    fusion_relative_angle_error_full_penalty: float = 0.60
+    fusion_timing_excellent_ms: int = 150
+    fusion_timing_good_ms: int = 350
+    fusion_timing_weak_ms: int = 700
+    fusion_pass_threshold: float = 0.80
+    fusion_partial_threshold: float = 0.60
+    fusion_min_sensor_confidence: float = 0.50
+    fusion_min_visual_confidence: float = 0.50
+    fusion_strong_contradiction_confidence: float = 0.80
+    fusion_motion_floor_deg: float = 5.0
+    fusion_large_motion_deg: float = 25.0
+    fusion_min_scene_continuity_score: float = 0.55
+    fusion_scene_freeze_warning_ms: int = 1500
+    fusion_duration_mismatch_score: float = 0.35
+    fusion_max_sensor_uncompressed_bytes: int = 50 * 1024 * 1024
+    fusion_max_processing_seconds: float = 5.0
+    fusion_direction_weight: float = 0.25
+    fusion_magnitude_weight: float = 0.25
+    fusion_timing_weight: float = 0.20
+    fusion_correlation_weight: float = 0.20
+    fusion_duration_weight: float = 0.10
 
     storage_backend: str = "local"
     local_storage_path: str = "./siteproof-evidence"
@@ -103,13 +122,18 @@ class Settings(BaseSettings):
     max_manifest_bytes: int = 1 * 1024 * 1024
     max_thumbnail_bytes: int = 5 * 1024 * 1024
 
+    # Phase 8 server-side cryptographic receipts. Only an external key path is configured;
+    # private key bytes are never stored in settings, Git, or PostgreSQL.
+    receipt_signing_enabled: bool = False
+    receipt_signing_key_id: str = "siteproof-signing-dev-01"
+    receipt_signing_private_key_path: str = "/run/siteproof-secrets/siteproof-signing-private.pem"
+    public_receipt_details: str = "MINIMAL"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @field_validator("challenge_max_retries", mode="after")
     @classmethod
     def enforce_minimum_challenge_retries(cls, value: int) -> int:
-        # Phase 4 mobile UX guarantees the inspector at least three explicit
-        # reattempts even if an older local .env still contains the previous value of 1.
         return max(3, value)
 
     @property
@@ -142,6 +166,26 @@ class Settings(BaseSettings):
         total = sum(weights.values())
         if total <= 0:
             return {name: 0.2 for name in weights}
+        return {name: value / total for name, value in weights.items()}
+
+    @property
+    def fusion_score_weights(self) -> dict[str, float]:
+        weights = {
+            "direction": self.fusion_direction_weight,
+            "magnitude": self.fusion_magnitude_weight,
+            "timing": self.fusion_timing_weight,
+            "correlation": self.fusion_correlation_weight,
+            "duration": self.fusion_duration_weight,
+        }
+        total = sum(weights.values())
+        if total <= 0:
+            return {
+                "direction": 0.25,
+                "magnitude": 0.25,
+                "timing": 0.20,
+                "correlation": 0.20,
+                "duration": 0.10,
+            }
         return {name: value / total for name, value in weights.items()}
 
 

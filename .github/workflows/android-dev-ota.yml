@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - phase5-visual-motion
+      - phase9-advanced-security
+      - phase10-environment-anomaly
+      - phase11-final-polish
     paths:
       - 'android/**'
       - '.github/workflows/android-dev-ota.yml'
@@ -34,12 +37,12 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Resolve field-test version and API
+      - name: Resolve update version and API
         id: version
         shell: bash
         run: |
           VERSION_CODE=$((5000 + GITHUB_RUN_NUMBER))
-          VERSION_NAME="0.5.0-dev.${GITHUB_RUN_NUMBER}"
+          VERSION_NAME="0.5.${GITHUB_RUN_NUMBER}"
           API_BASE_URL="${{ vars.SITEPROOF_DEV_API_BASE_URL }}"
           if [ -z "$API_BASE_URL" ]; then
             API_BASE_URL="http://192.168.1.102:8000/api/v1/"
@@ -62,14 +65,13 @@ jobs:
           mkdir -p ../ota
           cp app/build/outputs/apk/debug/app-debug.apk ../ota/SiteProof-debug.apk
           SHA256=$(sha256sum ../ota/SiteProof-debug.apk | awk '{print $1}')
-          SHORT_SHA=${GITHUB_SHA::7}
           cat > ../ota/siteproof-update.json <<JSON
           {
             "versionCode": ${{ steps.version.outputs.code }},
             "versionName": "${{ steps.version.outputs.name }}",
             "apkUrl": "https://github.com/sahid-code404/SiteProof/releases/download/dev-latest/SiteProof-debug.apk",
             "sha256": "$SHA256",
-            "notes": "Field-test update $SHORT_SHA. Downloaded APK is SHA-256 verified before Android installation."
+            "notes": "Interface polish and reliability improvements."
           }
           JSON
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
@@ -94,6 +96,6 @@ jobs:
             ota/SiteProof-debug.apk \
             ota/siteproof-update.json \
             --target "$GITHUB_SHA" \
-            --title "SiteProof Dev OTA ${{ steps.version.outputs.name }}" \
+            --title "SiteProof Update ${{ steps.version.outputs.name }}" \
             --prerelease \
-            --notes "Development-only OTA build for com.siteproof.app.dev. SHA-256: ${{ steps.package.outputs.sha256 }}"
+            --notes "OTA build for the SiteProof development package. SHA-256: ${{ steps.package.outputs.sha256 }}"

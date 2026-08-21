@@ -4,8 +4,12 @@ import { getToken, getStoredUser } from './lib/auth'
 import { DashboardPage } from './pages/DashboardPage'
 import { InspectionDetailPage } from './pages/InspectionDetailPage'
 import { InspectionFormPage } from './pages/InspectionFormPage'
+import { InspectorManagementPage } from './pages/InspectorManagementPage'
 import { InspectionsPage } from './pages/InspectionsPage'
 import { LoginPage } from './pages/LoginPage'
+import { PublicReceiptPage } from './pages/PublicReceiptPage'
+import { ReceiptDetailPage } from './pages/ReceiptDetailPage'
+import { ReviewWorkspacePage } from './pages/ReviewWorkspacePage'
 
 function ProtectedApp() {
   if (!getToken()) return <Navigate to="/login" replace />
@@ -14,14 +18,18 @@ function ProtectedApp() {
     return <div className="center-card"><h1>Admin dashboard unavailable</h1><p>Inspectors use the Android application for assignments.</p></div>
   }
   const canManage = user?.role === 'ADMIN'
+  const canReview = user?.role === 'ADMIN' || user?.role === 'REVIEWER'
   return (
     <AppShell>
       <Routes>
         <Route path="/" element={<DashboardPage />} />
+        <Route path="/review" element={canReview ? <ReviewWorkspacePage /> : <Navigate to="/" replace />} />
         <Route path="/inspections" element={<InspectionsPage />} />
+        <Route path="/inspectors" element={canManage ? <InspectorManagementPage /> : <Navigate to="/" replace />} />
         <Route path="/inspections/new" element={canManage ? <InspectionFormPage /> : <Navigate to="/inspections" replace />} />
         <Route path="/inspections/:id/edit" element={canManage ? <InspectionFormPage /> : <Navigate to="/inspections" replace />} />
         <Route path="/inspections/:id" element={<InspectionDetailPage />} />
+        <Route path="/receipts/:id" element={<ReceiptDetailPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>
@@ -31,6 +39,7 @@ function ProtectedApp() {
 export default function App() {
   return (
     <Routes>
+      <Route path="/verify/:token" element={<PublicReceiptPage />} />
       <Route path="/login" element={getToken() ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route path="/*" element={<ProtectedApp />} />
     </Routes>

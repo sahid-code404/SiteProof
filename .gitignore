@@ -31,3 +31,9 @@ local.properties
 .minio/
 postgres-data/
 backend/siteproof-evidence/
+
+# Local / cryptographic secrets
+.secrets/
+*.private.pem
+*private_key.pem
+siteproof-signing-private.pem

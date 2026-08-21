@@ -11,6 +11,9 @@ export type InspectionStatus =
   | 'SESSION_STARTED'
   | 'EVIDENCE_UPLOADING'
   | 'PROCESSING'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'RECAPTURE_REQUIRED'
   | 'CANCELLED'
 export type InspectionPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 export type InspectionType = 'ROAD_REPAIR' | 'INFRASTRUCTURE' | 'CONSTRUCTION' | 'UTILITY' | 'GENERAL'
@@ -44,6 +47,7 @@ export type Inspection = {
   expectedLatitude: number
   expectedLongitude: number
   allowedRadiusMeters: number
+  captureDurationSeconds: number
   locationName?: string | null
   locationAddress?: string | null
   deadline: string
@@ -79,6 +83,13 @@ export type DashboardSummary = {
   dueToday: number
   overdue: number
   highPriority: number
+  verified: number
+  reviewRequired: number
+  flagged: number
+  inconclusive: number
+  verificationProcessing: number
+  verificationCompleted: number
+  verificationRate: number
 }
 
 export type InspectionPayload = {
@@ -87,6 +98,7 @@ export type InspectionPayload = {
   inspectionType: InspectionType
   location: { latitude: number; longitude: number; name?: string; address?: string }
   allowedRadiusMeters: number
+  captureDurationSeconds?: number
   deadline: string
   priority: InspectionPriority
   instructions?: string

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.SiteProof" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#F56200</item>
+        <item name="android:navigationBarColor">#FFF8F2</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowSplashScreenBackground">#FF6800</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_siteproof_launcher</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#FF6800</item>
+        <item name="android:windowSplashScreenAnimationDuration">350</item>
+    </style>
+</resources>

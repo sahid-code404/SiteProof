@@ -6,14 +6,14 @@ import org.junit.Test
 
 class ChallengeMovementGuideCopyTest {
     @Test
-    fun rotateGuidanceUsesYawLanguage() {
-        assertEquals("Turn the phone to your right", challengeInstruction("ROTATE_RIGHT"))
-        assertEquals("Turn the phone to your left", challengeInstruction("ROTATE_LEFT"))
+    fun rotateGuidanceUsesWholePhoneYawLanguage() {
+        assertEquals("Turn the whole phone to your RIGHT", challengeInstruction("ROTATE_RIGHT"))
+        assertEquals("Turn the whole phone to your LEFT", challengeInstruction("ROTATE_LEFT"))
     }
 
     @Test
-    fun tiltGuidanceKeepsEstablishedPhysicalMeaning() {
-        assertEquals("Tilt the TOP of the phone away from you", challengeInstruction("TILT_UP"))
-        assertEquals("Tilt the TOP of the phone toward you", challengeInstruction("TILT_DOWN"))
+    fun tiltGuidanceNamesTheTopEdgeMovement() {
+        assertEquals("Move the TOP edge away from you", challengeInstruction("TILT_UP"))
+        assertEquals("Move the TOP edge toward you", challengeInstruction("TILT_DOWN"))
     }
 }

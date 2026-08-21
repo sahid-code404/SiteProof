@@ -5,6 +5,7 @@ from pydantic import Field, field_validator
 
 from app.models.assignment import AssignmentStatus
 from app.models.inspection import InspectionPriority, InspectionStatus, InspectionType
+from app.models.trust import VerificationProcessingStatus, VerificationVerdict
 from app.schemas.base import APIModel
 from app.schemas.inspector import InspectorResponse
 
@@ -22,6 +23,7 @@ class InspectionCreate(APIModel):
     inspection_type: InspectionType = InspectionType.GENERAL
     location: LocationInput
     allowed_radius_meters: int = Field(default=100, ge=10, le=5000)
+    capture_duration_seconds: int = Field(default=30, ge=10, le=45)
     deadline: datetime
     priority: InspectionPriority = InspectionPriority.MEDIUM
     instructions: str | None = Field(default=None, max_length=5000)
@@ -42,6 +44,7 @@ class InspectionUpdate(APIModel):
     inspection_type: InspectionType | None = None
     location: LocationInput | None = None
     allowed_radius_meters: int | None = Field(default=None, ge=10, le=5000)
+    capture_duration_seconds: int | None = Field(default=None, ge=10, le=45)
     deadline: datetime | None = None
     priority: InspectionPriority | None = None
     instructions: str | None = Field(default=None, max_length=5000)
@@ -89,6 +92,7 @@ class InspectionResponse(APIModel):
     expected_latitude: float
     expected_longitude: float
     allowed_radius_meters: int
+    capture_duration_seconds: int = 30
     location_name: str | None
     location_address: str | None
     deadline: datetime
@@ -114,6 +118,21 @@ class InspectionPage(APIModel):
     total_pages: int
 
 
+class DashboardVerificationItem(APIModel):
+    inspection_id: uuid.UUID
+    title: str
+    location_name: str | None = None
+    inspection_status: InspectionStatus
+    verification_status: VerificationProcessingStatus
+    verdict: VerificationVerdict | None = None
+    score: float | None = None
+    confidence: float | None = None
+    engine_version: str
+    calculated_at: datetime | None = None
+    receipt_number: str | None = None
+    receipt_status: str | None = None
+
+
 class DashboardSummary(APIModel):
     total: int
     draft: int
@@ -124,3 +143,11 @@ class DashboardSummary(APIModel):
     due_today: int
     overdue: int
     high_priority: int
+    verified: int = 0
+    review_required: int = 0
+    flagged: int = 0
+    inconclusive: int = 0
+    verification_processing: int = 0
+    verification_completed: int = 0
+    verification_rate: float = 0.0
+    latest_verifications: list[DashboardVerificationItem] = Field(default_factory=list)

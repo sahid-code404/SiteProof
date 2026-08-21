@@ -23,25 +23,38 @@ export function LoginPage() {
 
   return (
     <main className="login-page">
-      <section className="login-visual">
+      <section className="login-visual" aria-label="About SiteProof">
         <div className="login-copy">
-          <p className="eyebrow">FIELD EVIDENCE, WITH CONTEXT</p>
+          <p className="eyebrow">Field verification</p>
           <h1>SiteProof</h1>
-          <p>Coordinate inspections, assign field teams and preserve an auditable trail before live verification begins.</p>
-          <div className="signal-grid">
-            <span>01 · Location</span><span>02 · Assignment</span><span>03 · Audit</span><span>04 · Readiness</span>
+          <p>Capture field evidence, verify where it came from and keep a clear record of every decision.</p>
+          <div className="signal-grid" aria-label="SiteProof workflow">
+            <span>Assigned work</span>
+            <span>Live capture</span>
+            <span>Verification</span>
+            <span>Review history</span>
           </div>
         </div>
       </section>
+
       <section className="login-panel">
-        <form className="login-form" onSubmit={submit}>
-          <span className="brand-mark large">SP</span>
-          <div><p className="eyebrow">AUTHORIZED ACCESS</p><h2>Sign in to the control desk</h2></div>
-          <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" required /></label>
-          <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" minLength={8} required /></label>
-          {mutation.isError ? <p className="form-error">{mutation.error.message}</p> : null}
-          <button className="button primary" disabled={mutation.isPending}>{mutation.isPending ? 'Signing in…' : 'Sign in'}</button>
-          <small className="muted">Credentials are verified by the SiteProof backend. No demo data is stored in the browser.</small>
+        <form className="login-form" onSubmit={submit} aria-busy={mutation.isPending}>
+          <img className="login-brand-logo" src="/siteproof-icon.svg" alt="" aria-hidden="true" />
+          <div>
+            <p className="eyebrow">Welcome back</p>
+            <h2>Sign in</h2>
+          </div>
+          <label>
+            Email
+            <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" required />
+          </label>
+          <label>
+            Password
+            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" minLength={8} required />
+          </label>
+          {mutation.isError ? <p className="form-error" role="alert">{mutation.error.message}</p> : null}
+          <button className="button primary" type="submit" disabled={mutation.isPending}>{mutation.isPending ? 'Signing in…' : 'Sign in'}</button>
+          <small className="muted">Use your SiteProof account.</small>
         </form>
       </section>
     </main>

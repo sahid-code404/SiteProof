@@ -31,6 +31,9 @@ class InspectionStatus(str, enum.Enum):
     SESSION_STARTED = "SESSION_STARTED"
     EVIDENCE_UPLOADING = "EVIDENCE_UPLOADING"
     PROCESSING = "PROCESSING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    RECAPTURE_REQUIRED = "RECAPTURE_REQUIRED"
     CANCELLED = "CANCELLED"
 
 
@@ -65,6 +68,7 @@ class Inspection(Base):
         nullable=False,
     )
     instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    capture_duration_seconds: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     created_by_user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )

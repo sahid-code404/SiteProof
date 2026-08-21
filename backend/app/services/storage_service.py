@@ -2,6 +2,7 @@ import shutil
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
+from typing import Iterator
 
 from app.core.config import get_settings
 
@@ -19,6 +20,9 @@ class StorageService:
         raise NotImplementedError
 
     def read_bytes(self, key: str, *, max_bytes: int) -> bytes:
+        raise NotImplementedError
+
+    def iter_bytes(self, key: str, *, chunk_size: int = 1024 * 1024) -> Iterator[bytes]:
         raise NotImplementedError
 
     def copy_to_file(self, key: str, destination: Path) -> StorageStat:
@@ -68,6 +72,11 @@ class LocalObjectStorage(StorageService):
             raise ValueError("Object exceeds allowed read size")
         return target.read_bytes()
 
+    def iter_bytes(self, key: str, *, chunk_size: int = 1024 * 1024) -> Iterator[bytes]:
+        with self._path(key).open("rb") as stream:
+            while chunk := stream.read(chunk_size):
+                yield chunk
+
     def copy_to_file(self, key: str, destination: Path) -> StorageStat:
         source = self._path(key)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -84,16 +93,10 @@ class S3ObjectStorage(StorageService):
         settings = get_settings()
         try:
             import boto3
-        except ImportError as exc:  # pragma: no cover - dependency is installed in production image.
+        except ImportError as exc:
             raise RuntimeError("boto3 is required for S3-compatible storage") from exc
         self.bucket = settings.storage_bucket
-        self.client = boto3.client(
-            "s3",
-            endpoint_url=settings.storage_endpoint_url or None,
-            aws_access_key_id=settings.storage_access_key or None,
-            aws_secret_access_key=settings.storage_secret_key or None,
-            region_name=settings.storage_region,
-        )
+        self.client = boto3.client("s3", endpoint_url=settings.storage_endpoint_url or None, aws_access_key_id=settings.storage_access_key or None, aws_secret_access_key=settings.storage_secret_key or None, region_name=settings.storage_region)
         self._ensure_bucket()
 
     def _ensure_bucket(self) -> None:
@@ -104,12 +107,7 @@ class S3ObjectStorage(StorageService):
 
     def put_file(self, source: Path, key: str, content_type: str) -> StorageStat:
         _validated_key(key)
-        self.client.upload_file(
-            str(source),
-            self.bucket,
-            key,
-            ExtraArgs={"ContentType": content_type},
-        )
+        self.client.upload_file(str(source), self.bucket, key, ExtraArgs={"ContentType": content_type})
         return self.stat(key)
 
     def stat(self, key: str) -> StorageStat:
@@ -124,6 +122,15 @@ class S3ObjectStorage(StorageService):
         response = self.client.get_object(Bucket=self.bucket, Key=key)
         return response["Body"].read(max_bytes + 1)
 
+    def iter_bytes(self, key: str, *, chunk_size: int = 1024 * 1024) -> Iterator[bytes]:
+        _validated_key(key)
+        body = self.client.get_object(Bucket=self.bucket, Key=key)["Body"]
+        try:
+            while chunk := body.read(chunk_size):
+                yield chunk
+        finally:
+            body.close()
+
     def copy_to_file(self, key: str, destination: Path) -> StorageStat:
         _validated_key(key)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -132,11 +139,7 @@ class S3ObjectStorage(StorageService):
 
     def presigned_download_url(self, key: str, *, expires_seconds: int = 300) -> str | None:
         _validated_key(key)
-        return self.client.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": self.bucket, "Key": key},
-            ExpiresIn=expires_seconds,
-        )
+        return self.client.generate_presigned_url("get_object", Params={"Bucket": self.bucket, "Key": key}, ExpiresIn=expires_seconds)
 
 
 @lru_cache

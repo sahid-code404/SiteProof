@@ -1,10 +1,41 @@
-import type { ReactNode } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { useState, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { getSummary, type DashboardSummary } from '../lib/api'
 import { clearSession, getStoredUser } from '../lib/auth'
+import { NetworkStatusBanner } from './NetworkStatusBanner'
+
+type ShellSummary = DashboardSummary & { reviewRequired?: number; flagged?: number }
+
+function NavIcon({ path }: { path: 'home' | 'inspection' | 'review' | 'people' }) {
+  const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8 }
+  if (path === 'home') return <svg {...common} aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h13v-9.5"/><path d="M9.5 20v-5h5v5"/></svg>
+  if (path === 'inspection') return <svg {...common} aria-hidden="true"><rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M8 8h8M8 12h5M8 16h7"/></svg>
+  if (path === 'review') return <svg {...common} aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="m8 12 2.5 2.5L16 9"/></svg>
+  return <svg {...common} aria-hidden="true"><path d="M16 20v-1.5a4.5 4.5 0 0 0-4.5-4.5h-3A4.5 4.5 0 0 0 4 18.5V20"/><circle cx="10" cy="7.5" r="3.5"/><path d="M17 11a3 3 0 1 0 0-6M18 14a4 4 0 0 1 3 3.9V20"/></svg>
+}
 
 export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const user = getStoredUser()
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
+  const summary = useQuery({ queryKey: ['shell-summary'], queryFn: getSummary, staleTime: 30_000 })
+  const shellSummary = summary.data as ShellSummary | undefined
+  const canReview = user?.role === 'ADMIN' || user?.role === 'REVIEWER'
+  const canManage = user?.role === 'ADMIN'
+  const inspectorsActive = location.pathname.startsWith('/inspectors')
+  const notices = [
+    shellSummary?.overdue ? `${shellSummary.overdue} overdue inspection${shellSummary.overdue === 1 ? '' : 's'}` : null,
+    shellSummary?.reviewRequired ? `${shellSummary.reviewRequired} result${shellSummary.reviewRequired === 1 ? '' : 's'} need review` : null,
+    shellSummary?.flagged ? `${shellSummary.flagged} flagged verification${shellSummary.flagged === 1 ? '' : 's'}` : null,
+  ].filter(Boolean) as string[]
+
+  function closeMenus() {
+    setNotificationsOpen(false)
+    setAccountOpen(false)
+  }
 
   function signOut() {
     clearSession()
@@ -12,27 +43,52 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="app-layout">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark">SP</span>
-          <div><strong>SiteProof</strong><small>Field verification</small></div>
+    <div className="app-layout reference-shell">
+      <a className="skip-link" href="#main-content">Skip to content</a>
+      <aside className="sidebar" aria-label="SiteProof navigation">
+        <div className="brand brand-gradient">
+          <img className="brand-logo" src="/siteproof-icon.svg" alt="" aria-hidden="true" />
+          <div><strong>SiteProof</strong><small>Field Verification</small></div>
         </div>
-        <nav>
-          <NavLink to="/" end>Overview</NavLink>
-          <NavLink to="/inspections">Inspections</NavLink>
+
+        <nav aria-label="Primary" onClick={closeMenus}>
+          <NavLink to="/" end><NavIcon path="home"/><span>Overview</span></NavLink>
+          <NavLink to="/inspections"><NavIcon path="inspection"/><span>Inspections</span></NavLink>
+          {canReview ? <NavLink to="/review"><NavIcon path="review"/><span>Review</span></NavLink> : null}
+          {canManage ? (
+            <div className={`nav-group ${inspectorsActive ? 'open' : ''}`}>
+              <NavLink to="/inspectors"><NavIcon path="people"/><span>Inspectors</span><span className="nav-chevron">⌄</span></NavLink>
+              {inspectorsActive ? <div className="nav-submenu" aria-label="Inspector management"><a href="#all-inspectors">All inspectors</a></div> : null}
+            </div>
+          ) : null}
         </nav>
-        <div className="sidebar-user">
-          <div><strong>{user?.fullName ?? 'SiteProof user'}</strong><small>{user?.role ?? ''}</small></div>
-          <button className="button ghost" onClick={signOut}>Sign out</button>
-        </div>
+
+        <button className="sidebar-user account-trigger" type="button" onClick={() => { setAccountOpen(!accountOpen); setNotificationsOpen(false) }} aria-expanded={accountOpen}>
+          <span className="sidebar-avatar" aria-hidden="true">{(user?.fullName ?? 'S').slice(0, 1).toUpperCase()}</span>
+          <span className="sidebar-user-copy"><strong>{user?.fullName ?? 'SiteProof user'}</strong><small>{user?.email ?? ''}</small></span>
+          <span className="icon-action" aria-hidden="true">›</span>
+        </button>
       </aside>
+
       <div className="content-wrap">
-        <header className="topbar">
-          <div><span className="eyebrow">SITEPROOF CONTROL DESK</span></div>
-          <span className="secure-chip">Organization isolated</span>
+        <header className="topbar topbar-gradient" aria-label="Application status">
+          <button className="topbar-icon" type="button" aria-label="Navigation menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+          <div className="topbar-actions">
+            <div className="popover-anchor">
+              <button className="topbar-icon" type="button" aria-label={`Notifications${notices.length ? `, ${notices.length} unread` : ''}`} aria-expanded={notificationsOpen} onClick={() => { setNotificationsOpen(!notificationsOpen); setAccountOpen(false) }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
+                {notices.length ? <span className="notification-count">{notices.length}</span> : null}
+              </button>
+              {notificationsOpen ? <div className="glass-popover notification-popover" role="dialog" aria-label="Notifications"><div className="popover-title"><strong>Notifications</strong><small>Live inspection status</small></div>{summary.isLoading ? <p>Loading…</p> : notices.length ? notices.map((notice) => <button key={notice} type="button" className="notification-item" onClick={() => { closeMenus(); navigate(notice.includes('review') || notice.includes('flagged') ? '/review' : '/inspections') }}><span className="notification-pulse"/><span>{notice}</span><span>›</span></button>) : <div className="popover-empty"><strong>You're all set</strong><span>No items need attention.</span></div>}</div> : null}
+            </div>
+            <div className="popover-anchor">
+              <button className="topbar-avatar" type="button" aria-label="Account" aria-expanded={accountOpen} onClick={() => { setAccountOpen(!accountOpen); setNotificationsOpen(false) }}>{(user?.fullName ?? 'A').slice(0, 1).toUpperCase()}</button>
+              {accountOpen ? <div className="glass-popover account-popover" role="dialog" aria-label="Account"><div className="account-card"><span className="account-avatar-large">{(user?.fullName ?? 'A').slice(0, 1).toUpperCase()}</span><div><strong>{user?.fullName}</strong><span>{user?.email}</span><small>{user?.role?.replace(/_/g, ' ')}</small></div></div>{canManage ? <button type="button" onClick={() => { closeMenus(); navigate('/inspectors') }}>Manage inspectors</button> : null}<button type="button" onClick={() => { closeMenus(); navigate('/') }}>Overview</button><button type="button" className="signout-row" onClick={signOut}>Sign out</button></div> : null}
+            </div>
+          </div>
         </header>
-        <main className="content">{children}</main>
+        <NetworkStatusBanner />
+        <main className="content" id="main-content" tabIndex={-1}>{children}</main>
       </div>
     </div>
   )

@@ -1,0 +1,72 @@
+.accent-panel {
+  color: #fff;
+  background:
+    radial-gradient(circle at 92% 18%, rgba(255,255,255,0.2), transparent 10rem),
+    linear-gradient(135deg, #ff8f1f 0%, #ff6500 55%, #ec4a00 100%);
+  border-color: rgba(226, 84, 0, 0.4);
+}
+.accent-panel::after { background: rgba(255,255,255,0.16); filter: blur(8px); }
+.accent-panel .eyebrow,
+.accent-panel p { color: rgba(255,255,255,0.84); }
+.accent-panel .button { background: #fff; color: #d84d00; }
+.section-title > span { color: #fff; background: linear-gradient(135deg,#ff8f21,#ef4c00); }
+.table-link { color: #262a30; }
+.table-link:hover { color: #df5000; }
+.callout { border-left-color: #ff6a00; background: #fff7f0; }
+.timeline-dot { background: #ff6800; }
+.definition-grid > div { background: rgba(255,249,244,0.92); border: 1px solid #f2e1d4; }
+.status.online { color: #207a43; background: #e7f6ec; }
+.badge-ready { color: #237d46; background: #e3f5e8; }
+.badge-assigned { color: #b14800; background: #fff0e4; }
+.badge-high { color: #a55200; background: #fff0d6; }
+
+.site-map,
+.review-map,
+.leaflet-container {
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(20,25,32,0.08);
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: rgba(255,255,255,0.94);
+  backdrop-filter: blur(16px) saturate(135%);
+  -webkit-backdrop-filter: blur(16px) saturate(135%);
+}
+
+.page-stack > .panel,
+.page-stack > .metric-grid,
+.page-stack > .dashboard-grid,
+.page-stack > .table-panel,
+.detail-main > .panel,
+.detail-side > .panel {
+  animation: surfaceEnter 360ms cubic-bezier(.2,.8,.2,1) both;
+}
+.page-stack > :nth-child(2) { animation-delay: 40ms; }
+.page-stack > :nth-child(3) { animation-delay: 80ms; }
+.page-stack > :nth-child(4) { animation-delay: 120ms; }
+
+.review-queue-item,
+.decision-card,
+.inspection-card,
+.metric-card {
+  will-change: transform;
+}
+
+button:active:not(:disabled),
+.button:active:not(:disabled) {
+  transform: translateY(0) scale(0.985);
+}
+
+@keyframes surfaceEnter {
+  from { opacity: 0; transform: translateY(8px); filter: blur(1.5px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-stack > .panel,
+  .page-stack > .metric-grid,
+  .page-stack > .dashboard-grid,
+  .page-stack > .table-panel,
+  .detail-main > .panel,
+  .detail-side > .panel { animation: none !important; }
+}

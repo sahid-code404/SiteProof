@@ -1,6 +1,5 @@
 package com.siteproof.app.ui
 
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -51,7 +50,7 @@ fun SiteProofApp() {
     )
     val authState by authViewModel.state.collectAsStateWithLifecycle()
 
-    MaterialTheme {
+    SiteProofTheme {
         if (authState !is AuthState.Authenticated) {
             LoginScreen(state = authState, onLogin = authViewModel::login)
         } else {

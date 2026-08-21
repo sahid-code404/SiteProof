@@ -1,0 +1,67 @@
+.login-page {
+  min-height: 100vh;
+  background: #fff8f1;
+}
+
+.login-visual {
+  color: #fff;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(255, 224, 185, 0.32), transparent 26rem),
+    linear-gradient(145deg, #ff9c35 0%, #ff6700 48%, #e84a00 100%);
+}
+
+.login-visual .eyebrow,
+.login-visual h1,
+.login-visual p {
+  color: #fff;
+}
+
+.login-visual p {
+  max-width: 36rem;
+  font-size: 1.02rem;
+}
+
+.login-visual .signal-grid span {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(8px);
+}
+
+.login-panel {
+  background:
+    radial-gradient(circle at 90% 5%, rgba(255, 171, 97, 0.14), transparent 22rem),
+    #fffaf6;
+}
+
+.login-form {
+  width: min(100%, 460px);
+  padding: clamp(1.5rem, 4vw, 2.25rem);
+  border: 1px solid #ead8ca;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 22px 55px rgba(92, 43, 11, 0.12);
+}
+
+.login-brand-logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  box-shadow: 0 12px 28px rgba(196, 73, 0, 0.2);
+}
+
+.login-form label {
+  gap: 0.45rem;
+  font-weight: 700;
+}
+
+.login-form .button.primary {
+  width: 100%;
+  min-height: 52px;
+}
+
+@media (max-width: 860px) {
+  .login-visual {
+    min-height: 260px;
+  }
+}

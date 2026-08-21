@@ -6,6 +6,8 @@ import androidx.camera.view.PreviewView
 import androidx.lifecycle.LifecycleOwner
 import com.siteproof.app.data.InspectionDetail
 import com.siteproof.app.verification.capture.CameraCaptureManager
+import com.siteproof.app.verification.environment.EnvironmentCollector
+import com.siteproof.app.verification.environment.EnvironmentSnapshot
 import com.siteproof.app.verification.evidence.EvidencePackager
 import com.siteproof.app.verification.location.LocationRecorder
 import com.siteproof.app.verification.model.ChallengeIssue
@@ -23,6 +25,7 @@ import com.siteproof.app.verification.upload.EvidenceUploadWorker
 import java.io.File
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -32,6 +35,7 @@ class VerificationCaptureCoordinator(
     private val sensorRecorder: SensorRecorder = SensorRecorder(context),
     private val locationRecorder: LocationRecorder = LocationRecorder(context),
     private val cameraManager: CameraCaptureManager = CameraCaptureManager(context),
+    private val environmentCollector: EnvironmentCollector = EnvironmentCollector(context),
     private val packager: EvidencePackager = EvidencePackager(),
 ) {
     data class Prepared(
@@ -46,6 +50,7 @@ class VerificationCaptureCoordinator(
         val directory: File,
         val captureStartNs: Long,
         val captureStartedAt: Instant,
+        val environmentStart: EnvironmentSnapshot,
     )
 
     data class ActiveChallenge(
@@ -116,13 +121,20 @@ class VerificationCaptureCoordinator(
             mkdirs()
         }
         try {
+            val environmentStart = environmentCollector.snapshot(prepared.session.sessionId)
             sensorRecorder.start(captureStartNs, File(directory, "sensors.ndjson.gz"))
             locationRecorder.startCapture(captureStartNs)
             cameraManager.startRecording(File(directory, "capture.mp4"))
             challengeTimeline.clear()
             activeChallenge = null
             pendingSubmission = null
-            active = ActiveCapture(prepared, directory, captureStartNs, Instant.now())
+            active = ActiveCapture(
+                prepared = prepared,
+                directory = directory,
+                captureStartNs = captureStartNs,
+                captureStartedAt = Instant.now(),
+                environmentStart = environmentStart,
+            )
         } catch (error: Exception) {
             cleanupCapture()
             repository.abort(prepared.session.sessionId, "CAMERA_ERROR")
@@ -251,13 +263,20 @@ class VerificationCaptureCoordinator(
         val capture = checkNotNull(active) { "No capture is active." }
         check(activeChallenge == null) { "Current challenge must finish before capture stops." }
         try {
+            val requestedMinimumMs = capture.prepared.inspection.captureDurationSeconds
+                .coerceIn(10, 45) * 1_000L
+            val remainingMinimumMs = (requestedMinimumMs - captureElapsedMs()).coerceAtLeast(0L)
+            if (remainingMinimumMs > 0L) delay(remainingMinimumMs)
+
             val cameraResult = cameraManager.stopRecording()
             val sensorCounts = sensorRecorder.stop()
             val locations = locationRecorder.stopCapture()
             // CameraX's encoded-media duration is the authoritative duration of capture.mp4.
             // Wall-clock start/end anchors are packaged separately for Phase 5 calibration.
             val durationMs = cameraResult.recordedDurationNs / 1_000_000L
-            require(durationMs >= 8_000L) { "Capture must be at least 8 seconds." }
+            require(durationMs >= requestedMinimumMs - 750L) {
+                "Capture ended before the configured ${capture.prepared.inspection.captureDurationSeconds} second minimum."
+            }
             require(durationMs <= 60_000L) { "Capture exceeded the 60 second maximum." }
             require(locations.isNotEmpty()) { "No GPS samples were recorded during capture." }
             val locationSummary = locationRecorder.writePackage(
@@ -269,6 +288,7 @@ class VerificationCaptureCoordinator(
                 sensorSummary = sensorCounts.toApi(),
                 locationSummary = locationSummary,
             )
+            val environmentEnd = environmentCollector.snapshot(capture.prepared.session.sessionId)
             val evidence = packager.packageEvidence(
                 directory = capture.directory,
                 sessionId = capture.prepared.session.sessionId,
@@ -281,6 +301,7 @@ class VerificationCaptureCoordinator(
                 capabilities = capture.prepared.capabilities,
                 captureComplete = complete,
                 challenges = challengeTimeline.toList(),
+                environmentSnapshots = listOf(capture.environmentStart, environmentEnd),
             )
             repository.captureComplete(capture.prepared.session.sessionId, complete)
             repository.savePending(capture.prepared.inspection.id, capture.prepared.session.sessionId, evidence)

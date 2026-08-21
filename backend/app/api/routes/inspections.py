@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
 from app.db.session import get_db
-from app.models.inspection import InspectionPriority, InspectionStatus
+from app.models.inspection import Inspection, InspectionPriority, InspectionStatus
 from app.models.user import User
 from app.schemas.inspection import (
     AssignmentRequest,
@@ -19,12 +19,12 @@ from app.schemas.inspection import (
     InspectionUpdate,
     ReassignmentRequest,
 )
+from app.services.dashboard_service import dashboard_summary
 from app.services.inspection_service import (
     acknowledge_inspection,
     assign_inspector,
     cancel_inspection,
     create_inspection,
-    dashboard_summary,
     get_inspection,
     list_inspections,
     mark_ready,
@@ -33,6 +33,13 @@ from app.services.inspection_service import (
 )
 
 router = APIRouter(prefix="/inspections", tags=["inspections"])
+
+
+def _with_capture_duration(db: Session, response: InspectionResponse) -> InspectionResponse:
+    row = db.get(Inspection, response.id)
+    if row is not None:
+        response.capture_duration_seconds = row.capture_duration_seconds
+    return response
 
 
 @router.get("/summary", response_model=DashboardSummary)
@@ -57,7 +64,7 @@ def get_inspections(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> InspectionPage:
-    return list_inspections(
+    result = list_inspections(
         db,
         current_user,
         page=page,
@@ -71,6 +78,8 @@ def get_inspections(
         sort_by=sort_by,
         sort_order=sort_order,
     )
+    result.items = [_with_capture_duration(db, item) for item in result.items]
+    return result
 
 
 @router.post("", response_model=InspectionResponse, status_code=status.HTTP_201_CREATED)
@@ -79,7 +88,13 @@ def add_inspection(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> InspectionResponse:
-    return create_inspection(db, current_user, payload)
+    result = create_inspection(db, current_user, payload)
+    row = db.get(Inspection, result.id)
+    if row is not None:
+        row.capture_duration_seconds = payload.capture_duration_seconds
+        db.commit()
+        result.capture_duration_seconds = row.capture_duration_seconds
+    return result
 
 
 @router.get("/{inspection_id}", response_model=InspectionDetail)
@@ -88,7 +103,11 @@ def inspection_detail(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> InspectionDetail:
-    return get_inspection(db, current_user, inspection_id)
+    result = get_inspection(db, current_user, inspection_id)
+    row = db.get(Inspection, result.id)
+    if row is not None:
+        result.capture_duration_seconds = row.capture_duration_seconds
+    return result
 
 
 @router.patch("/{inspection_id}", response_model=InspectionResponse)
@@ -98,7 +117,7 @@ def edit_inspection(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> InspectionResponse:
-    return update_inspection(db, current_user, inspection_id, payload)
+    return _with_capture_duration(db, update_inspection(db, current_user, inspection_id, payload))
 
 
 @router.post("/{inspection_id}/assign", response_model=InspectionResponse)
@@ -108,7 +127,7 @@ def assign(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> InspectionResponse:
-    return assign_inspector(db, current_user, inspection_id, payload.inspector_id)
+    return _with_capture_duration(db, assign_inspector(db, current_user, inspection_id, payload.inspector_id))
 
 
 @router.post("/{inspection_id}/reassign", response_model=InspectionResponse)
@@ -118,7 +137,7 @@ def reassign(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> InspectionResponse:
-    return reassign_inspector(db, current_user, inspection_id, payload)
+    return _with_capture_duration(db, reassign_inspector(db, current_user, inspection_id, payload))
 
 
 @router.post("/{inspection_id}/acknowledge", response_model=InspectionResponse)
@@ -127,7 +146,7 @@ def acknowledge(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> InspectionResponse:
-    return acknowledge_inspection(db, current_user, inspection_id)
+    return _with_capture_duration(db, acknowledge_inspection(db, current_user, inspection_id))
 
 
 @router.post("/{inspection_id}/ready", response_model=InspectionResponse)
@@ -136,7 +155,7 @@ def ready(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> InspectionResponse:
-    return mark_ready(db, current_user, inspection_id)
+    return _with_capture_duration(db, mark_ready(db, current_user, inspection_id))
 
 
 @router.post("/{inspection_id}/cancel", response_model=InspectionResponse)
@@ -146,4 +165,4 @@ def cancel(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> InspectionResponse:
-    return cancel_inspection(db, current_user, inspection_id, payload)
+    return _with_capture_duration(db, cancel_inspection(db, current_user, inspection_id, payload))
