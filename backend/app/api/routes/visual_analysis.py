@@ -7,7 +7,7 @@ from app.api.dependencies import require_roles
 from app.db.session import get_db
 from app.models.user import User, UserRole
 from app.schemas.visual_analysis import VisualAnalysisResponse
-from app.services.visual_analysis_service import get_visual_analysis
+from app.services.visual_analysis_status import get_retry_aware_visual_analysis
 from app.services.visual_analysis_tasks import run_visual_analysis_retry_task
 
 router = APIRouter(tags=["visual-analysis"])
@@ -22,7 +22,7 @@ def visual_analysis(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.ADMIN, UserRole.REVIEWER)),
 ) -> VisualAnalysisResponse:
-    return get_visual_analysis(db, current_user, session_id)
+    return get_retry_aware_visual_analysis(db, current_user, session_id)
 
 
 @router.post(
@@ -36,6 +36,6 @@ def retry_visual_analysis(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.ADMIN, UserRole.REVIEWER)),
 ) -> VisualAnalysisResponse:
-    response = get_visual_analysis(db, current_user, session_id)
+    response = get_retry_aware_visual_analysis(db, current_user, session_id)
     background_tasks.add_task(run_visual_analysis_retry_task, session_id)
     return response

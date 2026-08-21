@@ -29,6 +29,7 @@ jobs:
       SITEPROOF_TEST_DATABASE_URL: postgresql+psycopg://siteproof:siteproof_test_password@localhost:5432/siteproof_test
       JWT_SECRET: ci-only-siteproof-secret-key-at-least-32-bytes
       ENVIRONMENT: test
+      RECEIPT_SIGNING_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,9 +38,9 @@ jobs:
       - run: pip install -e '.[dev]'
       - name: Verify fresh migration
         run: alembic upgrade head
-      - name: Verify Phase 5 downgrade and re-upgrade
+      - name: Verify Phase 9 downgrade and re-upgrade
         run: |
-          alembic downgrade 0004_phase4_challenges
+          alembic downgrade 0008_phase8_evidence_integrity
           alembic upgrade head
       - run: ruff check app tests alembic
       - run: pytest -q

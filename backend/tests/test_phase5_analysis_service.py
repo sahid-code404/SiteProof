@@ -48,7 +48,10 @@ def _feature_image(width: int, height: int) -> np.ndarray:
     return image
 
 
-def _movement_offset(challenges: list[tuple[ChallengeType, int, int]], time_ms: float) -> tuple[float, float]:
+def _movement_offset(
+    challenges: list[tuple[ChallengeType, int, int]],
+    time_ms: float,
+) -> tuple[float, float]:
     x = 0.0
     y = 0.0
     amplitude = 45.0
@@ -65,9 +68,12 @@ def _movement_offset(challenges: list[tuple[ChallengeType, int, int]], time_ms: 
         elif challenge_type == ChallengeType.ROTATE_LEFT:
             x += delta
         elif challenge_type == ChallengeType.TILT_UP:
-            y += delta
-        elif challenge_type == ChallengeType.TILT_DOWN:
+            # Phase 5 v1.2+ labels rear-camera optical pitch: physical top-edge UP
+            # (away from the user) is camera DOWN, so scene content moves upward.
             y -= delta
+        elif challenge_type == ChallengeType.TILT_DOWN:
+            # Physical top-edge DOWN (toward the user) is camera UP.
+            y += delta
     return x, y
 
 
@@ -113,7 +119,11 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def test_visual_analysis_service_processes_stored_video_and_is_idempotent(client, db, tmp_path):
+def test_visual_analysis_service_processes_stored_video_and_is_idempotent(
+    client,
+    db,
+    tmp_path,
+):
     identities = seed_identities(db)
     admin_headers = login(client, identities["admin"])
     inspector_headers = login(client, identities["inspector"])
@@ -137,25 +147,33 @@ def test_visual_analysis_service_processes_stored_video_and_is_idempotent(client
         db.scalars(
             select(VerificationChallenge)
             .where(VerificationChallenge.session_id == session.id)
-            .order_by(VerificationChallenge.sequence_number, VerificationChallenge.attempt_number)
+            .order_by(
+                VerificationChallenge.sequence_number,
+                VerificationChallenge.attempt_number,
+            )
         ).all()
     )
     # Only the terminal attempt for each sequence belongs in the Android evidence timeline.
     terminal_by_sequence: dict[int, VerificationChallenge] = {}
     for challenge in challenges:
         terminal_by_sequence[challenge.sequence_number] = challenge
-    terminal_challenges = [terminal_by_sequence[key] for key in sorted(terminal_by_sequence)]
+    terminal_challenges = [
+        terminal_by_sequence[key] for key in sorted(terminal_by_sequence)
+    ]
     assert len(terminal_challenges) == 3
 
+    # API helpers execute challenges almost instantly in unit tests. Real phone challenges
+    # are separated in time, and vision-v1.4 intentionally adds a 200 ms guard band around
+    # each motion. Put synthetic challenges on realistic non-overlapping timeline slots so
+    # one generated motion cannot contaminate another and make this test random/flaky.
     video_windows: list[tuple[ChallengeType, int, int]] = []
     metadata_challenges = []
-    for challenge in terminal_challenges:
-        assert challenge.client_start_monotonic_ns is not None
-        start_ms = int(
-            (challenge.client_start_monotonic_ns - session.capture_anchor_monotonic_ns)
-            / 1_000_000
-        )
+    for index, challenge in enumerate(terminal_challenges):
+        start_ms = 1000 + index * 2500
         end_ms = start_ms + 2000
+        challenge.client_start_monotonic_ns = (
+            session.capture_anchor_monotonic_ns + start_ms * 1_000_000
+        )
         video_windows.append((challenge.challenge_type, start_ms, end_ms))
         metadata_challenges.append(
             {
@@ -167,6 +185,7 @@ def test_visual_analysis_service_processes_stored_video_and_is_idempotent(client
                 "result": challenge.result.value if challenge.result else None,
             }
         )
+    db.commit()
 
     video_path = tmp_path / "capture.mp4"
     _write_video(video_path, video_windows)
@@ -244,10 +263,13 @@ def test_visual_analysis_service_processes_stored_video_and_is_idempotent(client
     )
     assert len(results) == 3
     assert all(
-        result.analysis_status in {VisualAnalysisStatus.SUCCESS, VisualAnalysisStatus.INCONCLUSIVE}
+        result.analysis_status
+        in {VisualAnalysisStatus.SUCCESS, VisualAnalysisStatus.INCONCLUSIVE}
         for result in results
     )
-    assert any(result.analysis_status == VisualAnalysisStatus.SUCCESS for result in results)
+    assert any(
+        result.analysis_status == VisualAnalysisStatus.SUCCESS for result in results
+    )
     by_challenge = {result.challenge_id: result for result in results}
     for challenge in terminal_challenges:
         result = by_challenge[challenge.id]
@@ -264,7 +286,9 @@ def test_visual_analysis_service_processes_stored_video_and_is_idempotent(client
     count_after_second_run = len(
         list(
             db.scalars(
-                select(VisualMotionResult).where(VisualMotionResult.session_id == session.id)
+                select(VisualMotionResult).where(
+                    VisualMotionResult.session_id == session.id
+                )
             ).all()
         )
     )

@@ -287,6 +287,7 @@ data class CapturedLocationSample(
     val altitudeMeters: Double? = null,
     val bearingDegrees: Double? = null,
     val speedMetersPerSecond: Double? = null,
+    val isMock: Boolean = false,
 )
 
 data class LocationReadiness(

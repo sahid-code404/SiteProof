@@ -105,9 +105,15 @@ def _integrate_gyro(
     movement_threshold: float,
     settle_threshold: float,
     settling_ms: int,
-) -> tuple[float, float, float, float, int]:
+) -> tuple[float, float, float, float, int, int | None, int | None]:
+    """Integrate the authoritative movement and retain its exact capture-relative bounds.
+
+    The returned start/end timestamps describe the same sensor-selected movement used for
+    challenge validation. Phase 5 can therefore analyze camera frames from this interval
+    instead of including UI/network delay or the user's return-to-neutral motion.
+    """
     if len(samples) < 2:
-        return 0.0, 0.0, 0.0, 0.0, 0
+        return 0.0, 0.0, 0.0, 0.0, 0, None, None
     first_ns = samples[0].relative_timestamp_ns
     baseline_end = first_ns + baseline_ms * 1_000_000
     baseline_values = [
@@ -122,7 +128,7 @@ def _integrate_gyro(
         None,
     )
     if onset_index is None:
-        return 0.0, bias, 0.0, 0.0, 0
+        return 0.0, bias, 0.0, 0.0, 0, None, None
 
     end_index = len(corrected) - 1
     settle_ns = settling_ms * 1_000_000
@@ -146,7 +152,15 @@ def _integrate_gyro(
         radians += ((left_value + right_value) / 2.0) * dt
     duration_ms = (selected[-1][0] - selected[0][0]) / 1_000_000.0 if len(selected) > 1 else 0.0
     movement_values = [value for _, value in selected]
-    return math.degrees(radians), bias, duration_ms, fmean(abs(value) for value in movement_values), len(selected)
+    return (
+        math.degrees(radians),
+        bias,
+        duration_ms,
+        fmean(abs(value) for value in movement_values),
+        len(selected),
+        selected[0][0],
+        selected[-1][0],
+    )
 
 
 def _angle_score(observed: float, target: float, minimum: float, maximum: float) -> float:
@@ -187,7 +201,15 @@ def validate_axis_motion(
             failure_reason="GYROSCOPE_UNAVAILABLE",
         )
 
-    gyro_degrees, gyro_bias, movement_duration_ms, average_rate, movement_samples = _integrate_gyro(
+    (
+        gyro_degrees,
+        gyro_bias,
+        movement_duration_ms,
+        average_rate,
+        movement_samples,
+        motion_start_relative_ns,
+        motion_end_relative_ns,
+    ) = _integrate_gyro(
         gyro,
         spec.axis_index,
         baseline_ms=settings.challenge_baseline_ms,
@@ -254,6 +276,8 @@ def validate_axis_motion(
         "observedRotationVectorDegrees": round(signed_rotation, 2) if signed_rotation is not None else None,
         "sensorDifferenceDegrees": round(abs(signed_gyro - signed_rotation), 2) if signed_rotation is not None else None,
         "movementDurationMs": round(movement_duration_ms, 1),
+        "motionStartRelativeNs": motion_start_relative_ns,
+        "motionEndRelativeNs": motion_end_relative_ns,
         "gyroBiasRadPerSecond": round(gyro_bias, 5),
         "averageMovementRateRadPerSecond": round(average_rate, 4),
         "movementSamples": movement_samples,
