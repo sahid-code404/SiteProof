@@ -112,7 +112,7 @@ fun DevAppUpdateCard(manager: DevAppUpdateManager) {
                 )
             }
 
-            available.notes.takeIf { it.isNotBlank() }?.let {
+            available.notes?.takeIf { it.isNotBlank() }?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall)
             }
 
