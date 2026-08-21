@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     preferred_location_accuracy_meters: float = 30.0
 
     challenge_count: int = 3
-    challenge_timeout_seconds: int = 15
+    challenge_timeout_seconds: int = 18
     challenge_baseline_ms: int = 500
     challenge_settling_ms: int = 350
     challenge_min_gyro_samples: int = 12
