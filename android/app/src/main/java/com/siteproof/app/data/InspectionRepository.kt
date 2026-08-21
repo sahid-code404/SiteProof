@@ -81,6 +81,7 @@ class InspectionRepository(
                 expectedLatitude = cached.expectedLatitude,
                 expectedLongitude = cached.expectedLongitude,
                 allowedRadiusMeters = cached.allowedRadiusMeters,
+                captureDurationSeconds = cached.captureDurationSeconds,
                 locationName = cached.locationName,
                 locationAddress = cached.locationAddress,
                 deadline = cached.deadline,
