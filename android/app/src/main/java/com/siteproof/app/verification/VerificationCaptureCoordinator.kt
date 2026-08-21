@@ -254,8 +254,9 @@ class VerificationCaptureCoordinator(
             val cameraResult = cameraManager.stopRecording()
             val sensorCounts = sensorRecorder.stop()
             val locations = locationRecorder.stopCapture()
-            val durationMs =
-                (cameraResult.videoEndMonotonicNs - cameraResult.videoStartMonotonicNs) / 1_000_000L
+            // CameraX's encoded-media duration is the authoritative duration of capture.mp4.
+            // Wall-clock start/end anchors are packaged separately for Phase 5 calibration.
+            val durationMs = cameraResult.recordedDurationNs / 1_000_000L
             require(durationMs >= 8_000L) { "Capture must be at least 8 seconds." }
             require(durationMs <= 60_000L) { "Capture exceeded the 60 second maximum." }
             require(locations.isNotEmpty()) { "No GPS samples were recorded during capture." }
@@ -276,6 +277,7 @@ class VerificationCaptureCoordinator(
                 captureEndedAt = Instant.now(),
                 captureStartMonotonicNs = capture.captureStartNs,
                 videoStartMonotonicNs = cameraResult.videoStartMonotonicNs,
+                videoEndMonotonicNs = cameraResult.videoEndMonotonicNs,
                 capabilities = capture.prepared.capabilities,
                 captureComplete = complete,
                 challenges = challengeTimeline.toList(),

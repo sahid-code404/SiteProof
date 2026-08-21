@@ -1,0 +1,99 @@
+name: Android Dev OTA
+
+on:
+  push:
+    branches:
+      - phase5-visual-motion
+    paths:
+      - 'android/**'
+      - '.github/workflows/android-dev-ota.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: siteproof-dev-ota
+  cancel-in-progress: true
+
+jobs:
+  publish-dev-update:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Resolve field-test version and API
+        id: version
+        shell: bash
+        run: |
+          VERSION_CODE=$((5000 + GITHUB_RUN_NUMBER))
+          VERSION_NAME="0.5.0-dev.${GITHUB_RUN_NUMBER}"
+          API_BASE_URL="${{ vars.SITEPROOF_DEV_API_BASE_URL }}"
+          if [ -z "$API_BASE_URL" ]; then
+            API_BASE_URL="http://192.168.1.102:8000/api/v1/"
+          fi
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "api=$API_BASE_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Test and build stable-signed debug APK
+        run: |
+          gradle :app:testDebugUnitTest :app:assembleDebug --stacktrace \
+            -PSITEPROOF_API_BASE_URL="${{ steps.version.outputs.api }}" \
+            -PSITEPROOF_VERSION_CODE="${{ steps.version.outputs.code }}" \
+            -PSITEPROOF_VERSION_NAME="${{ steps.version.outputs.name }}"
+
+      - name: Prepare verified OTA package
+        id: package
+        shell: bash
+        run: |
+          mkdir -p ../ota
+          cp app/build/outputs/apk/debug/app-debug.apk ../ota/SiteProof-debug.apk
+          SHA256=$(sha256sum ../ota/SiteProof-debug.apk | awk '{print $1}')
+          SHORT_SHA=${GITHUB_SHA::7}
+          cat > ../ota/siteproof-update.json <<JSON
+          {
+            "versionCode": ${{ steps.version.outputs.code }},
+            "versionName": "${{ steps.version.outputs.name }}",
+            "apkUrl": "https://github.com/sahid-code404/SiteProof/releases/download/dev-latest/SiteProof-debug.apk",
+            "sha256": "$SHA256",
+            "notes": "Field-test update $SHORT_SHA. Downloaded APK is SHA-256 verified before Android installation."
+          }
+          JSON
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: siteproof-dev-ota-${{ steps.version.outputs.code }}
+          path: |
+            ota/SiteProof-debug.apk
+            ota/siteproof-update.json
+          retention-days: 30
+
+      - name: Publish stable dev-latest release
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release delete dev-latest --cleanup-tag -y || true
+          gh release create dev-latest \
+            ota/SiteProof-debug.apk \
+            ota/siteproof-update.json \
+            --target "$GITHUB_SHA" \
+            --title "SiteProof Dev OTA ${{ steps.version.outputs.name }}" \
+            --prerelease \
+            --notes "Development-only OTA build for com.siteproof.app.dev. SHA-256: ${{ steps.package.outputs.sha256 }}"

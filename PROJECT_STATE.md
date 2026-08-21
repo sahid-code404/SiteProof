@@ -1,75 +1,123 @@
 # Project State
 
-Current development branch: **Phase 4 — Active Challenge-Response Engine & Sensor-Based Liveness Verification**
+Current development branch: **Phase 5 — Visual Motion Analysis & Camera Movement Estimation**
 
-Phase 4 is stacked on `phase3/live-capture`.
+Working branch: `phase5-visual-motion`
 
-Phase 3 physical-device acceptance: **PASS — completed on 2026-08-19.** A physical Android phone successfully produced real CameraX video, accelerometer, gyroscope, rotation-vector and GPS/location evidence from one live session; the evidence package and manifest uploaded to the backend and appeared in the admin dashboard. Temporary network loss was also tested successfully: evidence remained recoverable and uploaded after connectivity returned.
+Base branch: `phase4/challenge-engine`
 
-Phase 4 physical-device acceptance: **PASS — completed on 2026-08-20.** Real-device testing confirmed randomized ROTATE_LEFT, ROTATE_RIGHT, TILT_UP and TILT_DOWN challenges, animated/human-readable movement guidance, live progress feedback, challenge PASS/FAIL/INCONCLUSIVE handling, explicit challenge retry, at least three reattempts per challenge, clean verification retry, upload retry, continuous CameraX capture, synchronized sensor/location evidence, final evidence upload and admin challenge/evidence display. Web location search and browser current-location selection were also confirmed working.
+Draft PR: **#4 — Phase 5: visual motion analysis and camera movement estimation**
 
-## Phase 4 implementation status
+Phase 5 is intentionally stacked on Phase 4. Previous capture/challenge functionality is extended rather than rebuilt.
 
-Implemented and physically exercised:
+## Existing Phase 4 foundation
 
-- dedicated `verification_challenges` persistence and indexes;
-- server-generated ROTATE_LEFT, ROTATE_RIGHT, TILT_UP and TILT_DOWN challenges;
-- randomized comfortable target/acceptable angles;
-- high-entropy nonce, expiry, one-current-challenge and replay/idempotency protection;
-- challenge session states and server-validated state transitions;
-- gyroscope integration with rotation-vector orientation cross-check;
-- PASS / FAIL / INCONCLUSIVE per-challenge results and explainable metrics;
-- explicit fresh-challenge retry for FAIL / INCONCLUSIVE with at least three reattempts per challenge;
-- challenge audit events without raw sensor logging;
-- Android animated phone/directional-arrow guidance with human-readable movement instructions;
-- live movement feedback (`WAITING`, wrong direction, keep going, good range, too far) without exposing raw validator thresholds as the primary UX;
-- bounded sensor-window extraction from the existing common monotonic timeline;
-- Room persistence for the active challenge/current reconnect evidence;
-- one continuous CameraX recording through the entire challenge sequence;
-- challenge timing/results added to final evidence metadata;
-- explicit verification retry and upload retry paths without stale evidence reuse;
-- admin challenge timeline and sensor-derived diagnostic view;
-- web location search, map recentering and browser current-location selection;
-- synthetic/API challenge tests and GitHub CI coverage;
-- Phase 4 documentation.
+Phase 4 provides:
 
-## Acceptance status
+- one continuous CameraX recording across the complete challenge sequence;
+- accelerometer, gyroscope, rotation-vector and location evidence;
+- one common Android monotonic capture anchor;
+- unpredictable ROTATE_LEFT, ROTATE_RIGHT, TILT_UP and TILT_DOWN challenges;
+- per-challenge issued/start/completion timestamps relative to the common capture timeline;
+- server-side sensor validation and PASS / FAIL / INCONCLUSIVE challenge results;
+- SHA-256 evidence/manifest verification and storage abstraction;
+- admin/reviewer sensor challenge timeline.
 
-**PHASE 4 ACCEPTED ON REAL HARDWARE — PASS.**
+Phase 4 physical-device acceptance: **PASS — completed on 2026-08-20.**
 
-Observed real-device evidence includes successful uploaded challenge sessions with all final challenge results passing, real gyroscope/rotation-vector/accelerometer/location samples, Video / Motion sensors / Location / Manifest all received by the backend, and challenge history visible in the admin dashboard. A real retry flow was observed where an INCONCLUSIVE challenge was followed by a fresh retry challenge and then PASS. The full retry allowance was also manually checked through the fourth total attempt (initial attempt plus three reattempts).
+Real Android testing confirmed continuous CameraX capture, all four ROTATE/TILT challenge families, animated movement guidance, PASS/FAIL/INCONCLUSIVE handling, fresh challenge retry with at least three reattempts per challenge, verification/upload retry, real sensor/location evidence, admin challenge/evidence display, map search and browser current-location flow.
 
-The physical test also confirmed the Phase 4 UX improvements: users can follow an animated phone/directional guide instead of estimating exact degrees, the map can search for a location or use the browser's current location, and retry actions are available for challenge/verification/upload failure paths.
+Observed successful sessions included:
+- ROTATE_LEFT PASS 96%, TILT_DOWN PASS 85%, TILT_UP PASS 93%;
+- ROTATE_RIGHT PASS 84%, an INCONCLUSIVE ROTATE_LEFT followed by a fresh successful retry, and TILT_DOWN PASS 97%.
 
-Device model, Android version and formal per-sensor sample-rate statistics were not recorded during this acceptance run and must not be invented. See `docs/testing.md` for the exact observed record and remaining non-blocking measurement gaps.
+Video, motion sensors, location and manifest were received successfully. Exact device model/Android version and formal multi-run statistical rates were not recorded and are not fabricated.
 
-## Security boundary
+## Phase 5 implemented in code
 
-Phase 4 validates requested **phone movement from sensors**. It does not yet prove that external camera-scene motion matches that movement. A user could theoretically rotate the phone while filming prerecorded content.
+The Phase 5 branch currently includes:
 
-Therefore Phase 4 intentionally does not include:
+- OpenCV, NumPy and SciPy backend dependencies;
+- independent server-side video metadata inspection;
+- challenge-to-video timeline mapping using `videoStartRelativeNs` and challenge relative timestamps;
+- configurable challenge-window padding, analysis FPS and down-scaled working resolution;
+- ORB visual feature-quality measurement;
+- grid-distributed Shi-Tomasi tracking points;
+- Lucas-Kanade sparse optical flow with forward/backward filtering;
+- RANSAC partial-affine global motion estimation;
+- optional homography support as a secondary diagnostic;
+- physical camera LEFT/RIGHT and UP/DOWN direction semantics separated from image-content motion;
+- approximate visual movement magnitude;
+- per-frame-pair motion energy and visual movement start/end timing;
+- configurable visual confidence from feature quality, inlier ratio, consistency, coverage and continuity;
+- scene-cut, duplicate/frozen-frame, black-frame, brightness and sharpness metrics;
+- `visual_motion_results` persistence keyed by challenge + algorithm version;
+- FastAPI background analysis after verified evidence upload;
+- secure temporary video materialization for local/S3-compatible evidence storage;
+- ADMIN/REVIEWER visual-analysis API and retry endpoint;
+- reviewer dashboard visual-only evidence panel;
+- visual-analysis audit events;
+- deterministic synthetic CV tests;
+- `docs/visual-motion-analysis.md`.
 
-- OpenCV optical flow;
-- camera motion estimation;
-- feature matching/homography;
-- visual-inertial sensor fusion;
-- screen/replay detection;
+## Phase boundary
+
+Phase 5 produces **visual-motion evidence only**.
+
+It does **not** calculate:
+
+- gyroscope-vs-video agreement;
+- visual-inertial consistency;
+- final replay-risk classification;
 - overall SiteProof trust score;
-- final verified/flagged authenticity verdict;
+- VERIFIED / FLAGGED / AUTHENTIC verdicts;
 - anomaly-detection ML.
 
-Those remain later phases, with visual motion consistency beginning in Phase 5.
+Those belong to Phase 6 and later.
 
-## Next phase
+## Automated validation status
 
-**Phase 5 — Visual Motion Verification** may now begin from the accepted Phase 4 baseline. Phase 5 must correlate challenge-time camera motion with the already synchronized challenge/sensor timeline rather than weakening or replacing the Phase 4 sensor checks.
+The first Phase 5 CI run installed the new CV dependencies, passed fresh/downgrade/re-upgrade migrations, passed Ruff, passed all web checks, and passed the new CV tests. It exposed one existing Phase 3 upload lifecycle regression: an expected durable `UPLOADED` session could remain transiently `PROCESSING` when background visual analysis failed on legacy metadata without a challenge timeline.
+
+That lifecycle issue has been corrected on the branch. The latest CI result after the correction remains the source of truth; do not describe Phase 5 automated validation as green until that run completes successfully.
+
+## Real-video acceptance status
+
+**NOT TESTED YET / NOT ACCEPTED YET.**
+
+Phase 5 must not be called complete until video recorded by the actual SiteProof Android application is uploaded and the backend produces defensible visual-motion results for real challenges.
+
+Required real-world observations still include:
+
+- real `capture.mp4` decoding through the evidence pipeline;
+- actual challenge/video timestamp alignment;
+- real ROTATE_RIGHT / ROTATE_LEFT / TILT_UP / TILT_DOWN direction results;
+- SUCCESS / INCONCLUSIVE / wrong-direction rates;
+- low-light and motion-blur behavior;
+- scene continuity/freeze behavior on real captures;
+- actual processing duration and memory observations where practical;
+- reviewer dashboard end-to-end display.
+
+No real-device/video measurements are to be fabricated.
+
+## Phase 6 readiness condition
+
+Phase 6 may start only after real Phase 5 acceptance. At that point each challenge must have two independent measurements on the same synchronized timeline:
+
+```text
+Phase 4: sensor-derived physical movement
+Phase 5: visual-derived camera/scene movement
+```
+
+Phase 5 itself does not compare them.
 
 ## Source of truth
 
 1. `docs/project-spec.md`
 2. `docs/challenge-engine.md`
-3. `docs/live-capture.md`
-4. `docs/session-lifecycle.md`
-5. `docs/api.md`
-6. `docs/testing.md`
-7. current repository code and actual CI/device results
+3. `docs/visual-motion-analysis.md`
+4. `docs/live-capture.md`
+5. `docs/session-lifecycle.md`
+6. `docs/api.md`
+7. `docs/testing.md`
+8. current repository code and actual CI/device/video results

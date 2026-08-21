@@ -4,29 +4,28 @@
 
 SiteProof is a full-stack field-inspection platform with a React admin dashboard, FastAPI/PostgreSQL backend, and native Android inspector app. Development is incremental and each phase has an explicit security boundary.
 
-## Current Phase 4 capability
+## Current Phase 5 development capability
 
-The Phase 3 continuous live-evidence pipeline is extended with unpredictable server-generated phone-movement challenges:
+Phase 5 extends the Phase 4 active challenge system with **independent camera-side visual-motion analysis**:
 
 ```text
 Admin creates + assigns inspection
   → Inspector ACKNOWLEDGES
   → Inspector marks READY
-  → Android checks fresh GPS + sensor capabilities
-  → server creates short-lived verification session
-  → CameraX + sensors + GPS start one continuous capture
-  → server reveals Challenge #1 only
-  → inspector rotates/tilts phone
-  → Android submits only that synchronized sensor window
-  → backend independently returns PASS / FAIL / INCONCLUSIVE
-  → server reveals next unpredictable challenge
-  → required challenge sequence finishes
-  → app packages video + full sensors + GPS + challenge timeline
-  → WorkManager uploads evidence
-  → admin sees challenge results + evidence receipt status
+  → Android starts one continuous CameraX + sensor + GPS capture
+  → server reveals one unpredictable rotate/tilt challenge at a time
+  → Phase 4 independently validates the physical phone movement from sensors
+  → app packages continuous video + full sensor/location data + challenge timeline
+  → WorkManager uploads and the backend SHA-256 verifies the evidence
+  → Phase 5 maps each challenge window onto the continuous video timeline
+  → OpenCV samples derived frames at configurable FPS/resolution
+  → Shi-Tomasi + Lucas-Kanade track visual features
+  → RANSAC estimates dominant global scene motion
+  → backend stores visual direction, approximate magnitude, confidence and continuity
+  → reviewer sees sensor evidence and visual evidence in separate sections
 ```
 
-Supported Phase 4 movement types:
+Supported challenge types remain:
 
 ```text
 ROTATE_LEFT
@@ -35,15 +34,47 @@ TILT_UP
 TILT_DOWN
 ```
 
-**Phase 4 does not claim final scene authenticity.** It can verify that the phone moved consistently with a requested sensor challenge, but it does not yet compare that physical movement with the external camera scene. OpenCV optical flow, visual-inertial consistency, replay detection and overall trust scoring belong to later phases.
+**Phase 5 does not claim final authenticity.** It measures camera/scene motion independently. It deliberately does not compare that motion with Phase 4 gyroscope/rotation-vector evidence. Sensor-camera consistency and contradiction detection belong to Phase 6.
+
+## Visual-motion pipeline
+
+The first deterministic CV implementation uses classical, viva-explainable algorithms:
+
+```text
+continuous video
+  ↓
+challenge/video timestamp mapping
+  ↓
+configurable padded frame window
+  ↓
+downscale + grayscale
+  ↓
+ORB feature-quality count
+  ↓
+grid-distributed Shi-Tomasi points
+  ↓
+Lucas-Kanade sparse optical flow
+  ↓
+forward/backward track filtering
+  ↓
+RANSAC partial-affine global motion
+  ↓
+optional homography diagnostic
+  ↓
+visual direction + approximate magnitude
+  ↓
+confidence + continuity + duplicate/freeze metrics
+```
+
+Low-feature, blurred or otherwise unreliable scenes return `INCONCLUSIVE` rather than a fabricated movement result.
 
 ## Repository structure
 
 ```text
 siteproof/
 ├── android/                 # Kotlin + Jetpack Compose inspector app
-├── backend/                 # FastAPI + SQLAlchemy + Alembic
-├── web/                     # React + TypeScript admin dashboard
+├── backend/                 # FastAPI + SQLAlchemy + Alembic + OpenCV
+├── web/                     # React + TypeScript admin/reviewer dashboard
 ├── docs/
 ├── infrastructure/
 ├── scripts/
@@ -68,7 +99,7 @@ Open:
 - Backend health: `http://localhost:8000/health`
 - Optional MinIO console: `http://localhost:9001`
 
-The default development storage backend writes evidence outside PostgreSQL into the `evidence_data` Docker volume. S3-compatible/MinIO storage is also supported through configuration.
+The default development storage backend writes evidence outside PostgreSQL into the `evidence_data` Docker volume. S3-compatible/MinIO storage is also supported through configuration. Phase 5 retrieves uploaded video internally and uses secure temporary files for OpenCV when materialization is required; it does not create permanent public evidence URLs for analysis.
 
 ## Seed local users
 
@@ -97,7 +128,7 @@ pytest -q
 ruff check app tests alembic
 ```
 
-The challenge API is documented in `docs/api.md` and the sensor math/security design in `docs/challenge-engine.md`.
+The challenge API is documented in `docs/api.md`, Phase 4 sensor math/security in `docs/challenge-engine.md`, and Phase 5 CV math/coordinate conventions in `docs/visual-motion-analysis.md`.
 
 ## Web development
 
@@ -110,7 +141,14 @@ npm run build
 npm run dev
 ```
 
-The inspection detail page shows per-challenge result/score/sensor metrics for authorized admin review, but deliberately displays **Final authenticity: Not yet calculated**.
+The inspection detail page shows two deliberately separate reviewer sections:
+
+```text
+LIVE CHALLENGES · SENSOR EVIDENCE
+VISUAL MOTION ANALYSIS · CAMERA EVIDENCE
+```
+
+It does not calculate or display a sensor-camera consistency percentage. The page still states **Final authenticity: Not yet calculated**.
 
 ## Android development
 
@@ -123,22 +161,41 @@ gradle :app:assembleDebug \
 
 The app requests camera and fine/coarse location only for live verification. It does **not** request microphone permission; CameraX recording contains no audio. The verification Activity is portrait-locked so initial rotate/tilt coordinate semantics are defined consistently.
 
-During Phase 4, CameraX never restarts between challenges. Full motion/location evidence remains in the Phase 3 package while only a short raw sensor slice is sent for immediate challenge validation. Future challenges are not preloaded. If connectivity disappears during a current challenge submission, its evidence is preserved locally and the app waits for reconnection before any next challenge.
+CameraX never restarts between challenges. The evidence metadata records `videoStartRelativeNs` plus challenge issued/started/completed timestamps relative to the same monotonic capture anchor, allowing the backend to locate each Phase 5 video window without changing the Phase 3 video format.
 
-## Phase 4 real-device test is mandatory
+Challenge guidance asks for a slow, smooth movement while keeping the site visible. This helps reduce motion blur while intentionally not exposing algorithm thresholds.
 
-Automated CI cannot prove real gyroscope direction, rotation-vector behavior or CameraX continuity. Before Phase 4 can be called accepted, test at least one physical Android phone and record actual results in `docs/testing.md`.
+## Real-device and real-video acceptance are mandatory
 
-Required device demo:
+Automated CI can validate migrations, APIs and deterministic synthetic CV behavior, but it cannot prove that a real SiteProof Android camera recording produces reliable visual motion estimates.
 
-1. Create/assign an inspection and mark it READY.
-2. Start live verification and confirm one continuous rear-camera recording begins.
-3. Receive only Challenge #1, physically perform it, and receive the backend sensor result.
-4. Confirm Challenge #2 is unknown until Challenge #1 finishes; repeat through Challenge #3.
-5. Include at least one deliberately wrong movement and confirm the backend records the actual result.
-6. Confirm capture finalizes/uploads and the admin dashboard displays the challenge timeline plus video/sensors/location/manifest status.
-7. Verify the dashboard still says final authenticity is not calculated.
-8. Record real legitimate/wrong-motion trial counts; do not fabricate them.
+Before Phase 5 can be called accepted, perform real SiteProof captures and record actual results in `docs/testing.md`. Required validation includes:
+
+1. Create/assign an inspection and complete the live Phase 4 challenge sequence on a physical Android phone.
+2. Confirm one continuous `capture.mp4` spans all challenges and uploads through the normal evidence pipeline.
+3. Confirm the backend decodes the actual uploaded file and independently derives codec, dimensions, FPS, duration and frame count.
+4. Confirm each real challenge maps to the correct video interval.
+5. Test legitimate ROTATE_RIGHT, ROTATE_LEFT, TILT_UP and TILT_DOWN motions across multiple real backgrounds.
+6. Record actual `SUCCESS`, `INCONCLUSIVE` and wrong-direction rates; do not fabricate them.
+7. Include low-light/motion-blur/low-feature cases and confirm the analyzer can return `INCONCLUSIVE` instead of fake certainty.
+8. Record actual processing duration and memory observations where practical.
+9. Confirm the reviewer dashboard shows camera-side visual evidence while final authenticity and sensor-camera consistency remain uncalculated.
+
+Phase 4 physical sensor validation is also still a prerequisite; Phase 5 does not retroactively prove Phase 4 hardware behavior.
+
+## Phase boundary
+
+Phase 5 intentionally does **not** implement:
+
+- gyroscope-vs-video comparison;
+- visual-inertial consistency scoring;
+- final replay-risk classification;
+- overall SiteProof trust score;
+- VERIFIED / FLAGGED authenticity verdicts;
+- Play Integrity or Wi-Fi fingerprinting;
+- anomaly-detection ML.
+
+Those are later phases. Do not start Phase 6 until real Phase 5 video acceptance has been recorded.
 
 ## Documentation
 
@@ -149,5 +206,6 @@ Required device demo:
 - `docs/evidence-format.md`
 - `docs/session-lifecycle.md`
 - `docs/challenge-engine.md`
+- `docs/visual-motion-analysis.md`
 - `docs/testing.md`
 - `docs/project-spec.md`

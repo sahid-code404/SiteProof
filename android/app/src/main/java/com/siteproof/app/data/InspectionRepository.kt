@@ -1,6 +1,9 @@
 package com.siteproof.app.data
 
 import java.security.MessageDigest
+import retrofit2.HttpException
+
+class SessionExpiredException : IllegalStateException("Session expired — sign in again.")
 
 class InspectionRepository(
     private val api: SiteProofApi,
@@ -33,11 +36,26 @@ class InspectionRepository(
         cache.clear()
     }
 
+    private suspend fun <T> authenticatedCall(block: suspend () -> T): T {
+        return try {
+            block()
+        } catch (error: HttpException) {
+            if (error.code() == 401) throw SessionExpiredException()
+            throw error
+        }
+    }
+
     suspend fun loadInspections(): LoadedInspections {
         return try {
-            val items = api.inspections().items
+            val items = authenticatedCall { api.inspections() }.items
             cache.save(items)
             LoadedInspections(items, offline = false)
+        } catch (error: SessionExpiredException) {
+            throw error
+        } catch (error: HttpException) {
+            // Authentication/server HTTP failures are not offline mode. Showing cached data
+            // as "offline" for a 401 hid the real problem during field testing.
+            throw error
         } catch (error: Exception) {
             val cached = cache.load()
             if (cached.isEmpty()) throw error
@@ -47,7 +65,11 @@ class InspectionRepository(
 
     suspend fun loadInspection(id: String): Pair<InspectionDetail, Boolean> {
         return try {
-            api.inspection(id) to false
+            authenticatedCall { api.inspection(id) } to false
+        } catch (error: SessionExpiredException) {
+            throw error
+        } catch (error: HttpException) {
+            throw error
         } catch (error: Exception) {
             val cached = cache.load().firstOrNull { it.id == id } ?: throw error
             InspectionDetail(
@@ -74,13 +96,13 @@ class InspectionRepository(
     }
 
     suspend fun acknowledge(id: String): InspectionSummary {
-        val updated = api.acknowledge(id)
+        val updated = authenticatedCall { api.acknowledge(id) }
         cache.update(updated)
         return updated
     }
 
     suspend fun markReady(id: String): InspectionSummary {
-        val updated = api.markReady(id)
+        val updated = authenticatedCall { api.markReady(id) }
         cache.update(updated)
         return updated
     }

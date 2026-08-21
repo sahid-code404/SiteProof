@@ -5,9 +5,12 @@ import {
   getLatestVerificationSession,
   getSessionChallenges,
   getSessionEvidence,
+  getSessionVisualAnalysis,
   type ChallengeTimelineItem,
   type EvidenceFile,
+  type VisualChallengeAnalysis,
 } from '../lib/api'
+import { getStoredUser } from '../lib/auth'
 
 function formatDate(value?: string | null) {
   if (!value) return '—'
@@ -44,11 +47,21 @@ function resultMark(result?: ChallengeTimelineItem['result'] | null) {
   return 'In progress'
 }
 
+function visualStatus(value: VisualChallengeAnalysis['status']) {
+  if (value === 'SUCCESS') return '✓ Visual motion detected'
+  if (value === 'INCONCLUSIVE') return '⚠ Visual analysis inconclusive'
+  if (value === 'FAILED') return '✕ Visual processing failed'
+  if (value === 'PROCESSING') return 'Processing video…'
+  return 'Waiting for video analysis'
+}
+
 function metricNumber(value: unknown, digits = 1) {
   return typeof value === 'number' ? value.toFixed(digits) : '—'
 }
 
 export function VerificationSessionPanel({ inspectionId }: { inspectionId: string }) {
+  const role = getStoredUser()?.role
+  const canReviewVisual = role === 'ADMIN' || role === 'REVIEWER'
   const session = useQuery({
     queryKey: ['verification-session', inspectionId],
     queryFn: () => getLatestVerificationSession(inspectionId),
@@ -58,13 +71,22 @@ export function VerificationSessionPanel({ inspectionId }: { inspectionId: strin
     queryKey: ['verification-evidence', session.data?.id],
     queryFn: () => getSessionEvidence(session.data!.id),
     enabled: Boolean(session.data?.id),
-    refetchInterval: session.data?.status === 'UPLOADED' ? false : 5000,
+    refetchInterval: ['UPLOADED', 'PROCESSING'].includes(session.data?.status ?? '') ? false : 5000,
   })
   const challenges = useQuery({
     queryKey: ['verification-challenges', session.data?.id],
     queryFn: () => getSessionChallenges(session.data!.id),
     enabled: Boolean(session.data?.id),
-    refetchInterval: session.data?.status === 'UPLOADED' ? false : 2000,
+    refetchInterval: ['UPLOADED', 'PROCESSING'].includes(session.data?.status ?? '') ? false : 2000,
+  })
+  const visual = useQuery({
+    queryKey: ['visual-analysis', session.data?.id],
+    queryFn: () => getSessionVisualAnalysis(session.data!.id),
+    enabled: canReviewVisual && Boolean(session.data?.id) && ['UPLOADED', 'PROCESSING'].includes(session.data?.status ?? ''),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      return status === 'PROCESSING' || status === 'PENDING' ? 3000 : false
+    },
   })
   const video = useMemo(
     () => evidence.data?.items.find((item: EvidenceFile) => item.type === 'VIDEO' && item.downloadPath),
@@ -114,12 +136,12 @@ export function VerificationSessionPanel({ inspectionId }: { inspectionId: strin
     <article className="panel">
       <p className="eyebrow">VERIFICATION SESSION</p>
       <div className="definition-grid">
-        <div><span>Status</span><strong>{item.status}</strong><small>{item.status === 'UPLOADED' ? 'Challenge results recorded · final authenticity not yet calculated' : 'Live capture/challenge/upload in progress'}</small></div>
+        <div><span>Status</span><strong>{item.status}</strong><small>{['UPLOADED', 'PROCESSING'].includes(item.status) ? 'Evidence received · visual analysis is separate from final authenticity' : 'Live capture/challenge/upload in progress'}</small></div>
         <div><span>Captured</span><strong>{formatDate(item.captureEndedAt)}</strong><small>Duration: {formatDuration(item.captureDurationMs)}</small></div>
       </div>
 
       <div className="callout">
-        <strong>LIVE CHALLENGES</strong>
+        <strong>LIVE CHALLENGES · SENSOR EVIDENCE</strong>
         {challenges.isLoading ? <p>Loading challenge timeline…</p> : null}
         {latestAttempts.length === 0 && !challenges.isLoading ? <p className="muted">No challenge has been issued yet.</p> : null}
         {latestAttempts.map((challenge) => (
@@ -160,6 +182,38 @@ export function VerificationSessionPanel({ inspectionId }: { inspectionId: strin
         </div>
       ) : null}
 
+      {canReviewVisual && ['UPLOADED', 'PROCESSING'].includes(item.status) ? (
+        <div className="callout visual-analysis-panel">
+          <strong>VISUAL MOTION ANALYSIS · CAMERA EVIDENCE</strong>
+          <p className="muted">Deterministic OpenCV analysis only. Sensor-camera consistency is intentionally not calculated until Phase 6.</p>
+          {visual.isLoading ? <p>Analyzing challenge video windows…</p> : null}
+          {visual.isError ? <div className="notice error">{visual.error.message}</div> : null}
+          {visual.data && visual.data.challenges.length === 0 ? <p className="muted">Visual analysis has not produced challenge results yet.</p> : null}
+          {visual.data?.challenges.map((analysis) => (
+            <div className="challenge-row visual-result-row" key={`visual-${analysis.challengeId}`}>
+              <div>
+                <strong>{challengeLabel(analysis.challengeType)}</strong>
+                <small>{visualStatus(analysis.status)} · quality {analysis.visualQuality}</small>
+              </div>
+              <div>
+                <strong>{analysis.visualDirection}</strong>
+                <small>{analysis.estimatedRotationDegrees == null ? 'Magnitude unavailable' : `Estimated movement ≈ ${analysis.estimatedRotationDegrees.toFixed(1)}°`}</small>
+              </div>
+              <div className="challenge-metrics">
+                <small>Visual confidence: {Math.round(analysis.confidence * 100)}%</small>
+                <small>Scene continuity: {Math.round(analysis.sceneContinuityScore * 100)}%</small>
+                <small>Tracked features: {analysis.trackedFeatureCount}</small>
+                <small>RANSAC inliers: {Math.round(analysis.inlierRatio * 100)}%</small>
+                <small>Duplicate frames: {Math.round(analysis.duplicateFrameRatio * 100)}%</small>
+                <small>Freeze: {analysis.freezeDurationMs} ms</small>
+              </div>
+              {analysis.reasons.length ? <small>{analysis.reasons.join(' ')}</small> : null}
+            </div>
+          ))}
+          {visual.data ? <small>Algorithm: {visual.data.analysisVersion} · overall visual-analysis status: {visual.data.status}</small> : null}
+        </div>
+      ) : null}
+
       <div className="definition-grid">
         <div><span>Video</span><strong>{evidenceMark(item.evidence.video)}</strong></div>
         <div><span>Motion sensors</span><strong>{evidenceMark(item.evidence.sensorData)}</strong></div>
@@ -172,7 +226,7 @@ export function VerificationSessionPanel({ inspectionId }: { inspectionId: strin
           <p>Accelerometer: {item.sensorSummary.accelerometerSamples} samples · Gyroscope: {item.sensorSummary.gyroscopeSamples} · Rotation vector: {item.sensorSummary.rotationVectorSamples} · Location: {item.locationSummary?.locationSamples ?? 0}</p>
         </div>
       ) : null}
-      <p className="muted"><strong>Final authenticity:</strong> Not yet calculated. Phase 4 verifies requested phone movement from sensors but does not yet correlate camera-scene motion.</p>
+      <p className="muted"><strong>Final authenticity:</strong> Not yet calculated. Phase 5 adds camera-side visual motion evidence but does not compare it with sensor-derived movement.</p>
       {video ? <button className="button ghost" onClick={previewVideo} disabled={loadingVideo}>{loadingVideo ? 'Loading evidence…' : 'Preview captured video'}</button> : null}
       {videoError ? <div className="notice error">{videoError}</div> : null}
       {videoUrl ? <video className="evidence-video" src={videoUrl} controls preload="metadata" /> : null}

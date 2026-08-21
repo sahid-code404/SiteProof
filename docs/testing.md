@@ -8,17 +8,37 @@ pytest -q
 ruff check app tests alembic
 ```
 
-The suite covers Phase 2 inspection management, Phase 3 live-session/evidence upload and Phase 4 active challenges. Phase 4 tests include synthetic correct rotation/tilt, wrong direction, insufficient movement, sensor disagreement, missing gyroscope, nonce failure, inspector ownership/role isolation, timestamp ordering/window attacks, idempotent duplicate submission/replay rejection, challenge expiration/replacement, retry-budget behavior and a complete three-challenge API sequence.
+The suite covers Phase 2 inspection management, Phase 3 live-session/evidence upload, Phase 4 active challenges, and Phase 5 deterministic computer vision.
+
+Phase 4 coverage includes correct rotation/tilt, wrong direction, insufficient movement, sensor disagreement, missing gyroscope, nonce failure, inspector ownership/role isolation, timestamp ordering/window attacks, idempotent duplicate submission/replay rejection, challenge expiration/replacement and a complete three-challenge API sequence.
+
+Phase 5 deterministic coverage includes:
+
+- challenge/session/video timeline mapping;
+- horizontal physical-camera direction from opposite scene translation;
+- vertical tilt direction;
+- synthetic affine image rotation;
+- low-feature `INCONCLUSIVE` behavior;
+- RANSAC rejection of independently moving outliers;
+- scene-cut detection;
+- duplicate/frozen-frame measurement;
+- corrupted media failure;
+- video metadata inspection;
+- sampled-frame timestamp retention.
+
+Synthetic CV tests prove implementation behavior; they do **not** prove real phone-camera accuracy.
 
 ## Migrations
 
-GitHub CI uses PostgreSQL 16 and verifies a fresh migration plus Phase 4 downgrade/re-upgrade:
+GitHub CI uses PostgreSQL 16 and verifies a fresh migration plus the latest phase downgrade/re-upgrade:
 
 ```bash
 alembic upgrade head
-alembic downgrade 0003_phase3_live_capture
+alembic downgrade 0004_phase4_challenges
 alembic upgrade head
 ```
+
+The current head after Phase 5 migration must be `0005_phase5_visual_motion`.
 
 ## Web
 
@@ -30,9 +50,7 @@ npm run lint
 npm run build
 ```
 
-The admin inspection detail shows challenge results and sensor-derived diagnostics together with Phase 3 evidence receipt status. It must not display a final authenticity/trust score.
-
-The Phase 4 UX acceptance also verifies that inspection creation/editing supports location search, search-result map recentering, coordinate filling, and browser **Use current location**, while click-on-map/manual coordinates remain available.
+The reviewer inspection detail must show separate sensor and camera evidence sections. It must not display sensor-camera consistency or a final authenticity/trust score.
 
 ## Android automated checks
 
@@ -43,7 +61,7 @@ cd android
 gradle :app:testDebugUnitTest :app:assembleDebug
 ```
 
-Automated Android success proves compilation/unit behavior only. CameraX, physical sensor direction, real sample timing and user movement require hardware testing.
+Automated Android success proves compilation/unit behavior only. It cannot prove CameraX, physical sensor direction, real sample timing, video quality or visual-analysis accuracy on hardware.
 
 ## Phase 3 physical-device acceptance
 
@@ -222,3 +240,181 @@ sensor relative time:    PRESENT in common monotonic timeline
 ```
 
 **Phase 5 may now begin.** Its acceptance must verify visual camera motion against these synchronized challenge/sensor intervals; Phase 4 sensor validation remains intact and authoritative for the phone-motion portion.
+## Phase 5 automated CV interpretation
+
+Phase 5 automated tests must remain deterministic and independent from Phase 4 sensor results. A test may synthesize image transforms and assert the camera-side direction/magnitude, but it must not calculate a gyro/video agreement score.
+
+For direction semantics:
+
+```text
+physical camera yaw RIGHT → static scene usually moves LEFT in image X
+physical camera yaw LEFT  → static scene usually moves RIGHT in image X
+```
+
+For tilt, vertical scene motion is used only as an approximate monocular pitch signal.
+
+Low-feature, corrupt or poorly supported transforms must return `INCONCLUSIVE`/`FAILED` according to the documented distinction rather than fake a reliable visual estimate.
+
+## Phase 5 real-video acceptance
+
+**Phase 5 is NOT ACCEPTED until actual video recorded by the SiteProof Android application is processed by the backend.**
+
+Current state:
+
+```text
+Real SiteProof capture.mp4 decoded:        NOT TESTED YET
+Video/challenge timeline alignment:        NOT TESTED YET
+ROTATE_RIGHT visual direction:             NOT TESTED YET
+ROTATE_LEFT visual direction:              NOT TESTED YET
+TILT_UP visual direction:                  NOT TESTED YET
+TILT_DOWN visual direction:                NOT TESTED YET
+Low-light behavior:                        NOT TESTED YET
+Motion-blur behavior:                      NOT TESTED YET
+Textureless-scene behavior:                NOT TESTED YET
+Scene-cut metrics on real video:           NOT TESTED YET
+Duplicate/freeze metrics on real video:    NOT TESTED YET
+Reviewer visual-analysis panel:            NOT TESTED YET
+Actual processing duration:                NOT TESTED YET
+Peak memory if practical:                  NOT TESTED YET
+```
+
+### Required Phase 5 capture workflow
+
+For every test session:
+
+1. Record through the real SiteProof Android live-verification flow; do not import a gallery video.
+2. Keep one continuous CameraX recording across all server challenges.
+3. Complete upload normally so video, metadata and manifest pass the existing SHA-256 checks.
+4. Confirm the backend independently decodes codec, width, height, FPS, duration and frame count.
+5. Confirm `videoStartRelativeNs` and challenge relative timestamps map each challenge to the expected video interval.
+6. Inspect the resulting visual status, direction, approximate magnitude, confidence, tracked features, RANSAC inliers and continuity metrics.
+7. Confirm the reviewer web panel shows **CAMERA EVIDENCE** separately from Phase 4 **SENSOR EVIDENCE**.
+8. Confirm no sensor-camera consistency percentage or final authenticity verdict is displayed.
+
+### Required real-world validation counts
+
+Target the Phase 5 specification's practical minimum and record actual results only:
+
+```text
+ROTATE_RIGHT: 10 legitimate captures
+ROTATE_LEFT:  10 legitimate captures
+TILT_UP:       5 legitimate captures
+TILT_DOWN:     5 legitimate captures
+```
+
+Record results in this format after testing:
+
+```text
+ROTATE_RIGHT
+sessions tested: __
+SUCCESS:         __
+INCONCLUSIVE:    __
+WRONG DIRECTION: __
+
+ROTATE_LEFT
+sessions tested: __
+SUCCESS:         __
+INCONCLUSIVE:    __
+WRONG DIRECTION: __
+
+TILT_UP
+sessions tested: __
+SUCCESS:         __
+INCONCLUSIVE:    __
+WRONG DIRECTION: __
+
+TILT_DOWN
+sessions tested: __
+SUCCESS:         __
+INCONCLUSIVE:    __
+WRONG DIRECTION: __
+```
+
+Current measured results:
+
+```text
+ROTATE_RIGHT: NOT TESTED YET
+ROTATE_LEFT:  NOT TESTED YET
+TILT_UP:      NOT TESTED YET
+TILT_DOWN:    NOT TESTED YET
+```
+
+### Real-scene variety
+
+Use several backgrounds rather than one repeated room:
+
+```text
+room:              NOT TESTED YET
+road:              NOT TESTED YET
+corridor:          NOT TESTED YET
+building exterior: NOT TESTED YET
+vegetation:        NOT TESTED YET
+```
+
+This is evaluation data, not a training dataset.
+
+### Poor-video demonstration
+
+Record at least one legitimate but visually difficult case such as:
+
+```text
+camera mostly covered / very dark / heavily blurred / textureless wall
+```
+
+Expected behavior is not a forced direction. The backend should return a defensible `INCONCLUSIVE` or technical `FAILED` result with an explainable reason.
+
+Actual poor-video observation:
+
+```text
+NOT TESTED YET
+```
+
+### Phase 5 processing performance
+
+For real SiteProof evidence measure where practical:
+
+```text
+15 sec / 1080p input processing time: NOT TESTED YET
+30 sec / 1080p input processing time: NOT TESTED YET
+15 sec / 720p input processing time:  NOT TESTED YET
+30 sec / 720p input processing time:  NOT TESTED YET
+sampled frame count:                   NOT TESTED YET
+peak memory:                           NOT TESTED YET
+```
+
+Do not infer these values from synthetic unit tests.
+
+### Phase 5 limitations to observe
+
+Record whether real failures correlate with:
+
+- low light;
+- motion blur;
+- textureless scenes;
+- independently moving foreground objects;
+- autofocus scale changes;
+- rolling-shutter distortion;
+- approximate monocular rotation/FOV assumptions.
+
+Do not tune thresholds to manufacture desired pass rates. Tune only from measured evidence and keep uncertain cases inconclusive.
+
+## Security boundary test
+
+Even when visual analysis returns `SUCCESS`, Phase 5 does **not** prove authenticity. Camera motion may look plausible while physical phone sensors disagree, and physical sensors may look plausible while the scene motion is inconsistent.
+
+That comparison is intentionally deferred to Phase 6.
+
+## Phase 6 readiness check
+
+Do not replace these values until real Phase 4 + Phase 5 evidence has been observed:
+
+```text
+continuous video spans all challenges:       NOT TESTED YET
+challenge relative timeline confirmed:       NOT TESTED YET
+sensor relative timeline confirmed:          NOT TESTED YET
+visual relative timeline confirmed:          NOT TESTED YET
+sensor-derived result per challenge exists:  NOT TESTED YET
+visual-derived result per challenge exists:  NOT TESTED YET
+```
+
+Only after these are confirmed may Phase 6 compare camera and sensor evidence.

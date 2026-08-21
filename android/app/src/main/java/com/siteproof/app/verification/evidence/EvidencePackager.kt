@@ -22,6 +22,7 @@ class EvidencePackager {
         captureEndedAt: Instant,
         captureStartMonotonicNs: Long,
         videoStartMonotonicNs: Long,
+        videoEndMonotonicNs: Long,
         capabilities: DeviceCapabilities,
         captureComplete: CaptureCompleteRequest,
         challenges: List<ChallengeTimelineMetadata> = emptyList(),
@@ -42,7 +43,14 @@ class EvidencePackager {
                 put("endedAt", captureEndedAt.toString())
                 put("durationMs", captureComplete.captureDurationMs)
                 put("monotonicStartNs", captureStartMonotonicNs)
-                put("videoStartRelativeNs", (videoStartMonotonicNs - captureStartMonotonicNs).coerceAtLeast(0L))
+                put(
+                    "videoStartRelativeNs",
+                    (videoStartMonotonicNs - captureStartMonotonicNs).coerceAtLeast(0L),
+                )
+                put(
+                    "videoEndRelativeNs",
+                    (videoEndMonotonicNs - captureStartMonotonicNs).coerceAtLeast(0L),
+                )
             })
             put("device", JSONObject().apply {
                 put("manufacturer", Build.MANUFACTURER)

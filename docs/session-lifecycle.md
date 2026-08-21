@@ -1,6 +1,6 @@
-# Verification Session Lifecycle — through Phase 4
+# Verification Session Lifecycle — through Phase 5
 
-Inspection state and verification-session state are intentionally separate. Phase 4 inserts active challenge-response between capture start and capture completion.
+Inspection state and verification-session state are intentionally separate. Phase 4 inserts active challenge-response between capture start and capture completion. Phase 5 adds a transient background visual-processing stage after evidence upload.
 
 ## Inspection states
 
@@ -14,7 +14,7 @@ DRAFT → ASSIGNED → ACKNOWLEDGED → READY
                               PROCESSING
 ```
 
-`PROCESSING` still means evidence was received for later verification logic. It does not mean authentic/verified.
+Inspection `PROCESSING` means evidence has been received for verification logic. It does not mean authentic or verified.
 
 ## Verification session states
 
@@ -33,14 +33,16 @@ UPLOADING → UPLOAD_FAILED ──────┤
   ↓                             │
 UPLOADED                        │
   ↓                             │
-PROCESSING (reserved/later)     │
+PROCESSING                      │  Phase 5 visual analysis is running
+  ↓                             │
+UPLOADED                        │  evidence remains durably uploaded
                                 │
 CHALLENGE_FAILED ───────────────┘
   ↓
 CAPTURE_COMPLETED
 ```
 
-Failure/termination states:
+Failure/termination states used by capture/upload remain:
 
 ```text
 ABORTED
@@ -49,7 +51,17 @@ CHALLENGE_FAILED
 UPLOAD_FAILED
 ```
 
-`CHALLENGE_FAILED` means the configured Phase 4 explicit-failure limit was reached. It is **not** a final SiteProof authenticity verdict; capture can still be finalized and uploaded so later analysis/review has the complete evidence.
+`CHALLENGE_FAILED` means the configured Phase 4 explicit-failure limit was reached. It is **not** a final SiteProof authenticity verdict; capture can still be finalized and uploaded.
+
+Phase 5 visual processing does not add a new terminal verification-session verdict. Per-challenge `visual_motion_results` carry their own analysis state:
+
+```text
+PENDING
+PROCESSING
+SUCCESS
+INCONCLUSIVE
+FAILED
+```
 
 ## Creation authorization
 
@@ -86,19 +98,19 @@ ISSUED → STARTED → PASSED | FAILED | INCONCLUSIVE
   └──────────┴────→ EXPIRED
 ```
 
-An inconclusive challenge may consume the configured single retry budget. A retry is a **new** challenge record and nonce for the same sequence number.
+An inconclusive challenge may consume the configured retry budget. A retry is a **new** challenge record and nonce for the same sequence number.
 
-When all required sequence numbers have a terminal result, the session becomes `CHALLENGES_COMPLETED` unless the configured explicit-failure limit is reached, in which case it becomes `CHALLENGE_FAILED`.
+When all required sequence numbers have a terminal result, the session becomes `CHALLENGES_COMPLETED` unless the explicit-failure limit is reached, in which case it becomes `CHALLENGE_FAILED`.
 
 ## Capture completion
 
 `POST /api/v1/sessions/{sessionId}/capture-complete` accepts only after `CHALLENGES_COMPLETED` or `CHALLENGE_FAILED`. It receives summaries, not raw evidence, and validates bounded duration, one video, required sensor counts and location samples.
 
-Phase 4 deliberately rejects direct `CAPTURING → CAPTURE_COMPLETED` so the Android client cannot bypass server-generated liveness challenges.
+Direct `CAPTURING → CAPTURE_COMPLETED` remains rejected so Android cannot bypass server-generated liveness challenges.
 
 ## Upload
 
-The Phase 3 evidence upload flow remains unchanged:
+The Phase 3 upload transport remains canonical:
 
 ```text
 CAPTURE_COMPLETED → UPLOADING → UPLOADED
@@ -106,12 +118,47 @@ CAPTURE_COMPLETED → UPLOADING → UPLOADED
                     └→ UPLOAD_FAILED → UPLOADING
 ```
 
-The full evidence package still contains one continuous video and full sensor/location streams. Phase 4 adds challenge timing/result metadata to the session metadata so later visual analysis can locate the corresponding video intervals.
+The full package contains one continuous video plus complete sensor/location streams, metadata and manifest. Challenge relative timestamps in metadata share the same capture anchor as `videoStartRelativeNs`, which lets Phase 5 locate the correct video windows.
+
+Evidence-completion retry remains idempotent. If a delayed Android completion receipt arrives while the background worker has already moved the session temporarily to `PROCESSING`, the same manifest hash is still accepted as the already-completed upload.
+
+## Phase 5 visual processing
+
+After verified upload:
+
+```text
+UPLOADED
+   ↓
+PROCESSING
+   ↓
+OpenCV video metadata + timeline validation
+   ↓
+per-challenge visual analysis
+   ↓
+visual_motion_results stored
+   ↓
+UPLOADED
+```
+
+`PROCESSING` is transient and does not replace the durable fact that evidence was successfully uploaded. A successful, inconclusive or failed visual result lives in the versioned `visual_motion_results` row for each challenge.
+
+If a later challenge window fails to process, already terminal `SUCCESS`/`INCONCLUSIVE` visual results from earlier challenges are preserved rather than overwritten.
+
+Temporary storage/processing failures can be retried by an authorized reviewer. Structurally invalid media is recorded as failed without leaving the session stuck in `PROCESSING`.
 
 ## Abort/background/process interruption
 
-The Android live proof session is foreground-only. User cancellation, app backgrounding/locking or a capture failure aborts the session rather than silently resuming an old challenge. Active Room challenge metadata helps explain/recover a brief online-submission interruption, but it is not permission to resume an old process-killed liveness session.
+The Android live proof session remains foreground-only. User cancellation, app backgrounding/locking or capture failure aborts the session rather than silently resuming an old challenge. Phase 5 does not change this live-capture policy.
 
 ## Phase boundary
 
-No status in this document means identity or scene authenticity has been established. Phase 4 can say that a requested **phone movement** passed/failed/inconclusive from sensors. Camera-scene consistency, replay detection and the overall trust/final verdict remain later phases.
+No status in this document means identity or scene authenticity has been established.
+
+Through Phase 5 SiteProof has independent evidence:
+
+```text
+Phase 4: requested phone movement from sensors
+Phase 5: camera/scene visual movement from video
+```
+
+Camera-sensor consistency, contradiction detection, replay classification and the overall trust/final verdict remain Phase 6 and later.

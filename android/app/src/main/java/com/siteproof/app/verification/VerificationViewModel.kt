@@ -200,10 +200,10 @@ class VerificationViewModel(
                     Instant.parse(challenge.serverTime),
                     Instant.parse(challenge.expiresAt),
                 ).toMillis()
-            }.getOrDefault(15_000L).coerceIn(1_000L, 20_000L)
+            }.getOrDefault(18_000L).coerceIn(1_000L, 20_000L)
             val localDeadline = SystemClock.elapsedRealtime() + serverRemaining
             val baselineEnd = SystemClock.elapsedRealtime() + 600L
-            var movementSeenAt: Long? = null
+            var goodRangeSeenAt: Long? = null
 
             while (true) {
                 val now = SystemClock.elapsedRealtime()
@@ -216,7 +216,7 @@ class VerificationViewModel(
                     guidance.status == ChallengeGuidanceStatus.GOOD_RANGE ->
                         "Good range — hold the phone steady."
                     guidance.status == ChallengeGuidanceStatus.TOO_FAR ->
-                        "Too far — stop moving and hold steady."
+                        "Too far — move back slightly into the target range."
                     guidance.status == ChallengeGuidanceStatus.TOO_LITTLE && guidance.signedDegrees > 5.0 ->
                         "Keep going — follow the guide."
                     guidance.status == ChallengeGuidanceStatus.TOO_LITTLE ->
@@ -232,11 +232,15 @@ class VerificationViewModel(
                     guidance = guidance,
                 )
 
-                if (now >= baselineEnd && movementSeenAt == null && coordinator.movementDetected()) {
-                    movementSeenAt = now
+                // Do not submit merely because movement started. Keep this exact challenge
+                // visible until the requested target range is actually reached and held.
+                if (now >= baselineEnd && guidance.status == ChallengeGuidanceStatus.GOOD_RANGE) {
+                    if (goodRangeSeenAt == null) goodRangeSeenAt = now
+                } else {
+                    goodRangeSeenAt = null
                 }
-                val settledEnough = movementSeenAt?.let { now - it >= 1_800L } == true
-                if (settledEnough || remaining <= 1_200L) break
+                val targetHeld = goodRangeSeenAt?.let { now - it >= 500L } == true
+                if (targetHeld || remaining <= 1_200L) break
                 delay(100)
             }
             submitCurrentChallenge(prepared, challenge)
@@ -348,13 +352,16 @@ class VerificationViewModel(
         captureLimitJob?.cancel()
         val remainingMinimum = (8_000L - coordinator.captureElapsedMs()).coerceAtLeast(0L)
         if (remainingMinimum > 0) delay(remainingMinimum)
-        _state.value = VerificationUiState.Captured(
-            prepared.session.sessionId,
-            "PACKAGING",
-            "Finalizing secure evidence and challenge timeline…",
-        )
         try {
+            // Keep the persistent camera host composed until CameraX has fully finalized the
+            // recording. Switching to Captured earlier disposed PreviewView while Recorder was
+            // still active and produced real timestamp/frame gaps at the tail on some devices.
             coordinator.stop()
+            _state.value = VerificationUiState.Captured(
+                prepared.session.sessionId,
+                "PACKAGING",
+                "Secure evidence finalized. Preparing upload…",
+            )
             monitorUpload(prepared.session.sessionId)
         } catch (error: Exception) {
             _state.value = VerificationUiState.Error(
@@ -430,7 +437,7 @@ class VerificationViewModel(
         instruction = "Waiting for server challenge",
         parameters = com.siteproof.app.verification.model.ChallengeParameters(0.0, 0.0, 0.0),
         issuedAt = Instant.now().toString(),
-        expiresAt = Instant.now().plusSeconds(15).toString(),
+        expiresAt = Instant.now().plusSeconds(18).toString(),
         serverTime = Instant.now().toString(),
         nonce = "",
     )

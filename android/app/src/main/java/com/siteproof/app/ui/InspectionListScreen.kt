@@ -28,6 +28,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.siteproof.app.data.InspectionSummary
+import com.siteproof.app.update.DevAppUpdateCard
+import com.siteproof.app.update.DevAppUpdateManager
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -36,11 +38,18 @@ private fun formatDeadline(value: String): String = runCatching {
     OffsetDateTime.parse(value).format(DateTimeFormatter.ofPattern("dd MMM, h:mm a", Locale.getDefault()))
 }.getOrDefault(value)
 
+private fun isCompletedForInspector(status: String): Boolean = status in setOf(
+    "PROCESSING", // Evidence upload is complete; backend/reviewer work continues.
+    "COMPLETED",  // Future-proof when the backend adds an explicit terminal state.
+    "CANCELLED",
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InspectionListScreen(
     inspectorName: String,
     state: InspectionsState,
+    updateManager: DevAppUpdateManager,
     onRefresh: () -> Unit,
     onOpen: (String) -> Unit,
     onSignOut: () -> Unit,
@@ -70,27 +79,74 @@ fun InspectionListScreen(
             when {
                 state.error != null -> ErrorState(message = state.error, onRetry = onRefresh)
                 !state.loading && state.items.isEmpty() -> EmptyState()
-                else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    if (state.offline) {
-                        item {
-                            Text(
-                                "Offline — showing last synced data",
-                                color = MaterialTheme.colorScheme.tertiary,
-                                style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.padding(bottom = 4.dp),
-                            )
+                else -> {
+                    val active = state.items.filterNot { isCompletedForInspector(it.status) }
+                    val completed = state.items
+                        .filter { isCompletedForInspector(it.status) }
+                        .sortedByDescending { it.updatedAt }
+
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        item(key = "dev-update") {
+                            DevAppUpdateCard(updateManager)
                         }
-                    }
-                    items(state.items, key = { it.id }) { inspection ->
-                        InspectionCard(inspection = inspection, onClick = { onOpen(inspection.id) })
+                        if (state.offline) {
+                            item {
+                                Text(
+                                    "Offline — showing last synced data",
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    modifier = Modifier.padding(bottom = 4.dp),
+                                )
+                            }
+                        }
+
+                        if (active.isNotEmpty()) {
+                            item(key = "active-heading") {
+                                SectionHeading(
+                                    title = "Active inspections",
+                                    subtitle = "Work that still needs action",
+                                )
+                            }
+                            items(active, key = { it.id }) { inspection ->
+                                InspectionCard(inspection = inspection, onClick = { onOpen(inspection.id) })
+                            }
+                        }
+
+                        if (completed.isNotEmpty()) {
+                            item(key = "completed-heading") {
+                                SectionHeading(
+                                    title = "Completed inspections",
+                                    subtitle = "Submitted or closed work",
+                                )
+                            }
+                            items(completed, key = { "completed-${it.id}" }) { inspection ->
+                                InspectionCard(inspection = inspection, onClick = { onOpen(inspection.id) })
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SectionHeading(title: String, subtitle: String) {
+    Column(modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

@@ -22,6 +22,12 @@ from app.models.verification import (
     VerificationSession,
     VerificationSessionStatus,
 )
+from app.models.visual_motion import (
+    VisualAnalysisStatus,
+    VisualDirection,
+    VisualMotionResult,
+    VisualQuality,
+)
 
 __all__ = [
     "AssignmentStatus",
@@ -44,4 +50,8 @@ __all__ = [
     "VerificationChallenge",
     "VerificationSession",
     "VerificationSessionStatus",
+    "VisualAnalysisStatus",
+    "VisualDirection",
+    "VisualMotionResult",
+    "VisualQuality",
 ]

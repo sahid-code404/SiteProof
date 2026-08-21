@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -38,6 +38,7 @@ from app.services.session_service import (
     start_capture,
 )
 from app.services.storage_service import get_storage_service
+from app.services.visual_analysis_service import run_visual_analysis_task
 
 router = APIRouter(tags=["verification-sessions"])
 
@@ -141,10 +142,13 @@ async def upload_content(
 def complete_upload(
     session_id: uuid.UUID,
     payload: EvidenceCompleteRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> VerificationSessionResponse:
-    return complete_evidence_upload(db, current_user, session_id, payload)
+    response = complete_evidence_upload(db, current_user, session_id, payload)
+    background_tasks.add_task(run_visual_analysis_task, session_id)
+    return response
 
 
 @router.get("/sessions/{session_id}/evidence", response_model=EvidenceListResponse)

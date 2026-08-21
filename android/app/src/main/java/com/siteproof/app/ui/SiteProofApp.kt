@@ -17,6 +17,7 @@ import com.siteproof.app.data.InspectionCache
 import com.siteproof.app.data.InspectionRepository
 import com.siteproof.app.data.TokenStore
 import com.siteproof.app.data.createApi
+import com.siteproof.app.update.DevAppUpdateManager
 import com.siteproof.app.verification.VerificationCaptureCoordinator
 import com.siteproof.app.verification.VerificationRepository
 import com.siteproof.app.verification.VerificationScreen
@@ -44,6 +45,7 @@ fun SiteProofApp() {
             challengeDao = database.activeChallengeDao(),
         )
     }
+    val updateManager = remember(context) { DevAppUpdateManager(context) }
     val authViewModel: AuthViewModel = viewModel(
         factory = SiteProofViewModelFactory { AuthViewModel(repository) },
     )
@@ -60,12 +62,18 @@ fun SiteProofApp() {
                     composable("inspections") {
                         val inspectionsViewModel: InspectionsViewModel = viewModel(
                             key = "inspections-$sessionScopeKey",
-                            factory = SiteProofViewModelFactory { InspectionsViewModel(repository) },
+                            factory = SiteProofViewModelFactory {
+                                InspectionsViewModel(
+                                    repository = repository,
+                                    onSessionExpired = authViewModel::expireSession,
+                                )
+                            },
                         )
                         val state by inspectionsViewModel.state.collectAsStateWithLifecycle()
                         InspectionListScreen(
                             inspectorName = repository.inspectorName(),
                             state = state,
+                            updateManager = updateManager,
                             onRefresh = inspectionsViewModel::refresh,
                             onOpen = { id -> navController.navigate("inspection/$id") },
                             onSignOut = authViewModel::signOut,
@@ -78,7 +86,13 @@ fun SiteProofApp() {
                         val id = requireNotNull(backStackEntry.arguments?.getString("id"))
                         val detailViewModel: InspectionDetailViewModel = viewModel(
                             key = "inspection-$sessionScopeKey-$id",
-                            factory = SiteProofViewModelFactory { InspectionDetailViewModel(repository, id) },
+                            factory = SiteProofViewModelFactory {
+                                InspectionDetailViewModel(
+                                    repository = repository,
+                                    inspectionId = id,
+                                    onSessionExpired = authViewModel::expireSession,
+                                )
+                            },
                         )
                         val state by detailViewModel.state.collectAsStateWithLifecycle()
                         InspectionDetailScreen(
