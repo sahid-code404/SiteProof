@@ -40,6 +40,7 @@ def start_capture(
         "latitude": inspection.expected_latitude,
         "longitude": inspection.expected_longitude,
         "allowedRadiusMeters": inspection.allowed_radius_meters,
+        "captureDurationSeconds": inspection.capture_duration_seconds,
         "deadline": aware(inspection.deadline).isoformat(),
     }
     deadline = aware(datetime.fromisoformat(str(snapshot["deadline"])))
@@ -155,7 +156,9 @@ def complete_capture(
     if inspection is None:
         raise SiteProofError(409, "INSPECTION_UNAVAILABLE", "Inspection is unavailable.")
 
-    configured_min_seconds = max(settings.capture_min_seconds, inspection.capture_duration_seconds)
+    snapshot = session.site_snapshot or {}
+    required_seconds = int(snapshot.get("captureDurationSeconds", inspection.capture_duration_seconds))
+    configured_min_seconds = max(settings.capture_min_seconds, required_seconds)
     if payload.capture_duration_ms < configured_min_seconds * 1000:
         raise SiteProofError(
             422,
@@ -163,10 +166,11 @@ def complete_capture(
             f"This inspection requires at least {configured_min_seconds} seconds of continuous video.",
         )
 
-    # Legacy deployments used a 60 second global ceiling. A deliberately configured longer
-    # inspection gets a small finalization allowance without turning that legacy value into a
-    # reason to reject the administrator's selected duration.
-    effective_max_seconds = max(settings.capture_max_seconds, inspection.capture_duration_seconds + 10)
+    # Keep a bounded allowance for retries/finalization while preserving the administrator's
+    # snapshotted minimum. Existing 60-second deployments remain compatible, while longer
+    # configured captures can safely finish below the 90-second visual-analysis ceiling.
+    effective_max_seconds = max(settings.capture_max_seconds, required_seconds + 15)
+    effective_max_seconds = min(effective_max_seconds, 90)
     if payload.capture_duration_ms > effective_max_seconds * 1000:
         raise SiteProofError(
             422,
@@ -225,6 +229,7 @@ def complete_capture(
         action="CAPTURE_COMPLETED",
         metadata={
             "durationMs": payload.capture_duration_ms,
+            "requiredDurationSeconds": required_seconds,
             "sensorSummary": payload.sensor_summary.model_dump(),
             "locationSamples": payload.location_summary.location_samples,
         },
