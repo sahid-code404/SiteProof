@@ -15,6 +15,7 @@ from app.schemas.inspector import (
     InspectorResponse,
     InspectorUpdate,
 )
+from app.services.audit_service import record_audit
 
 
 def _to_response(inspector: Inspector, user: User) -> InspectorResponse:
@@ -32,6 +33,36 @@ def _to_response(inspector: Inspector, user: User) -> InspectorResponse:
 def _require_admin(current_user: User) -> None:
     if current_user.role != UserRole.ADMIN:
         raise SiteProofError(403, "FORBIDDEN", "Administrator access is required.")
+
+
+def _normalize_optional(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _ensure_employee_code_available(
+    db: Session,
+    organization_id: uuid.UUID,
+    employee_code: str | None,
+    *,
+    excluding_inspector_id: uuid.UUID | None = None,
+) -> None:
+    if employee_code is None:
+        return
+    query = select(Inspector.id).where(
+        Inspector.organization_id == organization_id,
+        Inspector.employee_code == employee_code,
+    )
+    if excluding_inspector_id is not None:
+        query = query.where(Inspector.id != excluding_inspector_id)
+    if db.scalar(query) is not None:
+        raise SiteProofError(
+            409,
+            "EMPLOYEE_CODE_ALREADY_EXISTS",
+            "An inspector with this ID already exists.",
+        )
 
 
 def get_inspector_for_user(db: Session, user_id: uuid.UUID) -> Inspector | None:
@@ -58,8 +89,10 @@ def get_inspector_in_org(
 def create_inspector(db: Session, current_user: User, payload: InspectorCreate) -> InspectorResponse:
     _require_admin(current_user)
     normalized_email = str(payload.email).lower()
+    employee_code = _normalize_optional(payload.employee_code)
     if db.scalar(select(User).where(User.email == normalized_email)) is not None:
         raise SiteProofError(409, "EMAIL_ALREADY_EXISTS", "A user with this email already exists.")
+    _ensure_employee_code_available(db, current_user.organization_id, employee_code)
 
     user = User(
         organization_id=current_user.organization_id,
@@ -74,11 +107,21 @@ def create_inspector(db: Session, current_user: User, payload: InspectorCreate) 
     inspector = Inspector(
         organization_id=current_user.organization_id,
         user_id=user.id,
-        employee_code=payload.employee_code,
-        phone=payload.phone,
+        employee_code=employee_code,
+        phone=_normalize_optional(payload.phone),
         active=True,
     )
     db.add(inspector)
+    db.flush()
+    record_audit(
+        db,
+        organization_id=current_user.organization_id,
+        actor_user_id=current_user.id,
+        entity_type="INSPECTOR",
+        entity_id=inspector.id,
+        action="INSPECTOR_CREATED",
+        metadata={"userId": str(user.id), "employeeCode": employee_code},
+    )
     db.commit()
     db.refresh(inspector)
     return _to_response(inspector, user)
@@ -96,13 +139,29 @@ def update_inspector(
     if payload.full_name is not None:
         user.full_name = payload.full_name.strip()
     if "employee_code" in payload.model_fields_set:
-        inspector.employee_code = payload.employee_code
+        employee_code = _normalize_optional(payload.employee_code)
+        _ensure_employee_code_available(
+            db,
+            current_user.organization_id,
+            employee_code,
+            excluding_inspector_id=inspector.id,
+        )
+        inspector.employee_code = employee_code
     if "phone" in payload.model_fields_set:
-        inspector.phone = payload.phone
+        inspector.phone = _normalize_optional(payload.phone)
     if payload.active is not None:
         inspector.active = payload.active
         user.is_active = payload.active
 
+    record_audit(
+        db,
+        organization_id=current_user.organization_id,
+        actor_user_id=current_user.id,
+        entity_type="INSPECTOR",
+        entity_id=inspector.id,
+        action="INSPECTOR_UPDATED",
+        metadata={"active": inspector.active},
+    )
     db.commit()
     db.refresh(inspector)
     db.refresh(user)
@@ -116,8 +175,17 @@ def reset_inspector_password(
     payload: InspectorPasswordReset,
 ) -> None:
     _require_admin(current_user)
-    _, user = get_inspector_in_org(db, current_user.organization_id, inspector_id)
+    inspector, user = get_inspector_in_org(db, current_user.organization_id, inspector_id)
     user.hashed_password = hash_password(payload.password)
+    record_audit(
+        db,
+        organization_id=current_user.organization_id,
+        actor_user_id=current_user.id,
+        entity_type="INSPECTOR",
+        entity_id=inspector.id,
+        action="INSPECTOR_PASSWORD_RESET",
+        metadata={"userId": str(user.id)},
+    )
     db.commit()
 
 
