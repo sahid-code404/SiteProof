@@ -41,6 +41,23 @@ def _terminal_attempt_ids(challenges: list[VerificationChallenge]) -> set[uuid.U
     return {challenge.id for challenge in latest_by_sequence.values()}
 
 
+def retry_aware_status(
+    challenges: list[VerificationChallenge],
+    items: list[VisualChallengeAnalysisItem],
+) -> VisualAnalysisStatus:
+    terminal_ids = _terminal_attempt_ids(challenges)
+    if not terminal_ids:
+        return _overall_status(items)
+
+    terminal_items = [item for item in items if item.challenge_id in terminal_ids]
+    represented_ids = {item.challenge_id for item in terminal_items}
+    if represented_ids != terminal_ids:
+        # Analysis for the accepted/latest attempt has not finished yet. Never let an older
+        # retry result make the session look successful while the terminal attempt is missing.
+        return VisualAnalysisStatus.PROCESSING
+    return _overall_status(terminal_items)
+
+
 def get_retry_aware_visual_analysis(
     db: Session,
     current_user: User,
@@ -57,19 +74,5 @@ def get_retry_aware_visual_analysis(
             )
         ).all()
     )
-    terminal_ids = _terminal_attempt_ids(challenges)
-    if not terminal_ids:
-        return response
-
-    terminal_items = [
-        item for item in response.challenges if item.challenge_id in terminal_ids
-    ]
-    represented_ids = {item.challenge_id for item in terminal_items}
-    if represented_ids != terminal_ids:
-        # Analysis for a terminal retry has not completed yet. Never report SUCCESS from an
-        # older attempt while the accepted/latest attempt is still missing.
-        status = VisualAnalysisStatus.PROCESSING
-    else:
-        status = _overall_status(terminal_items)
-
+    status = retry_aware_status(challenges, response.challenges)
     return response.model_copy(update={"status": status})
