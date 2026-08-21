@@ -8,7 +8,7 @@ import numpy as np
 
 from app.models.advanced_security import AdvancedProcessStatus, RiskLevel
 
-ALGORITHM_VERSION = "replay-risk-v1"
+ALGORITHM_VERSION = "replay-risk-v1.1"
 
 
 def _right_angle_score(points: np.ndarray) -> float:
@@ -146,12 +146,20 @@ def analyze_frames(
     if not reasons:
         reasons.append("No combination of replay indicators reached a meaningful risk threshold.")
 
-    strong_indicators = sum(
-        value >= 0.55 for value in [rectangle, banding, moire, mismatch, duplicate]
+    # Rectangle, banding and moire all inspect the same visual-artifact family. Counting each
+    # as an independent strong indicator overstates certainty on ordinary textured scenes.
+    # HIGH therefore requires two independent families (visual artifact + cross-signal or
+    # repeated-frame evidence), unless exact cross-session evidence reuse is present.
+    independent_families = sum(
+        (
+            artifact >= 0.65,
+            mismatch >= 0.65,
+            duplicate >= 0.45,
+        )
     )
     risk_level = (
         RiskLevel.HIGH
-        if combined >= 0.72 and (reuse >= 0.80 or strong_indicators >= 2)
+        if combined >= 0.72 and (reuse >= 0.80 or independent_families >= 2)
         else RiskLevel.MODERATE
         if combined >= 0.38
         else RiskLevel.LOW
@@ -174,6 +182,8 @@ def analyze_frames(
             "duplicateFrameRatio": duplicate,
             "moireExperimental": True,
             "rectangleAloneCannotTriggerHigh": True,
+            "displayArtifactsAreOneEvidenceFamily": True,
+            "independentHighRiskFamilies": independent_families,
         },
         "algorithm_version": ALGORITHM_VERSION,
     }
