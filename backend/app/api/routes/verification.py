@@ -1,16 +1,17 @@
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user, require_roles
 from app.core.errors import SiteProofError
 from app.db.session import get_db
-from app.models.trust import VerificationProcessingStatus
+from app.models.trust import VerificationProcessingStatus, VerificationVerdict
 from app.models.user import User, UserRole
 from app.models.verification import VerificationSession
 from app.schemas.verification_result import (
     ReviewDecisionResponse,
+    ReviewQueueResponse,
     ReviewRequest,
     VerificationPolicySummary,
     VerificationResponse,
@@ -18,6 +19,7 @@ from app.schemas.verification_result import (
 )
 from app.services.audit_service import record_audit
 from app.services.session_common import viewable_session
+from app.services.verification.queue import list_review_queue
 from app.services.verification.review import create_review_decision, latest_review_for_result
 from app.services.verification.service import (
     ENGINE_VERSION,
@@ -93,6 +95,25 @@ def _response(
             if review is not None
             else None
         ),
+    )
+
+
+@router.get("/review-queue", response_model=ReviewQueueResponse)
+def review_queue(
+    search: str | None = Query(default=None, max_length=200),
+    verdict: VerificationVerdict | None = None,
+    reviewed: bool | None = None,
+    limit: int = Query(default=100, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.ADMIN, UserRole.REVIEWER)),
+) -> ReviewQueueResponse:
+    return list_review_queue(
+        db,
+        current_user,
+        search=search,
+        verdict=verdict,
+        reviewed=reviewed,
+        limit=limit,
     )
 
 
