@@ -18,6 +18,7 @@ import './reference-polish.css'
 import './visibility-polish.css'
 import './professional-polish.css'
 import './final-responsive-polish.css'
+import './adaptive-glass.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {
