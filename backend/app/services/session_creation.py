@@ -1,5 +1,5 @@
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -22,7 +22,7 @@ from app.services.session_common import (
 )
 
 
-def _capture_contract(session: VerificationSession, inspection: Inspection) -> tuple[int, int, int, object]:
+def _capture_contract(session: VerificationSession, inspection: Inspection) -> tuple[int, int, int, datetime]:
     settings = get_settings()
     snapshot = session.site_snapshot or {}
     required_seconds = int(snapshot.get("captureDurationSeconds", inspection.capture_duration_seconds))
@@ -30,7 +30,7 @@ def _capture_contract(session: VerificationSession, inspection: Inspection) -> t
     deadline = aware(
         inspection.deadline
         if snapshot.get("deadline") is None
-        else __import__("datetime").datetime.fromisoformat(str(snapshot["deadline"]))
+        else datetime.fromisoformat(str(snapshot["deadline"]))
     )
     maximum_seconds = min(
         max(settings.capture_max_seconds, required_seconds + 15),
@@ -43,7 +43,7 @@ def _response(
     session: VerificationSession,
     inspection: Inspection,
     *,
-    server_time,
+    server_time: datetime,
     clock_offset_ms: float | None,
 ) -> SessionCreateResponse:
     required_seconds, maximum_seconds, allowed_radius, deadline = _capture_contract(session, inspection)
