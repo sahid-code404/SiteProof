@@ -17,7 +17,7 @@ type LatestVerification = {
   receiptStatus?: string | null
 }
 
-type Phase11DashboardSummary = Awaited<ReturnType<typeof getSummary>> & {
+type DashboardSummary = Awaited<ReturnType<typeof getSummary>> & {
   verified: number
   reviewRequired: number
   flagged: number
@@ -42,61 +42,65 @@ function percent(value?: number | null) {
 export function DashboardPage() {
   const health = useQuery({ queryKey: ['backend-health'], queryFn: getBackendHealth, retry: 1 })
   const summary = useQuery({ queryKey: ['inspection-summary'], queryFn: getSummary })
-  const data = summary.data as Phase11DashboardSummary | undefined
+  const data = summary.data as DashboardSummary | undefined
   const reviewQueue = (data?.reviewRequired ?? 0) + (data?.inconclusive ?? 0)
 
   return (
     <>
       <section className="page-heading split-heading">
         <div>
-          <p className="eyebrow">SITEPROOF · VERIFICATION OPERATIONS</p>
-          <h1>Trust & evidence dashboard</h1>
-          <p>Current verification outcomes, reviewer attention, signed receipt state, and field workload in one operational view.</p>
+          <p className="eyebrow">Overview</p>
+          <h1>Field verification</h1>
+          <p>Results, review work and active inspections at a glance.</p>
         </div>
-        <div className={`status ${health.isSuccess ? 'online' : ''}`} role="status" aria-live="polite"><span className="dot" aria-hidden="true" />{health.isSuccess ? 'Backend online' : health.isError ? 'Backend unavailable' : 'Checking backend'}</div>
+        <div className={`status ${health.isSuccess ? 'online' : ''}`} role="status" aria-live="polite">
+          <span className="dot" aria-hidden="true" />
+          {health.isSuccess ? 'Online' : health.isError ? 'Backend unavailable' : 'Checking connection'}
+        </div>
       </section>
 
       {summary.isError ? (
         <div className="notice error" role="alert">
-          <strong>Dashboard unavailable</strong>
+          <strong>Could not load the overview</strong>
           <p>{summary.error.message}</p>
-          <button className="button ghost" type="button" onClick={() => summary.refetch()}>Retry dashboard</button>
+          <button className="button ghost" type="button" onClick={() => summary.refetch()}>Try again</button>
         </div>
       ) : null}
 
       <section className="metric-grid" aria-label="Verification metrics" aria-busy={summary.isLoading}>
-        <article className="metric-card"><span>Total inspections</span><strong>{summary.isLoading ? '…' : data?.total ?? 0}</strong></article>
+        <article className="metric-card"><span>Inspections</span><strong>{summary.isLoading ? '…' : data?.total ?? 0}</strong></article>
         <article className="metric-card"><span>Verified</span><strong>{summary.isLoading ? '…' : data?.verified ?? 0}</strong></article>
-        <article className="metric-card"><span>Review queue</span><strong>{summary.isLoading ? '…' : reviewQueue}</strong></article>
+        <article className="metric-card"><span>Needs review</span><strong>{summary.isLoading ? '…' : reviewQueue}</strong></article>
         <article className="metric-card"><span>Flagged</span><strong>{summary.isLoading ? '…' : data?.flagged ?? 0}</strong></article>
         <article className="metric-card"><span>Processing</span><strong>{summary.isLoading ? '…' : data?.verificationProcessing ?? 0}</strong></article>
       </section>
 
       <section className="dashboard-grid">
         <article className="panel accent-panel">
-          <p className="eyebrow">AUTOMATED VERIFICATION</p>
-          <h2>{summary.isLoading ? 'Calculating…' : `${data?.verificationRate ?? 0}% verified`}</h2>
-          <p>{data?.verificationCompleted ?? 0} latest immutable verification decisions are represented in the current rate. Historical results remain preserved but do not inflate current verdict counts.</p>
+          <p className="eyebrow">Verification</p>
+          <h2>{summary.isLoading ? 'Loading…' : `${data?.verificationRate ?? 0}% verified`}</h2>
+          <p>{data?.verificationCompleted ?? 0} inspections have a current verification result. Older results remain available in each inspection's history.</p>
           <div className="dashboard-actions">
-            <Link className="button primary" to="/review">Open reviewer workspace</Link>
-            <Link className="button ghost" to="/inspections">All inspections</Link>
+            <Link className="button primary" to="/review">Review results</Link>
+            <Link className="button ghost" to="/inspections">View inspections</Link>
           </div>
         </article>
+
         <article className="panel">
-          <p className="eyebrow">REVIEW ATTENTION</p>
+          <p className="eyebrow">Attention</p>
+          <h2>Work to check</h2>
           <div className="attention-row"><span>Review required</span><strong>{data?.reviewRequired ?? 0}</strong></div>
           <div className="attention-row"><span>Inconclusive</span><strong>{data?.inconclusive ?? 0}</strong></div>
-          <div className="attention-row"><span>Overdue inspections</span><strong>{data?.overdue ?? 0}</strong></div>
-          <div className="attention-row"><span>High / critical priority</span><strong>{data?.highPriority ?? 0}</strong></div>
-          <Link className="button ghost dashboard-review-link" to="/review">Review current decisions</Link>
+          <div className="attention-row"><span>Overdue</span><strong>{data?.overdue ?? 0}</strong></div>
+          <div className="attention-row"><span>High priority</span><strong>{data?.highPriority ?? 0}</strong></div>
         </article>
       </section>
 
-      <section className="dashboard-grid" style={{ marginTop: 20 }}>
+      <section className="dashboard-grid" style={{ marginTop: 14 }}>
         <article className="panel">
-          <p className="eyebrow">LATEST VERIFICATION RESULTS</p>
-          <h2>Recent trust decisions</h2>
-          {summary.isLoading ? <div className="async-state" role="status">Loading recent trust decisions…</div> : null}
+          <p className="eyebrow">Recent results</p>
+          <h2>Latest decisions</h2>
+          {summary.isLoading ? <div className="async-state" role="status">Loading results…</div> : null}
           {!summary.isLoading && !data?.latestVerifications?.length ? <p className="muted">No completed verification results yet.</p> : (
             <div className="recent-decision-list">
               {data?.latestVerifications?.map((item) => (
@@ -104,17 +108,17 @@ export function DashboardPage() {
                   <div className="recent-decision-topline">
                     <div>
                       <Link className="table-link" to={`/inspections/${item.inspectionId}`}>{item.title}</Link>
-                      <small>{item.locationName || 'Unnamed site'} · {item.engineVersion}</small>
+                      <small>{item.locationName || 'Unnamed site'}</small>
                     </div>
                     <div className="badge-row">
                       <span className={verdictBadgeClass(item.verdict)}>{item.verdict?.replace(/_/g, ' ') ?? item.verificationStatus.replace(/_/g, ' ')}</span>
-                      {item.receiptStatus ? <span className={item.receiptStatus === 'ISSUED' ? 'badge badge-ready' : 'badge badge-acknowledged'}>{item.receiptStatus}</span> : <span className="badge">NO RECEIPT</span>}
+                      {item.receiptStatus ? <span className={item.receiptStatus === 'ISSUED' ? 'badge badge-ready' : 'badge badge-acknowledged'}>{item.receiptStatus}</span> : null}
                     </div>
                   </div>
                   <div className="recent-decision-metrics">
                     <span><small>Score</small><strong>{typeof item.score === 'number' ? item.score.toFixed(2) : '—'}</strong></span>
                     <span><small>Confidence</small><strong>{percent(item.confidence)}</strong></span>
-                    <span><small>Receipt</small><strong>{item.receiptNumber ?? 'Not issued'}</strong></span>
+                    <span><small>Engine</small><strong>{item.engineVersion}</strong></span>
                   </div>
                 </article>
               ))}
@@ -123,12 +127,12 @@ export function DashboardPage() {
         </article>
 
         <article className="panel">
-          <p className="eyebrow">FIELD WORKFLOW</p>
-          <h2>Inspection pipeline</h2>
+          <p className="eyebrow">Field work</p>
+          <h2>Inspection status</h2>
           <div className="attention-row"><span>Draft</span><strong>{data?.draft ?? 0}</strong></div>
           <div className="attention-row"><span>Assigned</span><strong>{data?.assigned ?? 0}</strong></div>
           <div className="attention-row"><span>Acknowledged</span><strong>{data?.acknowledged ?? 0}</strong></div>
-          <div className="attention-row"><span>Ready for capture</span><strong>{data?.ready ?? 0}</strong></div>
+          <div className="attention-row"><span>Ready</span><strong>{data?.ready ?? 0}</strong></div>
           <div className="attention-row"><span>Due today</span><strong>{data?.dueToday ?? 0}</strong></div>
           <div className="attention-row"><span>Cancelled</span><strong>{data?.cancelled ?? 0}</strong></div>
         </article>
