@@ -143,7 +143,7 @@ fun InspectionListScreen(
                                 when {
                                     overdueCount > 0 -> "$overdueCount need attention · $activeCount active"
                                     activeCount > 0 -> "$activeCount active assignment${if (activeCount == 1) "" else "s"}"
-                                    else -> "No active work needs attention",
+                                    else -> "No active work needs attention"
                                 },
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodyMedium,
