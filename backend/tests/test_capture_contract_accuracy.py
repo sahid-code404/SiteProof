@@ -7,7 +7,6 @@ from app.models import Inspection, VerificationSession
 from tests.phase3_helpers import (
     create_ready_inspection,
     create_session,
-    finish_capture,
     login,
     seed_identities,
     start_capture,
