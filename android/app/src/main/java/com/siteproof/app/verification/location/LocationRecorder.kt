@@ -137,6 +137,7 @@ class LocationRecorder(context: Context) {
         altitudeMeters = if (hasAltitude()) altitude else null,
         bearingDegrees = if (hasBearing()) bearing.toDouble() else null,
         speedMetersPerSecond = if (hasSpeed()) speed.toDouble() else null,
+        isMock = isMock,
     )
 
     private fun CapturedLocationSample.toJson(): String {
@@ -149,6 +150,7 @@ class LocationRecorder(context: Context) {
             altitudeMeters?.let { append(",\"altitudeMeters\":${number(it)}") }
             bearingDegrees?.let { append(",\"bearingDegrees\":${number(it)}") }
             speedMetersPerSecond?.let { append(",\"speedMetersPerSecond\":${number(it)}") }
+            append(",\"isMock\":$isMock")
             append("}")
         }
     }
