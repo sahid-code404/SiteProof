@@ -23,8 +23,18 @@ from app.services.audit_service import record_audit
 from app.services.verification.collectors import SignalCollector
 from app.services.verification.policy import get_or_create_default_policy, policy_from_row
 from app.services.verification.scoring import calculate_score, resolve_decision
+from app.services.verification.security_gate import (
+    LEGACY_ENGINE_VERSION,
+    SECURITY_ENGINE_VERSION,
+    apply_security_gate,
+    engine_version_for_session,
+    evaluate_security_gate,
+)
 
-ENGINE_VERSION = "verification-engine-v1.1"
+# Compatibility export for older callers/tests. calculate_verification selects the engine
+# per session: v1.1 when Phase 9/10 analysis is unavailable, v2.0 once the security pipeline
+# has completed. This keeps historical v1.1 decisions intact while new complete pipelines use v2.
+ENGINE_VERSION = LEGACY_ENGINE_VERSION
 LIMITATIONS = [
     "The SiteProof score is confidence derived from configured multi-signal policy, not legal certainty.",
     "The result depends on phone hardware, scene quality, upstream algorithms, and policy configuration.",
@@ -42,13 +52,14 @@ def _latest_current_result(
     session_id: uuid.UUID,
     policy_id: uuid.UUID,
     policy_version: str,
+    engine_version: str,
 ) -> VerificationResult | None:
     return db.scalar(
         select(VerificationResult).where(
             VerificationResult.session_id == session_id,
             VerificationResult.policy_id == policy_id,
             VerificationResult.policy_version == policy_version,
-            VerificationResult.engine_version == ENGINE_VERSION,
+            VerificationResult.engine_version == engine_version,
         )
     )
 
@@ -86,7 +97,10 @@ def _upstream_processing(db: Session, session_id: uuid.UUID) -> list[str]:
     return waiting
 
 
-def _reset_result(db: Session, result: VerificationResult) -> None:
+def _reset_incomplete_result(db: Session, result: VerificationResult) -> None:
+    """Reset only unfinished rows; completed automated decisions are immutable."""
+    if result.processing_status == VerificationProcessingStatus.COMPLETED:
+        raise RuntimeError("Completed verification results are immutable; bump engine version instead.")
     result.processing_status = VerificationProcessingStatus.CALCULATING
     result.raw_score = None
     result.final_score = None
@@ -123,12 +137,18 @@ def calculate_verification(
 
     policy_row = get_or_create_default_policy(db, session.organization_id)
     policy = policy_from_row(policy_row)
-    existing = _latest_current_result(db, session.id, policy_row.id, policy.version)
-    if (
-        existing is not None
-        and existing.processing_status == VerificationProcessingStatus.COMPLETED
-        and not force
-    ):
+    engine_version = engine_version_for_session(db, session.id)
+    existing = _latest_current_result(
+        db,
+        session.id,
+        policy_row.id,
+        policy.version,
+        engine_version,
+    )
+
+    # Automated decisions and any receipts derived from them are historical records. `force`
+    # may resume/retry an unfinished calculation, but it never rewrites a completed decision.
+    if existing is not None and existing.processing_status == VerificationProcessingStatus.COMPLETED:
         return existing
 
     result = existing or VerificationResult(
@@ -138,14 +158,14 @@ def calculate_verification(
         policy_id=policy_row.id,
         policy_name=policy.name,
         policy_version=policy.version,
-        engine_version=ENGINE_VERSION,
+        engine_version=engine_version,
         processing_status=VerificationProcessingStatus.CALCULATING,
     )
     if existing is None:
         db.add(result)
         db.flush()
     else:
-        _reset_result(db, result)
+        _reset_incomplete_result(db, result)
 
     actor = actor_user_id or session.created_by_user_id
     record_audit(
@@ -156,7 +176,7 @@ def calculate_verification(
         entity_id=result.id,
         action="VERIFICATION_STARTED",
         metadata={
-            "engineVersion": ENGINE_VERSION,
+            "engineVersion": engine_version,
             "policyVersion": policy.version,
             "forced": force,
         },
@@ -183,6 +203,11 @@ def calculate_verification(
 
     score = calculate_score(signals, policy)
     decision = resolve_decision(signals, policy)
+    security_rules = []
+    if engine_version == SECURITY_ENGINE_VERSION:
+        security_rules = evaluate_security_gate(db, session.id)
+        decision = apply_security_gate(decision, security_rules)
+
     result.raw_score = decision.score
     result.final_score = decision.score
     result.overall_confidence = decision.confidence
@@ -206,6 +231,12 @@ def calculate_verification(
         "availableWeight": score.available_weight,
         "scoreMethod": "weighted normalized signal score; confidence used for gating",
         "confidenceMethod": "configured-weighted mean of available signal confidence",
+        "securityGate": {
+            "enabled": engine_version == SECURITY_ENGINE_VERSION,
+            "scoreAdjusted": False,
+            "constraintCodes": [rule.code for rule in security_rules],
+            "advancedSignalsRole": "supporting-evidence-only",
+        },
     }
     result.calculated_at = utc_now()
     result.processing_status = VerificationProcessingStatus.COMPLETED
@@ -248,7 +279,7 @@ def calculate_verification(
         entity_id=result.id,
         action=action,
         metadata={
-            "engineVersion": ENGINE_VERSION,
+            "engineVersion": engine_version,
             "policyVersion": policy.version,
             "score": round(decision.score, 2),
             "verdict": decision.verdict.value,
