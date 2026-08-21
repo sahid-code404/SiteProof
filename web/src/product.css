@@ -1,0 +1,168 @@
+.video-summary-grid,
+.receipt-detail-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.video-summary-grid > div,
+.receipt-detail-summary > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.video-summary-grid span,
+.receipt-detail-summary span,
+.receipt-detail-summary small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.inspection-filter-bar {
+  grid-template-columns: minmax(280px, 1fr) 190px auto;
+  align-items: center;
+}
+
+.inspection-more-filters {
+  position: relative;
+}
+
+.inspection-more-filters > summary,
+.form-advanced-details > summary {
+  cursor: pointer;
+  list-style: none;
+  color: #405048;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.inspection-more-filters > summary::-webkit-details-marker,
+.form-advanced-details > summary::-webkit-details-marker { display: none; }
+
+.inspection-more-filter-grid {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  display: grid;
+  width: min(520px, 80vw);
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.inspection-table { min-width: 820px; }
+.table-secondary-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+.table-secondary-line .badge { font-size: 9px; }
+.overdue-inline { color: var(--danger); font-weight: 700; }
+
+.simple-section-title {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.simple-section-title h2 { margin: 0 0 4px; font-size: 20px; }
+.simple-section-title p { margin: 0; color: var(--muted); font-size: 13px; }
+.form-advanced-details {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.form-advanced-details .field-grid { margin-top: 12px; }
+
+.receipt-detail-page { display: grid; gap: 14px; }
+.receipt-file-check {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.receipt-file-check small { grid-column: 1 / -1; color: var(--muted); }
+.receipt-code {
+  max-height: 420px;
+  overflow: auto;
+  margin: 0;
+  padding: 14px;
+  border-radius: 10px;
+  background: #17251f;
+  color: #eaf0ec;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.public-receipt-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px 18px;
+  background: #f5f6f3;
+}
+.public-receipt-card {
+  width: min(620px, 100%);
+  padding: clamp(22px, 5vw, 38px);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+.public-receipt-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 30px;
+  font-weight: 700;
+}
+.public-receipt-card h1 { margin: 0 0 18px; font-size: clamp(26px, 5vw, 38px); }
+.public-receipt-state {
+  display: grid;
+  gap: 3px;
+  padding: 14px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+.public-receipt-state.valid { background: #edf5ef; color: #245d3e; }
+.public-receipt-state.invalid { background: #fff0ee; color: #8f2c24; }
+.public-receipt-state span { font-size: 12px; opacity: .8; }
+.public-receipt-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.public-receipt-grid > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.public-receipt-grid span,
+.public-receipt-grid small { color: var(--muted); font-size: 11px; }
+.public-receipt-note { font-size: 12px; line-height: 1.55; }
+
+@media (max-width: 700px) {
+  .video-summary-grid,
+  .receipt-detail-summary { grid-template-columns: 1fr; }
+  .inspection-filter-bar { grid-template-columns: 1fr; }
+  .inspection-more-filter-grid {
+    position: static;
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
+  .public-receipt-grid { grid-template-columns: 1fr; }
+}
