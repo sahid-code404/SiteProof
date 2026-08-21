@@ -82,6 +82,10 @@ export function getSessionReceipt(sessionId: string): Promise<Receipt | null> {
   return request(`/sessions/${sessionId}/receipt`)
 }
 
+export function getSessionReceipts(sessionId: string): Promise<Receipt[]> {
+  return request(`/sessions/${sessionId}/receipts`)
+}
+
 export function issueSessionReceipt(sessionId: string): Promise<Receipt> {
   return request(`/sessions/${sessionId}/receipt/issue`, { method: 'POST' })
 }
