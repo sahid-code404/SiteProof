@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -55,7 +56,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -116,7 +116,7 @@ fun InspectionListScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            ReferenceHeader(
+            AdaptiveHeader(
                 inspectorName = inspectorName,
                 activeCount = activeCount,
                 overdueCount = overdueCount,
@@ -133,11 +133,22 @@ fun InspectionListScreen(
                 state.error != null -> ErrorState(message = state.error, onRetry = onRefresh)
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 34.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 38.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     item(key = "title") {
-                        Text("My Inspections", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text("My inspections", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                when {
+                                    overdueCount > 0 -> "$overdueCount need attention · $activeCount active"
+                                    activeCount > 0 -> "$activeCount active assignment${if (activeCount == 1) "" else "s"}"
+                                    else -> "No active work needs attention",
+                                },
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
                     }
                     item(key = "search") {
                         OutlinedTextField(
@@ -145,14 +156,14 @@ fun InspectionListScreen(
                             onValueChange = { search = it },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            placeholder = { Text("Search inspections") },
+                            shape = RoundedCornerShape(16.dp),
+                            placeholder = { Text("Search site, status or priority") },
                             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                                focusedContainerColor = Color.White,
-                                unfocusedContainerColor = Color.White,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
                             ),
                         )
                     }
@@ -186,7 +197,7 @@ fun InspectionListScreen(
 }
 
 @Composable
-private fun ReferenceHeader(
+private fun AdaptiveHeader(
     inspectorName: String,
     activeCount: Int,
     overdueCount: Int,
@@ -194,60 +205,64 @@ private fun ReferenceHeader(
 ) {
     var notificationsOpen by remember { mutableStateOf(false) }
     var accountOpen by remember { mutableStateOf(false) }
+    val scheme = MaterialTheme.colorScheme
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(
                 Brush.linearGradient(
-                    listOf(Color(0xFFFF9827), Color(0xFFFF6900), Color(0xFFF04C00)),
+                    listOf(
+                        scheme.surface,
+                        scheme.surfaceVariant.copy(alpha = 0.92f),
+                    ),
                 ),
             )
             .statusBarsPadding()
-            .height(112.dp),
+            .height(108.dp),
     ) {
         Box(
             modifier = Modifier
-                .size(112.dp)
+                .size(118.dp)
                 .align(Alignment.TopEnd)
-                .blur(30.dp)
-                .background(Color.White.copy(alpha = 0.20f), CircleShape),
+                .blur(34.dp)
+                .background(scheme.primary.copy(alpha = 0.24f), CircleShape),
         )
         Box(
             modifier = Modifier
-                .size(84.dp)
+                .size(92.dp)
                 .align(Alignment.BottomStart)
-                .blur(26.dp)
-                .background(Color(0xFFFFC27A).copy(alpha = 0.30f), CircleShape),
+                .blur(30.dp)
+                .background(scheme.primary.copy(alpha = 0.12f), CircleShape),
         )
 
         Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 17.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 15.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column {
-                Text("SiteProof", style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
-                Text("Field Verification", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.92f))
-                Text(inspectorName, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.78f), modifier = Modifier.padding(top = 2.dp))
+                Text("SiteProof", style = MaterialTheme.typography.titleLarge, color = scheme.onSurface, fontWeight = FontWeight.Bold)
+                Text("Field verification", style = MaterialTheme.typography.bodyMedium, color = scheme.primary, fontWeight = FontWeight.SemiBold)
+                Text(inspectorName, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box {
                     IconButton(
                         onClick = { notificationsOpen = !notificationsOpen; accountOpen = false },
-                        modifier = Modifier.background(Color.White.copy(alpha = 0.13f), CircleShape),
+                        modifier = Modifier.background(scheme.surface.copy(alpha = 0.7f), CircleShape),
                     ) {
-                        Icon(Icons.Default.NotificationsNone, contentDescription = "Notifications", tint = Color.White)
+                        Icon(Icons.Default.NotificationsNone, contentDescription = "Notifications", tint = scheme.onSurface)
                     }
                     if (overdueCount > 0) {
                         Surface(
                             modifier = Modifier.align(Alignment.TopEnd).size(19.dp),
                             shape = CircleShape,
-                            color = Color(0xFFD92D20),
+                            color = scheme.error,
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text(overdueCount.coerceAtMost(9).toString(), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                Text(overdueCount.coerceAtMost(9).toString(), color = scheme.onError, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -256,7 +271,7 @@ private fun ReferenceHeader(
                             text = {
                                 Column {
                                     Text("Notifications", fontWeight = FontWeight.Bold)
-                                    Text("Live assignment status", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("Live assignment status", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
                                 }
                             },
                             onClick = {},
@@ -282,13 +297,14 @@ private fun ReferenceHeader(
                     Surface(
                         modifier = Modifier.size(44.dp).clickable { accountOpen = !accountOpen; notificationsOpen = false },
                         shape = CircleShape,
-                        color = Color.White,
+                        color = scheme.primaryContainer,
+                        border = BorderStroke(1.dp, scheme.primary.copy(alpha = 0.2f)),
                         shadowElevation = 4.dp,
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
                                 inspectorName.trim().firstOrNull()?.uppercase() ?: "I",
-                                color = MaterialTheme.colorScheme.primary,
+                                color = scheme.primary,
                                 fontWeight = FontWeight.Bold,
                             )
                         }
@@ -299,7 +315,7 @@ private fun ReferenceHeader(
                             text = {
                                 Column {
                                     Text(inspectorName, fontWeight = FontWeight.Bold)
-                                    Text("Inspector account", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("Inspector account", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
                                 }
                             },
                             onClick = {},
@@ -327,23 +343,23 @@ private fun InspectionTabs(
 ) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         FilterChipButton("Active ($activeCount)", filter == InspectionFilter.ACTIVE, Modifier.weight(1f)) { onFilter(InspectionFilter.ACTIVE) }
-        FilterChipButton("Completed ($completedCount)", filter == InspectionFilter.COMPLETED, Modifier.weight(1f)) { onFilter(InspectionFilter.COMPLETED) }
+        FilterChipButton("Done ($completedCount)", filter == InspectionFilter.COMPLETED, Modifier.weight(1f)) { onFilter(InspectionFilter.COMPLETED) }
         FilterChipButton("All ($totalCount)", filter == InspectionFilter.ALL, Modifier.weight(1f)) { onFilter(InspectionFilter.ALL) }
     }
 }
 
 @Composable
 private fun FilterChipButton(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
     Surface(
-        modifier = modifier
-            .shadow(if (selected) 6.dp else 1.dp, RoundedCornerShape(11.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(11.dp),
-        color = if (selected) MaterialTheme.colorScheme.primary else Color.White,
-        border = if (selected) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(13.dp),
+        color = if (selected) scheme.primary else scheme.surface.copy(alpha = 0.78f),
+        border = if (selected) null else BorderStroke(1.dp, scheme.outlineVariant),
+        shadowElevation = if (selected) 5.dp else 0.dp,
     ) {
-        Box(modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-            Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface, maxLines = 1)
+        Box(modifier = Modifier.padding(horizontal = 7.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+            Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) scheme.onPrimary else scheme.onSurface, maxLines = 1)
         }
     }
 }
@@ -352,65 +368,94 @@ private fun FilterChipButton(label: String, selected: Boolean, modifier: Modifie
 private fun OfflineBanner() {
     Surface(
         modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.tertiaryContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.18f)),
     ) {
-        Column(Modifier.padding(14.dp)) {
-            Text("Offline", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onTertiaryContainer)
-            Text("Showing the last synced copy. Wi-Fi or mobile data can be used when you're back online.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.padding(15.dp)) {
+            Text("Offline · cached data", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onTertiaryContainer)
+            Text("You can keep reviewing the last synced assignments. SiteProof will reconnect when a network is available.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.78f))
         }
     }
 }
 
 @Composable
 private fun InspectionCard(inspection: InspectionSummary, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
     Card(
-        modifier = Modifier.fillMaxWidth().animateContentSize().shadow(7.dp, RoundedCornerShape(16.dp)).clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        modifier = Modifier.fillMaxWidth().animateContentSize().shadow(4.dp, RoundedCornerShape(20.dp)).clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = scheme.surface.copy(alpha = 0.92f)),
+        border = BorderStroke(1.dp, scheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp, pressedElevation = 2.dp),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(13.dp),
         ) {
-            Surface(modifier = Modifier.size(46.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-                Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.WorkOutline, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp)) }
+            Surface(
+                modifier = Modifier.size(48.dp),
+                shape = RoundedCornerShape(15.dp),
+                color = scheme.primaryContainer,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.WorkOutline, contentDescription = null, tint = scheme.primary, modifier = Modifier.size(24.dp))
+                }
             }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(inspection.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(inspection.locationName ?: inspection.locationAddress ?: "${inspection.expectedLatitude}, ${inspection.expectedLongitude}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Due: ${formatDeadline(inspection.deadline)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    inspection.locationName ?: inspection.locationAddress ?: "${inspection.expectedLatitude}, ${inspection.expectedLongitude}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text("Due ${formatDeadline(inspection.deadline)}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     StatusPill(inspection.status)
                     Text(inspection.priority.lowercase().replaceFirstChar { it.titlecase() }, style = MaterialTheme.typography.labelMedium, color = priorityColor(inspection.priority))
                 }
             }
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = scheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
 private fun StatusPill(status: String) {
+    val scheme = MaterialTheme.colorScheme
     val finished = isFinished(status)
-    Surface(shape = RoundedCornerShape(7.dp), color = if (finished) Color(0xFFEAF2FF) else MaterialTheme.colorScheme.primaryContainer) {
-        Text(status.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = if (finished) Color(0xFF2260A8) else MaterialTheme.colorScheme.primary)
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = if (finished) scheme.secondaryContainer else scheme.primaryContainer,
+    ) {
+        Text(
+            status.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() },
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = if (finished) scheme.onSecondaryContainer else scheme.onPrimaryContainer,
+        )
     }
 }
 
 @Composable
 private fun SyncedCard() {
     AnimatedVisibility(visible = true, enter = fadeIn() + slideInVertically { it / 3 }, exit = fadeOut() + slideOutVertically { it / 3 }) {
-        Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Color(0xFFFFF2E2)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.66f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+        ) {
             Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column {
-                    Text("You're all set!", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Synced and ready", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text("No pending uploads", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Surface(modifier = Modifier.size(44.dp), shape = CircleShape, color = Color(0xFFFFD29B)) {
-                    Box(contentAlignment = Alignment.Center) { Text("✓", color = Color(0xFF159447), fontWeight = FontWeight.Bold) }
+                Surface(modifier = Modifier.size(44.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.13f)) {
+                    Box(contentAlignment = Alignment.Center) { Text("✓", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }
                 }
             }
         }
@@ -419,20 +464,38 @@ private fun SyncedCard() {
 
 @Composable
 private fun EmptyState(filter: InspectionFilter, hasQuery: Boolean) {
-    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Color.White) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
         Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.Start) {
-            Text(if (hasQuery) "No matching inspections" else if (filter == InspectionFilter.ACTIVE) "Nothing needs action" else "No inspections here", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(if (hasQuery) "Try another search." else "New assignments will appear here.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+            Text(
+                if (hasQuery) "No matching inspections" else if (filter == InspectionFilter.ACTIVE) "Nothing needs action" else "No inspections here",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(if (hasQuery) "Try a different site, status or priority." else "New assignments will appear here automatically.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 5.dp))
         }
     }
 }
 
 @Composable
 private fun ErrorState(message: String, onRetry: () -> Unit) {
-    Column(modifier = Modifier.fillMaxSize().padding(32.dp).semantics { liveRegion = LiveRegionMode.Assertive }, verticalArrangement = Arrangement.Center) {
-        Text("Could not load inspections", style = MaterialTheme.typography.headlineMedium)
-        Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 12.dp))
-        Button(onClick = onRetry) { Text("Try again") }
+    Box(modifier = Modifier.fillMaxSize().padding(22.dp).semantics { liveRegion = LiveRegionMode.Assertive }, contentAlignment = Alignment.Center) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f)),
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Inspections couldn't be refreshed", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Your last synced data is kept on this device. Check the connection and retry.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text("Try again") }
+            }
+        }
     }
 }
 
