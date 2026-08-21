@@ -32,7 +32,7 @@ local.properties
 postgres-data/
 backend/siteproof-evidence/
 
-# Cryptographic private material
+# Local secrets
 .secrets/
 *.private.pem
 *private_key.pem
