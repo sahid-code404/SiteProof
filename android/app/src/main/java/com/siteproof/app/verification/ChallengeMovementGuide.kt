@@ -1,5 +1,6 @@
 package com.siteproof.app.verification
 
+import android.speech.tts.TextToSpeech
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -19,13 +20,19 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -35,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import com.siteproof.app.verification.model.ChallengeIssue
 import com.siteproof.app.verification.sensors.ChallengeGuidanceStatus
 import com.siteproof.app.verification.sensors.ChallengeMovementGuidance
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -48,6 +56,40 @@ internal fun ChallengeMovementGuide(
     challenge: ChallengeIssue,
     guidance: ChallengeMovementGuidance,
 ) {
+    val context = LocalContext.current
+    var speech by remember { mutableStateOf<TextToSpeech?>(null) }
+    DisposableEffect(context) {
+        lateinit var engine: TextToSpeech
+        engine = TextToSpeech(context) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                engine.language = Locale.getDefault()
+                engine.setSpeechRate(0.92f)
+                speech = engine
+            }
+        }
+        onDispose {
+            engine.stop()
+            engine.shutdown()
+            if (speech === engine) speech = null
+        }
+    }
+    LaunchedEffect(challenge.challengeId, guidance.status, speech) {
+        val engine = speech ?: return@LaunchedEffect
+        val phrase = if (guidance.status == ChallengeGuidanceStatus.WAITING) {
+            movementVoiceInstruction(challenge.type)
+        } else {
+            movementVoiceStatus(guidance.status)
+        }
+        if (phrase.isNotBlank()) {
+            engine.speak(
+                phrase,
+                TextToSpeech.QUEUE_FLUSH,
+                null,
+                "siteproof-${challenge.challengeId}-${guidance.status.name}",
+            )
+        }
+    }
+
     val transition = rememberInfiniteTransition(label = "movement-guide")
     val demo by transition.animateFloat(
         initialValue = 0f,
