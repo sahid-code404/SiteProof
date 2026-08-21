@@ -27,11 +27,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.NotificationsNone
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.WorkOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,11 +45,11 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -91,6 +95,7 @@ fun InspectionListScreen(
 
     val activeCount = state.items.count { !isFinished(it.status) }
     val completedCount = state.items.count { isFinished(it.status) }
+    val overdueCount = state.items.count { it.isOverdue && !isFinished(it.status) }
     val visible = state.items.filter { inspection ->
         val statusMatch = when (filter) {
             InspectionFilter.ACTIVE -> !isFinished(inspection.status)
@@ -110,7 +115,14 @@ fun InspectionListScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { ReferenceHeader(inspectorName = inspectorName, onSignOut = onSignOut) },
+        topBar = {
+            ReferenceHeader(
+                inspectorName = inspectorName,
+                activeCount = activeCount,
+                overdueCount = overdueCount,
+                onSignOut = onSignOut,
+            )
+        },
     ) { padding ->
         PullToRefreshBox(
             isRefreshing = state.loading,
@@ -174,7 +186,15 @@ fun InspectionListScreen(
 }
 
 @Composable
-private fun ReferenceHeader(inspectorName: String, onSignOut: () -> Unit) {
+private fun ReferenceHeader(
+    inspectorName: String,
+    activeCount: Int,
+    overdueCount: Int,
+    onSignOut: () -> Unit,
+) {
+    var notificationsOpen by remember { mutableStateOf(false) }
+    var accountOpen by remember { mutableStateOf(false) }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -184,25 +204,23 @@ private fun ReferenceHeader(inspectorName: String, onSignOut: () -> Unit) {
                 ),
             )
             .statusBarsPadding()
-            .height(112.dp)
-            .clip(RoundedCornerShape(bottomStart = 0.dp, bottomEnd = 0.dp)),
+            .height(112.dp),
     ) {
         Box(
             modifier = Modifier
-                .size(96.dp)
+                .size(112.dp)
                 .align(Alignment.TopEnd)
-                .padding(top = 4.dp, end = 16.dp)
-                .blur(24.dp)
-                .background(Color.White.copy(alpha = 0.18f), CircleShape),
+                .blur(30.dp)
+                .background(Color.White.copy(alpha = 0.20f), CircleShape),
         )
         Box(
             modifier = Modifier
-                .size(70.dp)
+                .size(84.dp)
                 .align(Alignment.BottomStart)
-                .padding(start = 12.dp)
-                .blur(20.dp)
-                .background(Color(0xFFFFC27A).copy(alpha = 0.25f), CircleShape),
+                .blur(26.dp)
+                .background(Color(0xFFFFC27A).copy(alpha = 0.30f), CircleShape),
         )
+
         Row(
             modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 17.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -210,14 +228,90 @@ private fun ReferenceHeader(inspectorName: String, onSignOut: () -> Unit) {
         ) {
             Column {
                 Text("SiteProof", style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
-                Text("Field Verification", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.9f))
-                Text(inspectorName, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.75f), modifier = Modifier.padding(top = 2.dp))
+                Text("Field Verification", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.92f))
+                Text(inspectorName, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.78f), modifier = Modifier.padding(top = 2.dp))
             }
-            IconButton(
-                onClick = onSignOut,
-                modifier = Modifier.background(Color.White.copy(alpha = 0.12f), CircleShape),
-            ) {
-                Icon(Icons.Default.ExitToApp, contentDescription = "Sign out", tint = Color.White)
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box {
+                    IconButton(
+                        onClick = { notificationsOpen = !notificationsOpen; accountOpen = false },
+                        modifier = Modifier.background(Color.White.copy(alpha = 0.13f), CircleShape),
+                    ) {
+                        Icon(Icons.Default.NotificationsNone, contentDescription = "Notifications", tint = Color.White)
+                    }
+                    if (overdueCount > 0) {
+                        Surface(
+                            modifier = Modifier.align(Alignment.TopEnd).size(19.dp),
+                            shape = CircleShape,
+                            color = Color(0xFFD92D20),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(overdueCount.coerceAtMost(9).toString(), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    DropdownMenu(expanded = notificationsOpen, onDismissRequest = { notificationsOpen = false }) {
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text("Notifications", fontWeight = FontWeight.Bold)
+                                    Text("Live assignment status", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            },
+                            onClick = {},
+                            enabled = false,
+                        )
+                        if (overdueCount > 0) {
+                            DropdownMenuItem(
+                                text = { Text("$overdueCount overdue inspection${if (overdueCount == 1) "" else "s"}") },
+                                onClick = { notificationsOpen = false },
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("$activeCount active inspection${if (activeCount == 1) "" else "s"}") },
+                            onClick = { notificationsOpen = false },
+                        )
+                        if (overdueCount == 0 && activeCount == 0) {
+                            DropdownMenuItem(text = { Text("You're all set") }, onClick = { notificationsOpen = false })
+                        }
+                    }
+                }
+
+                Box {
+                    Surface(
+                        modifier = Modifier.size(44.dp).clickable { accountOpen = !accountOpen; notificationsOpen = false },
+                        shape = CircleShape,
+                        color = Color.White,
+                        shadowElevation = 4.dp,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                inspectorName.trim().firstOrNull()?.uppercase() ?: "I",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                    DropdownMenu(expanded = accountOpen, onDismissRequest = { accountOpen = false }) {
+                        DropdownMenuItem(
+                            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                            text = {
+                                Column {
+                                    Text(inspectorName, fontWeight = FontWeight.Bold)
+                                    Text("Inspector account", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            },
+                            onClick = {},
+                            enabled = false,
+                        )
+                        DropdownMenuItem(
+                            leadingIcon = { Icon(Icons.Default.ExitToApp, contentDescription = null) },
+                            text = { Text("Sign out") },
+                            onClick = { accountOpen = false; onSignOut() },
+                        )
+                    }
+                }
             }
         }
     }
@@ -249,12 +343,7 @@ private fun FilterChipButton(label: String, selected: Boolean, modifier: Modifie
         border = if (selected) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
         Box(modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-            Text(
-                label,
-                style = MaterialTheme.typography.labelLarge,
-                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-            )
+            Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface, maxLines = 1)
         }
     }
 }
@@ -268,7 +357,7 @@ private fun OfflineBanner() {
     ) {
         Column(Modifier.padding(14.dp)) {
             Text("Offline", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onTertiaryContainer)
-            Text("Showing the last synced copy. Pull to refresh when you're back online.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Showing the last synced copy. Wi-Fi or mobile data can be used when you're back online.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -276,11 +365,7 @@ private fun OfflineBanner() {
 @Composable
 private fun InspectionCard(inspection: InspectionSummary, onClick: () -> Unit) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .animateContentSize()
-            .shadow(7.dp, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().animateContentSize().shadow(7.dp, RoundedCornerShape(16.dp)).clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp, pressedElevation = 2.dp),
@@ -290,14 +375,8 @@ private fun InspectionCard(inspection: InspectionSummary, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Surface(
-                modifier = Modifier.size(46.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.WorkOutline, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
-                }
+            Surface(modifier = Modifier.size(46.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.WorkOutline, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp)) }
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(inspection.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -316,31 +395,15 @@ private fun InspectionCard(inspection: InspectionSummary, onClick: () -> Unit) {
 @Composable
 private fun StatusPill(status: String) {
     val finished = isFinished(status)
-    Surface(
-        shape = RoundedCornerShape(7.dp),
-        color = if (finished) Color(0xFFEAF2FF) else MaterialTheme.colorScheme.primaryContainer,
-    ) {
-        Text(
-            status.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() },
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = if (finished) Color(0xFF2260A8) else MaterialTheme.colorScheme.primary,
-        )
+    Surface(shape = RoundedCornerShape(7.dp), color = if (finished) Color(0xFFEAF2FF) else MaterialTheme.colorScheme.primaryContainer) {
+        Text(status.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = if (finished) Color(0xFF2260A8) else MaterialTheme.colorScheme.primary)
     }
 }
 
 @Composable
 private fun SyncedCard() {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn() + slideInVertically { it / 3 },
-        exit = fadeOut() + slideOutVertically { it / 3 },
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            color = Color(0xFFFFF2E2),
-        ) {
+    AnimatedVisibility(visible = true, enter = fadeIn() + slideInVertically { it / 3 }, exit = fadeOut() + slideOutVertically { it / 3 }) {
+        Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Color(0xFFFFF2E2)) {
             Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column {
                     Text("You're all set!", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -366,10 +429,7 @@ private fun EmptyState(filter: InspectionFilter, hasQuery: Boolean) {
 
 @Composable
 private fun ErrorState(message: String, onRetry: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp).semantics { liveRegion = LiveRegionMode.Assertive },
-        verticalArrangement = Arrangement.Center,
-    ) {
+    Column(modifier = Modifier.fillMaxSize().padding(32.dp).semantics { liveRegion = LiveRegionMode.Assertive }, verticalArrangement = Arrangement.Center) {
         Text("Could not load inspections", style = MaterialTheme.typography.headlineMedium)
         Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 12.dp))
         Button(onClick = onRetry) { Text("Try again") }
