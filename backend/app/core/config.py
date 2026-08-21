@@ -115,7 +115,10 @@ class Settings(BaseSettings):
     storage_bucket: str = "siteproof-evidence"
     storage_region: str = "us-east-1"
 
-    max_video_bytes: int = 100 * 1024 * 1024
+    # 75-second FHD evidence can legitimately exceed the old 100 MiB ceiling on some devices.
+    # Keep a bounded 256 MiB server limit; Android additionally rejects unusually large files
+    # before upload and checks free storage before capture begins.
+    max_video_bytes: int = 256 * 1024 * 1024
     max_sensor_bytes: int = 10 * 1024 * 1024
     max_location_bytes: int = 2 * 1024 * 1024
     max_metadata_bytes: int = 1 * 1024 * 1024
