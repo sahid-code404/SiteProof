@@ -6,6 +6,48 @@
   flex-wrap: wrap;
 }
 
+.review-card-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.review-card-context strong {
+  color: #405048;
+  font-weight: 700;
+}
+
+.review-date-filter {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding-left: 10px;
+  border: 1px solid #cfd8d1;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.review-date-filter input {
+  border: 0;
+  border-left: 1px solid #e2e7e3;
+  border-radius: 0 10px 10px 0;
+  box-shadow: none;
+}
+
+.review-date-filter input:focus {
+  border-color: transparent;
+  border-left-color: #739a64;
+  box-shadow: none;
+}
+
 .dashboard-actions {
   display: flex;
   align-items: center;
@@ -108,7 +150,9 @@
     flex: 1;
   }
 
+  .review-card-context,
   .recent-decision-topline {
+    align-items: flex-start;
     flex-direction: column;
   }
 
