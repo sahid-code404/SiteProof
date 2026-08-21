@@ -32,6 +32,7 @@ class CameraCaptureManager(private val context: Context) {
 
     private var provider: ProcessCameraProvider? = null
     private var previewUseCase: Preview? = null
+    private var boundPreviewView: PreviewView? = null
     private var videoCapture: VideoCapture<Recorder>? = null
     private var recording: Recording? = null
     private var completion: CompletableDeferred<RecordingResult>? = null
@@ -39,11 +40,21 @@ class CameraCaptureManager(private val context: Context) {
     private var startNs: Long = 0L
 
     suspend fun bind(previewView: PreviewView, lifecycleOwner: LifecycleOwner) {
-        // Compose may replace PreviewView when READY becomes CAPTURING. Retarget the existing
-        // Preview surface instead of unbinding the VideoCapture use case mid-recording.
         val existingPreview = previewUseCase
         if (provider != null && videoCapture != null && existingPreview != null) {
+            if (boundPreviewView === previewView) return
+
+            if (recording != null) {
+                // Evidence recording has priority over UI recovery. Never swap Preview surface
+                // providers while Recorder is active: some CameraX/device combinations stall the
+                // shared camera graph for hundreds of milliseconds or more during that change.
+                // The persistent-overlay UI should make this path unnecessary, but keeping this
+                // guard prevents a future Compose refactor from damaging the encoded evidence.
+                return
+            }
+
             existingPreview.surfaceProvider = previewView.surfaceProvider
+            boundPreviewView = previewView
             return
         }
 
@@ -64,6 +75,7 @@ class CameraCaptureManager(private val context: Context) {
         cameraProvider.bindToLifecycle(lifecycleOwner, selector, preview, capture)
         provider = cameraProvider
         previewUseCase = preview
+        boundPreviewView = previewView
         videoCapture = capture
     }
 
@@ -154,6 +166,7 @@ class CameraCaptureManager(private val context: Context) {
         provider?.unbindAll()
         provider = null
         previewUseCase = null
+        boundPreviewView = null
         videoCapture = null
     }
 
