@@ -217,8 +217,8 @@ export function InspectionFormPage() {
           <label className="wide">Title<input minLength={3} maxLength={150} value={form.title} onChange={(event) => update('title', event.target.value)} required /></label>
           <label className="wide">Description<textarea rows={3} maxLength={5000} value={form.description} onChange={(event) => update('description', event.target.value)} /></label>
           <div className="field-grid">
-            <label>Type<select value={form.inspectionType} onChange={(event) => update('inspectionType', event.target.value as InspectionType)}>{['ROAD_REPAIR','INFRASTRUCTURE','CONSTRUCTION','UTILITY','GENERAL'].map((item) => <option key={item}>{item.replace(/_/g, ' ')}</option>)}</select></label>
-            <label>Priority<select value={form.priority} onChange={(event) => update('priority', event.target.value as InspectionPriority)}>{['LOW','MEDIUM','HIGH','CRITICAL'].map((item) => <option key={item}>{item}</option>)}</select></label>
+            <label>Type<select value={form.inspectionType} onChange={(event) => update('inspectionType', event.target.value as InspectionType)}>{['ROAD_REPAIR','INFRASTRUCTURE','CONSTRUCTION','UTILITY','GENERAL'].map((item) => <option key={item} value={item}>{item.replace(/_/g, ' ')}</option>)}</select></label>
+            <label>Priority<select value={form.priority} onChange={(event) => update('priority', event.target.value as InspectionPriority)}>{['LOW','MEDIUM','HIGH','CRITICAL'].map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
           </div>
         </section>
 
