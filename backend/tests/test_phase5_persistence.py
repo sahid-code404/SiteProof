@@ -2,6 +2,7 @@ import uuid
 
 from sqlalchemy import func, select
 
+from app.core.config import get_settings
 from app.models.challenge import VerificationChallenge
 from app.models.verification import VerificationSession
 from app.models.visual_motion import (
@@ -42,6 +43,7 @@ def test_visual_result_upsert_is_idempotent_per_challenge_and_version(client, db
     challenge = db.get(VerificationChallenge, uuid.UUID(issued["challengeId"]))
     assert session is not None
     assert challenge is not None
+    analysis_version = get_settings().vision_analysis_version
 
     _upsert_result(
         db,
@@ -72,14 +74,14 @@ def test_visual_result_upsert_is_idempotent_per_challenge_and_version(client, db
     count = db.scalar(
         select(func.count(VisualMotionResult.id)).where(
             VisualMotionResult.challenge_id == challenge.id,
-            VisualMotionResult.analysis_version == "vision-v1.0",
+            VisualMotionResult.analysis_version == analysis_version,
         )
     )
     assert count == 1
     row = db.scalar(
         select(VisualMotionResult).where(
             VisualMotionResult.challenge_id == challenge.id,
-            VisualMotionResult.analysis_version == "vision-v1.0",
+            VisualMotionResult.analysis_version == analysis_version,
         )
     )
     assert row is not None
@@ -116,7 +118,7 @@ def test_visual_analysis_endpoint_is_reviewer_scoped_and_does_not_fuse_sensor_re
     assert admin.status_code == 200, admin.text
     body = admin.json()
     assert body["status"] == "INCONCLUSIVE"
-    assert body["analysisVersion"] == "vision-v1.0"
+    assert body["analysisVersion"] == get_settings().vision_analysis_version
     assert len(body["challenges"]) == 1
     visual = body["challenges"][0]
     assert visual["challengeId"] == issued["challengeId"]
