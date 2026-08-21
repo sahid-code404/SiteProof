@@ -32,6 +32,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -40,6 +42,7 @@ import com.siteproof.app.verification.model.ChallengeIssue
 import com.siteproof.app.verification.sensors.ChallengeGuidanceStatus
 import com.siteproof.app.verification.sensors.ChallengeMovementGuidance
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 private val GoodGuide = Color(0xFF2E7D32)
 private val WrongGuide = Color(0xFFC62828)
@@ -68,8 +71,23 @@ internal fun ChallengeMovementGuide(
     val measuredFraction = (guidance.signedDegrees / targetDegrees).coerceIn(-1.15, 1.15).toFloat()
     val poseFraction = if (guidance.status == ChallengeGuidanceStatus.WAITING) demo else measuredFraction
     val guideColor = guidanceColor(guidance.status)
+    val accessibilitySummary = buildString {
+        append(challengeInstruction(challenge.type))
+        append(". Target ")
+        append(targetDegrees.toInt())
+        append(" degrees. Measured ")
+        append(liveDegrees.toInt())
+        append(" degrees. ")
+        append(guidanceLabel(guidance.status).lowercase().replace('—', '.'))
+        append(". Progress ")
+        append((guidance.progressFraction.coerceIn(0f, 1f) * 100f).roundToInt())
+        append(" percent.")
+    }
 
     Column(
+        modifier = Modifier.clearAndSetSemantics {
+            contentDescription = accessibilitySummary
+        },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
