@@ -43,6 +43,12 @@ private fun detailDeadline(value: String): String = runCatching {
     OffsetDateTime.parse(value).format(DateTimeFormatter.ofPattern("dd MMM yyyy, h:mm a", Locale.getDefault()))
 }.getOrDefault(value)
 
+private fun videoLengthLabel(seconds: Int): String = when {
+    seconds >= 120 && seconds % 60 == 0 -> "${seconds / 60} minutes"
+    seconds >= 60 -> "${seconds / 60} min ${seconds % 60} sec"
+    else -> "$seconds seconds"
+}
+
 @Composable
 fun InspectionDetailScreen(
     state: InspectionDetailState,
@@ -113,6 +119,7 @@ fun InspectionDetailScreen(
                     ReferenceCard {
                         DetailField("Location", item.locationName ?: item.locationAddress ?: "${item.expectedLatitude}, ${item.expectedLongitude}")
                         DetailField("Capture area", "Within ${item.allowedRadiusMeters} m")
+                        DetailField("Required video", videoLengthLabel(item.captureDurationSeconds))
                         DetailField("Deadline", detailDeadline(item.deadline))
                         DetailField("Type", item.inspectionType.replace('_', ' '))
                     }
