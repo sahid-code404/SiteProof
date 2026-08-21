@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
+import { AdvancedSecurityPanel } from '../components/AdvancedSecurityPanel'
 import { ReceiptPanel } from '../components/ReceiptPanel'
 import { SiteMap } from '../components/SiteMap'
 import { StatusBadge } from '../components/StatusBadge'
@@ -55,6 +56,7 @@ export function InspectionDetailPage() {
           <article className="panel"><p className="eyebrow">REQUIREMENTS</p><h3>{item.inspectionType.replace('_', ' ')}</h3><p>{item.description || 'No description provided.'}</p><div className="callout"><strong>Inspector instructions</strong><p>{item.instructions || 'No additional instructions.'}</p></div></article>
           <VerificationReportPanel inspectionId={id} />
           <ReceiptPanel inspectionId={id} />
+          <AdvancedSecurityPanel inspectionId={id} />
           <VerificationSessionPanel inspectionId={id} />
           <article className="panel"><p className="eyebrow">ASSIGNMENT HISTORY</p>{item.assignmentHistory.length ? <div className="timeline">{item.assignmentHistory.map((assignment) => <div className="timeline-item" key={assignment.id}><span className="timeline-dot" /><div><strong>{assignment.inspector.name}</strong><p>{assignment.status} · {formatDate(assignment.assignedAt)}</p>{assignment.reason ? <small>{assignment.reason}</small> : null}</div></div>)}</div> : <p className="muted">No assignment has been made yet.</p>}</article>
         </section>
