@@ -25,6 +25,7 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import java.nio.ByteBuffer
 import java.security.KeyStore
+import java.util.concurrent.TimeUnit
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -195,6 +196,13 @@ class TokenStore(context: Context) : SessionStore {
 fun createApi(context: Context, tokenStore: SessionStore): SiteProofApi {
     val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
     val client = OkHttpClient.Builder()
+        // CONNECTED WorkManager jobs already allow Wi-Fi and cellular. These larger budgets
+        // keep login, challenge and evidence requests usable on slower 3G/4G links too.
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
+        .callTimeout(180, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .addInterceptor { chain ->
             val original = chain.request()
             val token = tokenStore.accessToken
