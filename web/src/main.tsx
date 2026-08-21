@@ -17,6 +17,7 @@ import './reference-overrides.css'
 import './reference-polish.css'
 import './visibility-polish.css'
 import './professional-polish.css'
+import './final-responsive-polish.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {
