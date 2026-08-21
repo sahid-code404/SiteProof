@@ -6,6 +6,13 @@ from app.models.challenge import (
     ChallengeType,
     VerificationChallenge,
 )
+from app.models.fusion import (
+    ConsistencyStatus,
+    FusionAnalysisStatus,
+    MismatchReason,
+    MotionDirection,
+    VisualInertialResult,
+)
 from app.models.inspection import (
     Inspection,
     InspectionPriority,
@@ -35,15 +42,19 @@ __all__ = [
     "ChallengeResult",
     "ChallengeStatus",
     "ChallengeType",
+    "ConsistencyStatus",
     "EvidenceFile",
     "EvidenceFileType",
     "EvidenceUploadStatus",
+    "FusionAnalysisStatus",
     "Inspection",
     "InspectionAssignment",
     "InspectionPriority",
     "InspectionStatus",
     "InspectionType",
     "Inspector",
+    "MismatchReason",
+    "MotionDirection",
     "Organization",
     "User",
     "UserRole",
@@ -52,6 +63,7 @@ __all__ = [
     "VerificationSessionStatus",
     "VisualAnalysisStatus",
     "VisualDirection",
+    "VisualInertialResult",
     "VisualMotionResult",
     "VisualQuality",
 ]
