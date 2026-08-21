@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - phase5-visual-motion
+      - phase9-advanced-security
     paths:
       - 'android/**'
       - '.github/workflows/android-dev-ota.yml'

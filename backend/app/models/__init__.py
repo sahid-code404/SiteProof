@@ -1,3 +1,13 @@
+from app.models.advanced_security import (
+    AdvancedProcessStatus,
+    AdvancedSecurityResult,
+    AttestationChallenge,
+    DeviceAttestation,
+    LocationRiskResult,
+    ReplayRiskResult,
+    RiskLevel,
+    SensorAnomalyResult,
+)
 from app.models.assignment import AssignmentStatus, InspectionAssignment
 from app.models.audit import AuditLog
 from app.models.challenge import (
@@ -57,12 +67,16 @@ from app.models.visual_motion import (
 )
 
 __all__ = [
+    "AdvancedProcessStatus",
+    "AdvancedSecurityResult",
     "AssignmentStatus",
+    "AttestationChallenge",
     "AuditLog",
     "ChallengeResult",
     "ChallengeStatus",
     "ChallengeType",
     "ConsistencyStatus",
+    "DeviceAttestation",
     "EvidenceFile",
     "EvidenceFileType",
     "EvidenceManifest",
@@ -74,14 +88,18 @@ __all__ = [
     "InspectionStatus",
     "InspectionType",
     "Inspector",
+    "LocationRiskResult",
     "MismatchReason",
     "MotionDirection",
     "Organization",
     "ReceiptLifecycleStatus",
     "ReceiptProcessStatus",
     "ReceiptType",
+    "ReplayRiskResult",
     "ReviewDecision",
     "ReviewDecisionType",
+    "RiskLevel",
+    "SensorAnomalyResult",
     "SignedReceipt",
     "SigningKey",
     "SigningKeyStatus",
