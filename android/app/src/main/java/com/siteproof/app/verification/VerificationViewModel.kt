@@ -12,6 +12,7 @@ import com.siteproof.app.verification.sensors.ChallengeMovementGuidance
 import java.io.IOException
 import java.time.Duration
 import java.time.Instant
+import java.util.Locale
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +24,7 @@ sealed interface VerificationUiState {
     data object PermissionIntro : VerificationUiState
     data object Preparing : VerificationUiState
     data class Ready(val prepared: VerificationCaptureCoordinator.Prepared) : VerificationUiState
+    data class StartingCapture(val prepared: VerificationCaptureCoordinator.Prepared) : VerificationUiState
     data class ChallengeLoading(
         val prepared: VerificationCaptureCoordinator.Prepared,
         val elapsedMs: Long,
@@ -60,6 +62,10 @@ sealed interface VerificationUiState {
         val sessionId: String,
         val uploadStatus: String,
         val message: String,
+        val progressPercent: Int? = null,
+        val uploadedBytes: Long = 0L,
+        val totalBytes: Long = 0L,
+        val networkLabel: String? = null,
     ) : VerificationUiState
     data class Error(val message: String, val canRetry: Boolean = true) : VerificationUiState
 }
@@ -72,6 +78,7 @@ class VerificationViewModel(
 ) : ViewModel() {
     private val _state = MutableStateFlow<VerificationUiState>(VerificationUiState.PermissionIntro)
     val state: StateFlow<VerificationUiState> = _state.asStateFlow()
+    private var startJob: Job? = null
     private var captureLimitJob: Job? = null
     private var challengeJob: Job? = null
     private var uploadJob: Job? = null
@@ -93,6 +100,7 @@ class VerificationViewModel(
     }
 
     fun retryVerification() {
+        startJob?.cancel()
         challengeJob?.cancel()
         captureLimitJob?.cancel()
         uploadJob?.cancel()
@@ -112,34 +120,39 @@ class VerificationViewModel(
             try {
                 coordinator.bindCamera(previewView, lifecycleOwner)
             } catch (error: Exception) {
-                val ready = _state.value as? VerificationUiState.Ready
-                if (ready != null) coordinator.abandonPrepared(ready.prepared, "CAMERA_ERROR")
+                val prepared = preparedFromState(_state.value)
+                if (prepared != null) coordinator.abandonPrepared(prepared, "CAMERA_ERROR")
                 _state.value = VerificationUiState.Error(error.message ?: "Camera is unavailable.")
             }
         }
     }
 
     fun cancelPrepared(onComplete: () -> Unit) {
-        val ready = _state.value as? VerificationUiState.Ready
-        if (ready == null) {
+        val prepared = preparedFromState(_state.value)
+        if (prepared == null || isLiveState(_state.value)) {
             onComplete()
             return
         }
         _state.value = VerificationUiState.Preparing
         viewModelScope.launch {
-            coordinator.abandonPrepared(ready.prepared)
+            coordinator.abandonPrepared(prepared)
             onComplete()
         }
     }
 
     fun startCapture() {
         val ready = _state.value as? VerificationUiState.Ready ?: return
-        viewModelScope.launch {
+        // Change state synchronously before any network/GPS/camera suspension point. A second tap
+        // can no longer launch another start. Coordinator also serializes start with a Mutex.
+        _state.value = VerificationUiState.StartingCapture(ready.prepared)
+        startJob?.cancel()
+        startJob = viewModelScope.launch {
             try {
                 coordinator.start(ready.prepared)
                 startCaptureLimitGuard(ready.prepared)
                 issueNextChallenge(ready.prepared)
             } catch (error: Exception) {
+                runCatching { coordinator.abandonPrepared(ready.prepared, "UNKNOWN") }
                 _state.value = VerificationUiState.Error(error.message ?: "Unable to start live capture.")
             }
         }
@@ -148,25 +161,25 @@ class VerificationViewModel(
     private fun startCaptureLimitGuard(prepared: VerificationCaptureCoordinator.Prepared) {
         captureLimitJob?.cancel()
         captureLimitJob = viewModelScope.launch {
-            val requiredMs = prepared.inspection.captureDurationSeconds * 1_000L
-            val technicalLimitMs = maxOf(60_000L, requiredMs + 10_000L).coerceAtMost(89_000L)
+            val technicalLimitMs = prepared.session.captureMaximumSeconds * 1_000L
             while (true) {
-                val elapsed = coordinator.videoElapsedMs()
-                if (elapsed >= technicalLimitMs) {
+                val wallElapsed = coordinator.captureElapsedMs()
+                if (wallElapsed >= technicalLimitMs) {
                     challengeJob?.cancel()
                     coordinator.abort("TIMEOUT")
                     _state.value = VerificationUiState.Error(
-                        "Live verification reached its safety time limit before the challenge sequence finished.",
+                        "Live verification reached its server-authorized safety time limit before the challenge sequence finished.",
                     )
                     break
                 }
+                val encodedElapsed = coordinator.videoElapsedMs()
                 val current = _state.value
                 _state.value = when (current) {
-                    is VerificationUiState.ChallengeLoading -> current.copy(elapsedMs = elapsed)
-                    is VerificationUiState.ChallengeActive -> current.copy(elapsedMs = elapsed)
-                    is VerificationUiState.ChallengeChecking -> current.copy(elapsedMs = elapsed)
-                    is VerificationUiState.ChallengeNetworkWait -> current.copy(elapsedMs = elapsed)
-                    is VerificationUiState.ChallengeResultState -> current.copy(elapsedMs = elapsed)
+                    is VerificationUiState.ChallengeLoading -> current.copy(elapsedMs = encodedElapsed)
+                    is VerificationUiState.ChallengeActive -> current.copy(elapsedMs = encodedElapsed)
+                    is VerificationUiState.ChallengeChecking -> current.copy(elapsedMs = encodedElapsed)
+                    is VerificationUiState.ChallengeNetworkWait -> current.copy(elapsedMs = encodedElapsed)
+                    is VerificationUiState.ChallengeResultState -> current.copy(elapsedMs = encodedElapsed)
                     else -> current
                 }
                 delay(250)
@@ -239,8 +252,6 @@ class VerificationViewModel(
                     guidance = guidance,
                 )
 
-                // Do not submit merely because movement started. Keep this exact challenge
-                // visible until the requested target range is actually reached and held.
                 if (now >= baselineEnd && guidance.status == ChallengeGuidanceStatus.GOOD_RANGE) {
                     if (goodRangeSeenAt == null) goodRangeSeenAt = now
                 } else {
@@ -317,9 +328,7 @@ class VerificationViewModel(
         val current = _state.value as? VerificationUiState.ChallengeResultState ?: return
         if (!current.result.retryAllowed || current.result.result == "PASS") return
         challengeJob?.cancel()
-        challengeJob = viewModelScope.launch {
-            issueNextChallenge(current.prepared)
-        }
+        challengeJob = viewModelScope.launch { issueNextChallenge(current.prepared) }
     }
 
     private suspend fun handleChallengeResult(
@@ -336,11 +345,7 @@ class VerificationViewModel(
             finishAfterChallenges(prepared)
             return
         }
-        if (result.result != "PASS" && result.retryAllowed) {
-            // Stay on the result screen until the inspector explicitly asks for a fresh
-            // server-issued challenge. This never resubmits or reuses the completed evidence.
-            return
-        }
+        if (result.result != "PASS" && result.retryAllowed) return
         delay(800)
         issueNextChallenge(prepared)
     }
@@ -357,7 +362,7 @@ class VerificationViewModel(
 
     private suspend fun finishAfterChallenges(prepared: VerificationCaptureCoordinator.Prepared) {
         captureLimitJob?.cancel()
-        val requiredSeconds = prepared.inspection.captureDurationSeconds
+        val requiredSeconds = prepared.session.requiredCaptureDurationSeconds
         while (true) {
             val remaining = coordinator.videoRemainingMs(requiredSeconds)
             _state.value = VerificationUiState.CaptureFinishing(
@@ -366,13 +371,10 @@ class VerificationViewModel(
                 elapsedMs = coordinator.videoElapsedMs(),
             )
             if (remaining <= 0L) break
-            delay(minOf(250L, remaining))
+            delay(minOf(250L, remaining.coerceAtLeast(50L)))
         }
 
         try {
-            // Keep the persistent camera host composed until CameraX has fully finalized the
-            // recording. Switching to Captured earlier disposed PreviewView while Recorder was
-            // still active and produced real timestamp/frame gaps at the tail on some devices.
             coordinator.stop()
             _state.value = VerificationUiState.Captured(
                 prepared.session.sessionId,
@@ -389,11 +391,18 @@ class VerificationViewModel(
     }
 
     fun abortForInterruption() {
-        if (!isLiveState(_state.value)) return
+        val current = _state.value
+        if (!isLiveState(current)) return
+        startJob?.cancel()
         challengeJob?.cancel()
         captureLimitJob?.cancel()
         viewModelScope.launch {
-            coordinator.abort("APP_INTERRUPTED")
+            val prepared = preparedFromState(current)
+            if (current is VerificationUiState.StartingCapture && prepared != null) {
+                coordinator.abandonPrepared(prepared, "APP_INTERRUPTED")
+            } else {
+                coordinator.abort("APP_INTERRUPTED")
+            }
             _state.value = VerificationUiState.Error(
                 "Live proof was interrupted and this session was aborted. Start a new verification.",
                 canRetry = true,
@@ -402,11 +411,18 @@ class VerificationViewModel(
     }
 
     fun abortByUser() {
-        if (!isLiveState(_state.value)) return
+        val current = _state.value
+        if (!isLiveState(current)) return
+        startJob?.cancel()
         challengeJob?.cancel()
         captureLimitJob?.cancel()
         viewModelScope.launch {
-            coordinator.abort("USER_CANCELLED")
+            val prepared = preparedFromState(current)
+            if (current is VerificationUiState.StartingCapture && prepared != null) {
+                coordinator.abandonPrepared(prepared, "USER_CANCELLED")
+            } else {
+                coordinator.abort("USER_CANCELLED")
+            }
             _state.value = VerificationUiState.Error(
                 "Verification aborted. Start a new live verification.",
                 canRetry = true,
@@ -424,18 +440,38 @@ class VerificationViewModel(
         uploadJob = viewModelScope.launch {
             repository.observePending(sessionId).collect { pending ->
                 if (pending == null) return@collect
+                val network = pending.networkLabel?.let { " over $it" }.orEmpty()
+                val progressText = if (pending.totalBytes > 0L) {
+                    "${pending.uploadProgressPercent}% · ${formatBytes(pending.uploadedBytes)} of ${formatBytes(pending.totalBytes)}"
+                } else {
+                    null
+                }
                 val (message, status) = when (pending.uploadStatus) {
                     "UPLOADED" -> "Evidence submitted successfully. Challenge results are available; final authenticity is not yet calculated." to "UPLOADED"
-                    "UPLOADING" -> "Uploading video, sensor, location and challenge timeline evidence…" to "UPLOADING"
+                    "UPLOADING" -> "Uploading$network${progressText?.let { " · $it" }.orEmpty()}" to "UPLOADING"
                     "FAILED" -> "Upload interrupted. Evidence is safely stored on this device. Automatic retry remains enabled, or retry now." to "FAILED"
-                    else -> "Capture saved securely. Waiting for connection to upload." to pending.uploadStatus
+                    else -> "Capture saved securely. Waiting for a connected network to upload." to pending.uploadStatus
                 }
-                _state.value = VerificationUiState.Captured(sessionId, status, message)
+                _state.value = VerificationUiState.Captured(
+                    sessionId = sessionId,
+                    uploadStatus = status,
+                    message = message,
+                    progressPercent = if (pending.totalBytes > 0L) pending.uploadProgressPercent else null,
+                    uploadedBytes = pending.uploadedBytes,
+                    totalBytes = pending.totalBytes,
+                    networkLabel = pending.networkLabel,
+                )
             }
         }
     }
 
+    private fun formatBytes(value: Long): String {
+        val mb = value / (1024.0 * 1024.0)
+        return String.format(Locale.US, "%.1f MB", mb)
+    }
+
     private fun isLiveState(value: VerificationUiState): Boolean = when (value) {
+        is VerificationUiState.StartingCapture,
         is VerificationUiState.ChallengeLoading,
         is VerificationUiState.ChallengeActive,
         is VerificationUiState.ChallengeChecking,
@@ -444,6 +480,18 @@ class VerificationViewModel(
         is VerificationUiState.CaptureFinishing,
         -> true
         else -> false
+    }
+
+    private fun preparedFromState(value: VerificationUiState): VerificationCaptureCoordinator.Prepared? = when (value) {
+        is VerificationUiState.Ready -> value.prepared
+        is VerificationUiState.StartingCapture -> value.prepared
+        is VerificationUiState.ChallengeLoading -> value.prepared
+        is VerificationUiState.ChallengeActive -> value.prepared
+        is VerificationUiState.ChallengeChecking -> value.prepared
+        is VerificationUiState.ChallengeNetworkWait -> value.prepared
+        is VerificationUiState.ChallengeResultState -> value.prepared
+        is VerificationUiState.CaptureFinishing -> value.prepared
+        else -> null
     }
 
     private fun placeholderChallenge() = ChallengeIssue(
@@ -461,6 +509,7 @@ class VerificationViewModel(
     )
 
     override fun onCleared() {
+        startJob?.cancel()
         captureLimitJob?.cancel()
         challengeJob?.cancel()
         uploadJob?.cancel()
