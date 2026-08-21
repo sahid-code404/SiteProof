@@ -1,6 +1,8 @@
 package com.siteproof.app.verification.upload
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -23,8 +25,12 @@ import com.siteproof.app.verification.model.SensorSummary
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody
+import okio.BufferedSink
 import org.json.JSONObject
 import retrofit2.HttpException
 
@@ -46,28 +52,74 @@ class EvidenceUploadWorker(
         val tokenStore = TokenStore(applicationContext)
         if (tokenStore.accessToken.isNullOrBlank()) return Result.failure()
         val api = createApi(applicationContext, tokenStore)
-        dao.updateUploadStatus(sessionId, "UPLOADING", System.currentTimeMillis())
+        val network = currentNetworkLabel()
 
         return try {
             val captureComplete = readCaptureComplete(File(directory, "metadata.json"))
             api.captureComplete(sessionId, captureComplete)
 
             val descriptors = descriptors(directory)
+            val totalBytes = descriptors.sumOf { it.sizeBytes }.coerceAtLeast(1L)
+            dao.updateUploadProgress(
+                sessionId,
+                "UPLOADING",
+                0,
+                0L,
+                totalBytes,
+                network,
+                System.currentTimeMillis(),
+            )
             val initiated = api.initiateEvidence(
                 sessionId,
                 EvidenceInitiateRequest(pending.uploadIdempotencyKey, descriptors),
             )
             val byType = descriptors.associateBy { it.type }
+            var completedBytes = 0L
             initiated.targets.forEach { target ->
-                if (target.alreadyUploaded) return@forEach
                 val descriptor = requireNotNull(byType[target.type])
+                if (target.alreadyUploaded) {
+                    completedBytes += descriptor.sizeBytes
+                    publishProgress(sessionId, completedBytes, totalBytes, network)
+                    return@forEach
+                }
                 val file = File(directory, descriptor.filename)
-                api.uploadEvidence(
-                    target.uploadPath,
-                    file.asRequestBody(descriptor.mimeType.toMediaType()),
-                )
+                val baseBytes = completedBytes
+                var lastPercent = -1
+                val progressBody = ProgressRequestBody(
+                    file = file,
+                    mediaType = descriptor.mimeType.toMediaType(),
+                ) { fileBytes ->
+                    val uploaded = (baseBytes + fileBytes).coerceAtMost(totalBytes)
+                    val percent = ((uploaded * 100L) / totalBytes).toInt().coerceIn(0, 100)
+                    if (percent != lastPercent) {
+                        lastPercent = percent
+                        CoroutineScope(coroutineContext).launch {
+                            dao.updateUploadProgress(
+                                sessionId,
+                                "UPLOADING",
+                                percent,
+                                uploaded,
+                                totalBytes,
+                                network,
+                                System.currentTimeMillis(),
+                            )
+                        }
+                    }
+                }
+                api.uploadEvidence(target.uploadPath, progressBody)
+                completedBytes += descriptor.sizeBytes
+                publishProgress(sessionId, completedBytes, totalBytes, network)
             }
             api.completeEvidence(sessionId, EvidenceCompleteRequest(pending.manifestSha256))
+            dao.updateUploadProgress(
+                sessionId,
+                "UPLOADED",
+                100,
+                totalBytes,
+                totalBytes,
+                network,
+                System.currentTimeMillis(),
+            )
             directory.deleteRecursively()
             dao.markUploaded(sessionId)
             Result.success()
@@ -78,10 +130,34 @@ class EvidenceUploadWorker(
             dao.updateUploadStatus(sessionId, "FAILED", System.currentTimeMillis())
             Result.retry()
         } catch (error: Exception) {
-            // Missing/corrupt local files or malformed metadata cannot be repaired by retrying
-            // the same package forever. Keep the evidence record for diagnostics and stop.
             dao.updateUploadStatus(sessionId, "FAILED", System.currentTimeMillis())
             Result.failure()
+        }
+    }
+
+    private suspend fun publishProgress(sessionId: String, uploaded: Long, total: Long, network: String?) {
+        val percent = ((uploaded * 100L) / total.coerceAtLeast(1L)).toInt().coerceIn(0, 100)
+        PendingEvidenceDatabase.get(applicationContext).pendingEvidenceDao().updateUploadProgress(
+            sessionId,
+            "UPLOADING",
+            percent,
+            uploaded,
+            total,
+            network,
+            System.currentTimeMillis(),
+        )
+    }
+
+    private fun currentNetworkLabel(): String? {
+        val manager = applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return null
+        val network = manager.activeNetwork ?: return null
+        val capabilities = manager.getNetworkCapabilities(network) ?: return null
+        return when {
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "mobile data"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+            else -> "connected network"
         }
     }
 
@@ -142,6 +218,30 @@ class EvidenceUploadWorker(
                 ExistingWorkPolicy.KEEP,
                 request,
             )
+        }
+    }
+}
+
+private class ProgressRequestBody(
+    private val file: File,
+    private val mediaType: MediaType,
+    private val onProgress: (Long) -> Unit,
+) : RequestBody() {
+    override fun contentType(): MediaType = mediaType
+
+    override fun contentLength(): Long = file.length()
+
+    override fun writeTo(sink: BufferedSink) {
+        file.inputStream().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var uploaded = 0L
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                sink.write(buffer, 0, read)
+                uploaded += read
+                onProgress(uploaded)
+            }
         }
     }
 }
