@@ -51,6 +51,11 @@ sealed interface VerificationUiState {
         val result: ChallengeValidationResult,
         val elapsedMs: Long,
     ) : VerificationUiState
+    data class CaptureFinishing(
+        val prepared: VerificationCaptureCoordinator.Prepared,
+        val remainingMs: Long,
+        val elapsedMs: Long,
+    ) : VerificationUiState
     data class Captured(
         val sessionId: String,
         val uploadStatus: String,
@@ -143,13 +148,15 @@ class VerificationViewModel(
     private fun startCaptureLimitGuard(prepared: VerificationCaptureCoordinator.Prepared) {
         captureLimitJob?.cancel()
         captureLimitJob = viewModelScope.launch {
+            val requiredMs = prepared.inspection.captureDurationSeconds * 1_000L
+            val technicalLimitMs = maxOf(60_000L, requiredMs + 10_000L).coerceAtMost(89_000L)
             while (true) {
-                val elapsed = coordinator.captureElapsedMs()
-                if (elapsed >= 59_500L) {
+                val elapsed = coordinator.videoElapsedMs()
+                if (elapsed >= technicalLimitMs) {
                     challengeJob?.cancel()
                     coordinator.abort("TIMEOUT")
                     _state.value = VerificationUiState.Error(
-                        "Live verification reached the capture time limit before the challenge sequence finished.",
+                        "Live verification reached its safety time limit before the challenge sequence finished.",
                     )
                     break
                 }
@@ -168,7 +175,7 @@ class VerificationViewModel(
     }
 
     private suspend fun issueNextChallenge(prepared: VerificationCaptureCoordinator.Prepared) {
-        _state.value = VerificationUiState.ChallengeLoading(prepared, coordinator.captureElapsedMs())
+        _state.value = VerificationUiState.ChallengeLoading(prepared, coordinator.videoElapsedMs())
         try {
             val challenge = coordinator.beginNextChallenge()
             runChallengeWindow(prepared, challenge)
@@ -177,7 +184,7 @@ class VerificationViewModel(
                 _state.value = VerificationUiState.ChallengeNetworkWait(
                     prepared = prepared,
                     challenge = placeholderChallenge(),
-                    elapsedMs = coordinator.captureElapsedMs(),
+                    elapsedMs = coordinator.videoElapsedMs(),
                     message = "Connection is required to receive the next unpredictable challenge.",
                 )
             } else {
@@ -227,7 +234,7 @@ class VerificationViewModel(
                     prepared = prepared,
                     challenge = challenge,
                     remainingMs = remaining,
-                    elapsedMs = coordinator.captureElapsedMs(),
+                    elapsedMs = coordinator.videoElapsedMs(),
                     feedback = feedback,
                     guidance = guidance,
                 )
@@ -254,7 +261,7 @@ class VerificationViewModel(
         _state.value = VerificationUiState.ChallengeChecking(
             prepared,
             challenge,
-            coordinator.captureElapsedMs(),
+            coordinator.videoElapsedMs(),
         )
         try {
             handleChallengeResult(prepared, coordinator.submitCurrentChallenge())
@@ -263,7 +270,7 @@ class VerificationViewModel(
                 _state.value = VerificationUiState.ChallengeNetworkWait(
                     prepared = prepared,
                     challenge = challenge,
-                    elapsedMs = coordinator.captureElapsedMs(),
+                    elapsedMs = coordinator.videoElapsedMs(),
                     message = "Connection lost. Your current challenge evidence has been saved. Reconnect to continue verification.",
                 )
             } else {
@@ -286,14 +293,14 @@ class VerificationViewModel(
             _state.value = VerificationUiState.ChallengeChecking(
                 waiting.prepared,
                 waiting.challenge,
-                coordinator.captureElapsedMs(),
+                coordinator.videoElapsedMs(),
             )
             try {
                 handleChallengeResult(waiting.prepared, coordinator.retryCurrentChallengeSubmission())
             } catch (error: Exception) {
                 if (error is IOException) {
                     _state.value = waiting.copy(
-                        elapsedMs = coordinator.captureElapsedMs(),
+                        elapsedMs = coordinator.videoElapsedMs(),
                         message = "Still offline. Challenge evidence remains saved on this device.",
                     )
                 } else {
@@ -322,7 +329,7 @@ class VerificationViewModel(
         _state.value = VerificationUiState.ChallengeResultState(
             prepared,
             result,
-            coordinator.captureElapsedMs(),
+            coordinator.videoElapsedMs(),
         )
         if (result.sequenceComplete) {
             delay(700)
@@ -350,8 +357,18 @@ class VerificationViewModel(
 
     private suspend fun finishAfterChallenges(prepared: VerificationCaptureCoordinator.Prepared) {
         captureLimitJob?.cancel()
-        val remainingMinimum = (8_000L - coordinator.captureElapsedMs()).coerceAtLeast(0L)
-        if (remainingMinimum > 0) delay(remainingMinimum)
+        val requiredSeconds = prepared.inspection.captureDurationSeconds
+        while (true) {
+            val remaining = coordinator.videoRemainingMs(requiredSeconds)
+            _state.value = VerificationUiState.CaptureFinishing(
+                prepared = prepared,
+                remainingMs = remaining,
+                elapsedMs = coordinator.videoElapsedMs(),
+            )
+            if (remaining <= 0L) break
+            delay(minOf(250L, remaining))
+        }
+
         try {
             // Keep the persistent camera host composed until CameraX has fully finalized the
             // recording. Switching to Captured earlier disposed PreviewView while Recorder was
@@ -424,6 +441,7 @@ class VerificationViewModel(
         is VerificationUiState.ChallengeChecking,
         is VerificationUiState.ChallengeNetworkWait,
         is VerificationUiState.ChallengeResultState,
+        is VerificationUiState.CaptureFinishing,
         -> true
         else -> false
     }
