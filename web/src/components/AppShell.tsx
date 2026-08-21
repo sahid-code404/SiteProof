@@ -5,6 +5,7 @@ import { clearSession, getStoredUser } from '../lib/auth'
 export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const user = getStoredUser()
+  const canReview = user?.role === 'ADMIN' || user?.role === 'REVIEWER'
 
   function signOut() {
     clearSession()
@@ -20,6 +21,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         <nav>
           <NavLink to="/" end>Overview</NavLink>
+          {canReview ? <NavLink to="/review">Review</NavLink> : null}
           <NavLink to="/inspections">Inspections</NavLink>
         </nav>
         <div className="sidebar-user">
