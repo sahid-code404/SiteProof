@@ -50,7 +50,7 @@ function metricNumber(value: unknown, digits = 1) {
   return typeof value === 'number' ? value.toFixed(digits) : '—'
 }
 
-function percentage(value?: number | null) {
+function percentage(value: unknown) {
   return typeof value === 'number' ? `${Math.round(value * 100)}%` : '—'
 }
 
