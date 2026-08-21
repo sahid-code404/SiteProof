@@ -62,7 +62,12 @@ fun SiteProofApp() {
                     composable("inspections") {
                         val inspectionsViewModel: InspectionsViewModel = viewModel(
                             key = "inspections-$sessionScopeKey",
-                            factory = SiteProofViewModelFactory { InspectionsViewModel(repository) },
+                            factory = SiteProofViewModelFactory {
+                                InspectionsViewModel(
+                                    repository = repository,
+                                    onSessionExpired = authViewModel::expireSession,
+                                )
+                            },
                         )
                         val state by inspectionsViewModel.state.collectAsStateWithLifecycle()
                         InspectionListScreen(
@@ -81,7 +86,13 @@ fun SiteProofApp() {
                         val id = requireNotNull(backStackEntry.arguments?.getString("id"))
                         val detailViewModel: InspectionDetailViewModel = viewModel(
                             key = "inspection-$sessionScopeKey-$id",
-                            factory = SiteProofViewModelFactory { InspectionDetailViewModel(repository, id) },
+                            factory = SiteProofViewModelFactory {
+                                InspectionDetailViewModel(
+                                    repository = repository,
+                                    inspectionId = id,
+                                    onSessionExpired = authViewModel::expireSession,
+                                )
+                            },
                         )
                         val state by detailViewModel.state.collectAsStateWithLifecycle()
                         InspectionDetailScreen(
