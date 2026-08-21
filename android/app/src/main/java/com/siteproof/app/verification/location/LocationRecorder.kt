@@ -59,17 +59,18 @@ class LocationRecorder(context: Context) {
             location.longitude,
         )
         val accuracy = location.accuracy.toDouble().coerceAtLeast(0.0)
-        val nearestPossibleDistance = (distance - accuracy).coerceAtLeast(0.0)
-        val farthestPossibleDistance = distance + accuracy
-        val definitelyInside = farthestPossibleDistance <= allowedRadiusMeters
-        val definitelyOutside = nearestPossibleDistance > allowedRadiusMeters
+        val decision = LocationBoundaryPolicy.classify(
+            distanceMeters = distance,
+            accuracyMeters = accuracy,
+            allowedRadiusMeters = allowedRadiusMeters.toDouble(),
+        )
         return LocationReadiness(
             location = location.toCaptureLocation(),
             ageSeconds = ageSeconds,
             distanceMeters = distance,
             accuracyLabel = VerificationMath.accuracyLabel(accuracy),
-            withinAllowedArea = definitelyInside,
-            inconclusive = !definitelyInside && !definitelyOutside,
+            withinAllowedArea = decision == LocationBoundaryDecision.INSIDE,
+            inconclusive = decision == LocationBoundaryDecision.INCONCLUSIVE,
         )
     }
 
