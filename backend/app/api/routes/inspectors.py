@@ -26,7 +26,7 @@ router = APIRouter(prefix="/inspectors", tags=["inspectors"])
 @router.get("", response_model=InspectorPage)
 def get_inspectors(
     search: str | None = None,
-    active: bool | None = True,
+    active: bool | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, alias="pageSize", ge=1, le=100),
     db: Session = Depends(get_db),
