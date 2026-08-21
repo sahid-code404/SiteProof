@@ -18,8 +18,8 @@ export function NetworkStatusBanner() {
 
   return (
     <div className="network-banner" role="status" aria-live="assertive">
-      <strong>Network unavailable.</strong>
-      <span>SiteProof will keep this page visible, but live verification data cannot refresh until connectivity returns.</span>
+      <strong>You're offline.</strong>
+      <span>Some data may be out of date until the connection returns.</span>
     </div>
   )
 }
