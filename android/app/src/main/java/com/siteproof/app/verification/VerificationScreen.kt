@@ -158,6 +158,7 @@ fun VerificationScreen(
 
 private fun cameraPrepared(state: VerificationUiState): VerificationCaptureCoordinator.Prepared? = when (state) {
     is VerificationUiState.Ready -> state.prepared
+    is VerificationUiState.StartingCapture -> state.prepared
     is VerificationUiState.ChallengeLoading -> state.prepared
     is VerificationUiState.ChallengeActive -> state.prepared
     is VerificationUiState.ChallengeChecking -> state.prepared
@@ -210,15 +211,18 @@ private fun PersistentCameraHost(
             modifier = Modifier.fillMaxSize(),
         )
 
-        val recordingRemaining = requiredRemainingMs(state, prepared.inspection.captureDurationSeconds)
+        val requiredSeconds = prepared.session.requiredCaptureDurationSeconds
+        val recordingRemaining = requiredRemainingMs(state, requiredSeconds)
         CaptureHeader(
             title = prepared.inspection.title,
             isRecording = state !is VerificationUiState.Ready,
+            isStarting = state is VerificationUiState.StartingCapture,
             recordingRemaining = recordingRemaining,
         )
 
         when (state) {
             is VerificationUiState.Ready -> ReadyOverlay(prepared, onStart, onBack)
+            is VerificationUiState.StartingCapture -> LiveLoadingOverlay("Locking location and starting camera…", onAbort)
             is VerificationUiState.ChallengeLoading -> LiveLoadingOverlay("Getting the next movement…", onAbort)
             is VerificationUiState.ChallengeActive -> ChallengeActiveOverlay(state, onAbort)
             is VerificationUiState.ChallengeChecking -> LiveLoadingOverlay("Checking that movement…", onAbort)
@@ -234,6 +238,7 @@ private fun PersistentCameraHost(
 private fun BoxScope.CaptureHeader(
     title: String,
     isRecording: Boolean,
+    isStarting: Boolean,
     recordingRemaining: Long?,
 ) {
     GlassPanel(
@@ -249,7 +254,7 @@ private fun BoxScope.CaptureHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            if (isRecording) {
+            if (isRecording && !isStarting) {
                 Box(
                     Modifier
                         .size(9.dp)
@@ -258,9 +263,13 @@ private fun BoxScope.CaptureHeader(
             }
             Column(Modifier.weight(1f)) {
                 Text(
-                    if (isRecording) "LIVE EVIDENCE" else "READY TO VERIFY",
+                    when {
+                        isStarting -> "STARTING SECURE CAPTURE"
+                        isRecording -> "LIVE EVIDENCE"
+                        else -> "READY TO VERIFY"
+                    },
                     style = MaterialTheme.typography.labelLarge,
-                    color = if (isRecording) RecordingRed else MaterialTheme.colorScheme.primary,
+                    color = if (isRecording && !isStarting) RecordingRed else MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
@@ -270,7 +279,7 @@ private fun BoxScope.CaptureHeader(
                     maxLines = 1,
                 )
             }
-            if (isRecording && recordingRemaining != null) {
+            if (isRecording && !isStarting && recordingRemaining != null) {
                 Surface(
                     shape = RoundedCornerShape(999.dp),
                     color = Color.Black.copy(alpha = 0.28f),
@@ -353,11 +362,12 @@ private fun BoxScope.ReadyOverlay(
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Capture check", style = MaterialTheme.typography.titleLarge, color = Color.White)
             StatusRow("Location", "${prepared.location.accuracyLabel} · ±${prepared.location.location.accuracyMeters.roundToInt()} m")
-            StatusRow("Site distance", "${prepared.location.distanceMeters.roundToInt()} m of ${prepared.inspection.allowedRadiusMeters} m")
+            StatusRow("Site distance", "${prepared.location.distanceMeters.roundToInt()} m of ${prepared.session.allowedRadiusMeters} m")
             StatusRow("Motion sensors", if (sensorsReady) "Ready" else "Limited")
-            StatusRow("Required video", "${durationLabel(prepared.inspection.captureDurationSeconds)} minimum")
+            StatusRow("Required video", "${durationLabel(prepared.session.requiredCaptureDurationSeconds)} minimum")
+            StatusRow("Safety maximum", durationLabel(prepared.session.captureMaximumSeconds))
             Text(
-                "The camera stays recording while challenge animations appear over the live preview.",
+                "The server locks these requirements for this session. The camera keeps recording while challenge animations appear over the live preview.",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.7f),
             )
@@ -519,7 +529,7 @@ private fun BoxScope.CaptureFinishingOverlay(
     state: VerificationUiState.CaptureFinishing,
     onAbort: () -> Unit,
 ) {
-    val requiredMs = state.prepared.inspection.captureDurationSeconds * 1_000f
+    val requiredMs = state.prepared.session.requiredCaptureDurationSeconds * 1_000f
     val progress = (state.elapsedMs / requiredMs).coerceIn(0f, 1f)
     GlassPanel(
         modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp),
@@ -552,6 +562,7 @@ private fun BoxScope.CaptureFinishingOverlay(
 }
 
 private fun isLiveState(state: VerificationUiState): Boolean = when (state) {
+    is VerificationUiState.StartingCapture,
     is VerificationUiState.ChallengeLoading,
     is VerificationUiState.ChallengeActive,
     is VerificationUiState.ChallengeChecking,
@@ -591,6 +602,17 @@ private fun CaptureResult(state: VerificationUiState.Captured, retry: (String) -
             Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Evidence saved", style = MaterialTheme.typography.headlineMedium)
                 Text(state.message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (state.uploadStatus == "UPLOADING" && state.progressPercent != null) {
+                    LinearProgressIndicator(
+                        progress = { (state.progressPercent / 100f).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "${state.progressPercent}%${state.networkLabel?.let { " · $it" }.orEmpty()}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 if (state.uploadStatus == "FAILED") {
                     Surface(
                         shape = RoundedCornerShape(14.dp),
