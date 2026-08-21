@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -251,7 +252,7 @@ private fun PermissionIntro(onBack: () -> Unit, onContinue: () -> Unit) {
 }
 
 @Composable
-private fun ReadyOverlay(
+private fun BoxScope.ReadyOverlay(
     prepared: VerificationCaptureCoordinator.Prepared,
     onStart: () -> Unit,
     onBack: () -> Unit,
@@ -268,7 +269,7 @@ private fun ReadyOverlay(
             StatusRow("Gyroscope", if (prepared.capabilities.gyroscope) "Ready" else "Unavailable")
             StatusRow("Rotation vector", if (prepared.capabilities.rotationVector) "Ready" else "Unavailable · reduced confidence")
             Text(
-                "The camera surface now stays fixed for the entire verification. Challenge instructions appear as overlays.",
+                "The camera surface stays fixed for the entire verification. Challenge instructions appear as overlays.",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(vertical = 10.dp),
             )
@@ -279,7 +280,7 @@ private fun ReadyOverlay(
 }
 
 @Composable
-private fun ChallengeActiveOverlay(
+private fun BoxScope.ChallengeActiveOverlay(
     state: VerificationUiState.ChallengeActive,
     onAbort: () -> Unit,
 ) {
@@ -316,7 +317,7 @@ private fun ChallengeActiveOverlay(
 }
 
 @Composable
-private fun LiveLoadingOverlay(message: String, onAbort: () -> Unit) {
+private fun BoxScope.LiveLoadingOverlay(message: String, onAbort: () -> Unit) {
     Surface(
         modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
@@ -334,7 +335,7 @@ private fun LiveLoadingOverlay(message: String, onAbort: () -> Unit) {
 }
 
 @Composable
-private fun NetworkWaitOverlay(
+private fun BoxScope.NetworkWaitOverlay(
     state: VerificationUiState.ChallengeNetworkWait,
     retry: () -> Unit,
     onAbort: () -> Unit,
@@ -358,7 +359,7 @@ private fun NetworkWaitOverlay(
 }
 
 @Composable
-private fun ChallengeResultOverlay(
+private fun BoxScope.ChallengeResultOverlay(
     result: ChallengeValidationResult,
     retryChallenge: () -> Unit,
     onAbort: () -> Unit,
