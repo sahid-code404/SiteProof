@@ -26,6 +26,7 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
@@ -53,6 +54,7 @@ class EvidenceUploadWorker(
         if (tokenStore.accessToken.isNullOrBlank()) return Result.failure()
         val api = createApi(applicationContext, tokenStore)
         val network = currentNetworkLabel()
+        val progressScope = CoroutineScope(currentCoroutineContext())
 
         return try {
             val captureComplete = readCaptureComplete(File(directory, "metadata.json"))
@@ -93,7 +95,7 @@ class EvidenceUploadWorker(
                     val percent = ((uploaded * 100L) / totalBytes).toInt().coerceIn(0, 100)
                     if (percent != lastPercent) {
                         lastPercent = percent
-                        CoroutineScope(coroutineContext).launch {
+                        progressScope.launch {
                             dao.updateUploadProgress(
                                 sessionId,
                                 "UPLOADING",
