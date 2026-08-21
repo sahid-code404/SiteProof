@@ -33,6 +33,13 @@ def _scoped_receipt(db: Session, current_user: User, receipt_id: uuid.UUID) -> S
     return receipt
 
 
+def _scoped_session(db: Session, current_user: User, session_id: uuid.UUID) -> VerificationSession:
+    session = db.get(VerificationSession, session_id)
+    if session is None or session.organization_id != current_user.organization_id:
+        raise SiteProofError(404, "SESSION_NOT_FOUND", "Verification session was not found.")
+    return session
+
+
 def _receipt_response(db: Session, receipt: SignedReceipt, *, detailed: bool) -> ReceiptResponse:
     signature_state, signature_valid = receipt_signature_state(db, receipt)
     return ReceiptResponse(id=receipt.id, receipt_number=receipt.receipt_number, lookup_token=receipt.lookup_token if detailed else None, receipt_type=receipt.receipt_type.value, status=receipt.lifecycle_status.value, integrity_state=overall_receipt_integrity(db, receipt), signature_state=signature_state, signature_valid=signature_valid, manifest_sha256=receipt.manifest_sha256, payload_sha256=receipt.payload_sha256, score=receipt.score, verdict=receipt.verdict, confidence=receipt.confidence, policy_version=receipt.policy_version, engine_version=receipt.engine_version, signature_algorithm=receipt.signature_algorithm, signing_key_id=receipt.signing_key_id, issued_at=receipt.issued_at, revoked_at=receipt.revoked_at, revocation_reason=receipt.revocation_reason, last_evidence_check_at=receipt.last_evidence_check_at, last_evidence_integrity=receipt.last_evidence_integrity, canonical_payload=json.loads(receipt.canonical_payload) if detailed else None, signature=receipt.signature_base64 if detailed else None)
@@ -62,11 +69,21 @@ def verification_key(key_id: str, db: Session = Depends(get_db)) -> PublicKeyRes
 
 @router.get("/sessions/{session_id}/receipt", response_model=ReceiptResponse | None)
 def session_receipt(session_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> ReceiptResponse | None:
-    session = db.get(VerificationSession, session_id)
-    if session is None or session.organization_id != current_user.organization_id:
-        raise SiteProofError(404, "SESSION_NOT_FOUND", "Verification session was not found.")
+    session = _scoped_session(db, current_user, session_id)
     receipt = db.scalar(select(SignedReceipt).where(SignedReceipt.session_id == session.id).order_by(SignedReceipt.issued_at.desc()))
     return _receipt_response(db, receipt, detailed=current_user.role in {UserRole.ADMIN, UserRole.REVIEWER}) if receipt else None
+
+
+@router.get("/sessions/{session_id}/receipts", response_model=list[ReceiptResponse])
+def session_receipt_history(session_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[ReceiptResponse]:
+    session = _scoped_session(db, current_user, session_id)
+    detailed = current_user.role in {UserRole.ADMIN, UserRole.REVIEWER}
+    receipts = db.scalars(
+        select(SignedReceipt)
+        .where(SignedReceipt.session_id == session.id)
+        .order_by(SignedReceipt.issued_at.desc())
+    ).all()
+    return [_receipt_response(db, receipt, detailed=detailed) for receipt in receipts]
 
 
 @router.post("/sessions/{session_id}/receipt/issue", response_model=ReceiptResponse)
