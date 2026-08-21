@@ -83,7 +83,11 @@ export function InspectionFormPage() {
     onSuccess(data) {
       queryClient.invalidateQueries({ queryKey: ['inspections'] })
       queryClient.invalidateQueries({ queryKey: ['inspection-summary'] })
-      queryClient.setQueryData(['inspection', data.id], data)
+
+      // Create/update endpoints return the compact InspectionResponse, while the detail
+      // screen requires InspectionDetail (assignmentHistory + createdByName). Do not put
+      // the compact response into the detail cache or the first render can crash until refresh.
+      queryClient.removeQueries({ queryKey: ['inspection', data.id], exact: true })
       navigate(`/inspections/${data.id}`)
     },
   })
