@@ -92,7 +92,7 @@ class InspectionResponse(APIModel):
     expected_latitude: float
     expected_longitude: float
     allowed_radius_meters: int
-    capture_duration_seconds: int
+    capture_duration_seconds: int = 30
     location_name: str | None
     location_address: str | None
     deadline: datetime
