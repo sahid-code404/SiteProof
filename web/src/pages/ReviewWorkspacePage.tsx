@@ -60,6 +60,17 @@ export function ReviewWorkspacePage() {
   const items = queue.data?.items ?? []
   const pending = items.filter((item) => !item.latestReview).length
   const attention = items.filter((item) => ['REVIEW_REQUIRED', 'FLAGGED', 'INCONCLUSIVE'].includes(item.verdict)).length
+  const hasFilters = Boolean(search || inspector || verdict || reviewState !== 'all' || dateFrom || dateTo)
+
+  function clearFilters() {
+    setSearch('')
+    setInspector('')
+    setVerdict('')
+    setReviewState('all')
+    setDateFrom('')
+    setDateTo('')
+    setSelectedId(null)
+  }
 
   return (
     <>
@@ -69,18 +80,19 @@ export function ReviewWorkspacePage() {
           <h1>Reviewer workspace</h1>
           <p>Map current verification decisions, prioritize attention, and open the complete evidence record without changing the automated verdict.</p>
         </div>
-        <div className="review-summary-chips">
+        <div className="review-summary-chips" aria-live="polite">
           <span className="secure-chip">{queue.isLoading ? '…' : `${queue.data?.total ?? 0} current decisions`}</span>
           <span className="secure-chip">{queue.isLoading ? '…' : `${pending} pending review`}</span>
         </div>
       </section>
 
-      <section className="review-filter-bar">
+      <section className="review-filter-bar" aria-label="Reviewer filters">
         <input
+          className="review-filter-search"
           placeholder="Search inspection, site or address"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          aria-label="Search reviewer workspace"
+          aria-label="Search inspection, site or address"
         />
         <select value={verdict} onChange={(event) => setVerdict(event.target.value as VerificationVerdict | '')} aria-label="Filter by automated verdict">
           <option value="">All automated verdicts</option>
@@ -95,6 +107,7 @@ export function ReviewWorkspacePage() {
           <option value="reviewed">Reviewed</option>
         </select>
         <input
+          className="review-filter-inspector"
           placeholder="Filter inspector name"
           value={inspector}
           onChange={(event) => setInspector(event.target.value)}
@@ -102,11 +115,24 @@ export function ReviewWorkspacePage() {
         />
         <label className="review-date-filter">From<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>
         <label className="review-date-filter">To<input type="date" value={dateTo} min={dateFrom || undefined} onChange={(event) => setDateTo(event.target.value)} /></label>
+        <div className="review-filter-actions">
+          <button className="button ghost" type="button" disabled={!hasFilters} onClick={clearFilters}>Clear filters</button>
+        </div>
       </section>
 
-      {queue.isError ? <div className="notice error">Unable to load reviewer workspace: {queue.error.message}</div> : null}
+      {queue.isError ? (
+        <div className="notice error" role="alert">
+          <strong>Reviewer workspace unavailable</strong>
+          <p>{queue.error.message}</p>
+          <button className="button ghost" type="button" onClick={() => queue.refetch()}>Retry</button>
+        </div>
+      ) : null}
 
-      <section className="review-metric-strip">
+      <p className="review-results-live" role="status" aria-live="polite">
+        {queue.isLoading ? 'Loading current verification decisions…' : `Showing ${items.length} of ${queue.data?.total ?? 0} current decisions.`}
+      </p>
+
+      <section className="review-metric-strip" aria-label="Review summary">
         <div><span>Visible decisions</span><strong>{queue.isLoading ? '…' : items.length}</strong></div>
         <div><span>Needs attention</span><strong>{queue.isLoading ? '…' : attention}</strong></div>
         <div><span>Pending human review</span><strong>{queue.isLoading ? '…' : pending}</strong></div>
@@ -118,7 +144,7 @@ export function ReviewWorkspacePage() {
             <div><p className="eyebrow">SITE OVERVIEW</p><h2>Verification map</h2></div>
             <small className="muted">Pins show expected inspection sites; the popup includes inspector, capture time, automated verdict and confidence.</small>
           </div>
-          {queue.isLoading ? <div className="loading-block">Loading verification sites…</div> : null}
+          {queue.isLoading ? <div className="loading-block" role="status">Loading verification sites…</div> : null}
           {!queue.isLoading && !items.length ? <div className="empty-state"><h3>No matching sites</h3><p>Change the active filters to show current verification decisions.</p></div> : null}
           {items.length ? <ReviewMap items={items} selectedId={selectedId} onSelect={setSelectedId} /> : null}
         </article>
@@ -129,7 +155,7 @@ export function ReviewWorkspacePage() {
             <small className="muted">Automated verdicts remain immutable; reviewer actions are separate audit events.</small>
           </div>
 
-          {queue.isLoading ? <div className="loading-block">Loading current decisions…</div> : null}
+          {queue.isLoading ? <div className="loading-block" role="status">Loading current decisions…</div> : null}
           {!queue.isLoading && !items.length ? <div className="empty-state"><h3>No decisions found</h3><p>Nothing matches the current reviewer filters.</p></div> : null}
 
           <div className="review-card-list">
@@ -138,6 +164,7 @@ export function ReviewWorkspacePage() {
                 className={`review-card ${selectedId === item.inspectionId ? 'selected' : ''}`}
                 key={item.inspectionId}
                 onMouseEnter={() => setSelectedId(item.inspectionId)}
+                aria-label={`${item.title}, ${item.verdict.replace(/_/g, ' ')}`}
               >
                 <div className="review-card-topline">
                   <div>
