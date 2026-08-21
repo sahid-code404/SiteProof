@@ -131,38 +131,45 @@ def test_visual_yaw_direction_uses_opposite_scene_translation():
     assert left.direction == VisualDirection.LEFT
 
 
-def test_visual_tilt_direction_uses_vertical_scene_motion():
+def test_visual_tilt_direction_uses_rear_camera_pitch_contract():
     settings = Settings(vision_min_features=20)
-    up = analyze_visual_challenge(
-        _translated_frames(dx_per_frame=0.0, dy_per_frame=5.0),
+    # Phase 4 tilt names describe the TOP EDGE of the portrait phone. For the rear camera,
+    # top edge away (TILT_UP) produces optical pitch DOWN; top edge toward (TILT_DOWN)
+    # produces optical pitch UP.
+    tilt_up = analyze_visual_challenge(
+        _translated_frames(dx_per_frame=0.0, dy_per_frame=-5.0),
         challenge_type=ChallengeType.TILT_UP,
         invalid_frame_ratio=0.0,
         settings=settings,
     )
-    down = analyze_visual_challenge(
-        _translated_frames(dx_per_frame=0.0, dy_per_frame=-5.0),
+    tilt_down = analyze_visual_challenge(
+        _translated_frames(dx_per_frame=0.0, dy_per_frame=5.0),
         challenge_type=ChallengeType.TILT_DOWN,
         invalid_frame_ratio=0.0,
         settings=settings,
     )
-    assert up.status == VisualAnalysisStatus.SUCCESS
-    assert up.direction == VisualDirection.UP
-    assert down.status == VisualAnalysisStatus.SUCCESS
-    assert down.direction == VisualDirection.DOWN
+    assert tilt_up.status == VisualAnalysisStatus.SUCCESS
+    assert tilt_up.direction == VisualDirection.DOWN
+    assert tilt_down.status == VisualAnalysisStatus.SUCCESS
+    assert tilt_down.direction == VisualDirection.UP
 
 
 @pytest.mark.parametrize(
-    ("image_rotation", "expected_camera_direction"),
-    [(20.0, VisualDirection.RIGHT), (-20.0, VisualDirection.LEFT)],
+    ("image_rotation", "expected_camera_direction", "challenge_type"),
+    [
+        (20.0, VisualDirection.RIGHT, ChallengeType.ROTATE_RIGHT),
+        (-20.0, VisualDirection.LEFT, ChallengeType.ROTATE_LEFT),
+    ],
 )
 def test_synthetic_image_rotation_is_estimated_with_documented_fallback(
     image_rotation,
     expected_camera_direction,
+    challenge_type,
 ):
     settings = Settings(vision_min_features=20)
     outcome = analyze_visual_challenge(
         _rotated_frames(image_rotation),
-        challenge_type=ChallengeType.ROTATE_RIGHT,
+        challenge_type=challenge_type,
         invalid_frame_ratio=0.0,
         settings=settings,
     )
