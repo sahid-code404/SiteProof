@@ -8,7 +8,13 @@ from app.core.errors import SiteProofError
 from app.core.security import hash_password
 from app.models.inspector import Inspector
 from app.models.user import User, UserRole
-from app.schemas.inspector import InspectorCreate, InspectorPage, InspectorResponse
+from app.schemas.inspector import (
+    InspectorCreate,
+    InspectorPage,
+    InspectorPasswordReset,
+    InspectorResponse,
+    InspectorUpdate,
+)
 
 
 def _to_response(inspector: Inspector, user: User) -> InspectorResponse:
@@ -21,6 +27,11 @@ def _to_response(inspector: Inspector, user: User) -> InspectorResponse:
         phone=inspector.phone,
         active=inspector.active and user.is_active,
     )
+
+
+def _require_admin(current_user: User) -> None:
+    if current_user.role != UserRole.ADMIN:
+        raise SiteProofError(403, "FORBIDDEN", "Administrator access is required.")
 
 
 def get_inspector_for_user(db: Session, user_id: uuid.UUID) -> Inspector | None:
@@ -45,15 +56,15 @@ def get_inspector_in_org(
 
 
 def create_inspector(db: Session, current_user: User, payload: InspectorCreate) -> InspectorResponse:
-    if current_user.role != UserRole.ADMIN:
-        raise SiteProofError(403, "FORBIDDEN", "Administrator access is required.")
-    if db.scalar(select(User).where(User.email == payload.email)) is not None:
+    _require_admin(current_user)
+    normalized_email = str(payload.email).lower()
+    if db.scalar(select(User).where(User.email == normalized_email)) is not None:
         raise SiteProofError(409, "EMAIL_ALREADY_EXISTS", "A user with this email already exists.")
 
     user = User(
         organization_id=current_user.organization_id,
-        email=str(payload.email).lower(),
-        full_name=payload.full_name,
+        email=normalized_email,
+        full_name=payload.full_name.strip(),
         hashed_password=hash_password(payload.password),
         role=UserRole.INSPECTOR,
         is_active=True,
@@ -71,6 +82,43 @@ def create_inspector(db: Session, current_user: User, payload: InspectorCreate) 
     db.commit()
     db.refresh(inspector)
     return _to_response(inspector, user)
+
+
+def update_inspector(
+    db: Session,
+    current_user: User,
+    inspector_id: uuid.UUID,
+    payload: InspectorUpdate,
+) -> InspectorResponse:
+    _require_admin(current_user)
+    inspector, user = get_inspector_in_org(db, current_user.organization_id, inspector_id)
+
+    if payload.full_name is not None:
+        user.full_name = payload.full_name.strip()
+    if "employee_code" in payload.model_fields_set:
+        inspector.employee_code = payload.employee_code
+    if "phone" in payload.model_fields_set:
+        inspector.phone = payload.phone
+    if payload.active is not None:
+        inspector.active = payload.active
+        user.is_active = payload.active
+
+    db.commit()
+    db.refresh(inspector)
+    db.refresh(user)
+    return _to_response(inspector, user)
+
+
+def reset_inspector_password(
+    db: Session,
+    current_user: User,
+    inspector_id: uuid.UUID,
+    payload: InspectorPasswordReset,
+) -> None:
+    _require_admin(current_user)
+    _, user = get_inspector_in_org(db, current_user.organization_id, inspector_id)
+    user.hashed_password = hash_password(payload.password)
+    db.commit()
 
 
 def list_inspectors(
