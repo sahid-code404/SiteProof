@@ -298,10 +298,10 @@ private fun guidanceColor(status: ChallengeGuidanceStatus): Color = when (status
 }
 
 internal fun challengeInstruction(type: String): String = when (type) {
-    "TILT_UP" -> "Tilt the TOP away from you"
-    "TILT_DOWN" -> "Tilt the TOP toward you"
-    "ROTATE_RIGHT" -> "Rotate the phone RIGHT"
-    "ROTATE_LEFT" -> "Rotate the phone LEFT"
+    "TILT_UP" -> "Move the TOP edge away from you"
+    "TILT_DOWN" -> "Move the TOP edge toward you"
+    "ROTATE_RIGHT" -> "Turn the whole phone to your RIGHT"
+    "ROTATE_LEFT" -> "Turn the whole phone to your LEFT"
     else -> "Follow the arrow"
 }
 
