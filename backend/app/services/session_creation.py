@@ -22,6 +22,45 @@ from app.services.session_common import (
 )
 
 
+def _capture_contract(session: VerificationSession, inspection: Inspection) -> tuple[int, int, int, object]:
+    settings = get_settings()
+    snapshot = session.site_snapshot or {}
+    required_seconds = int(snapshot.get("captureDurationSeconds", inspection.capture_duration_seconds))
+    allowed_radius = int(snapshot.get("allowedRadiusMeters", inspection.allowed_radius_meters))
+    deadline = aware(
+        inspection.deadline
+        if snapshot.get("deadline") is None
+        else __import__("datetime").datetime.fromisoformat(str(snapshot["deadline"]))
+    )
+    maximum_seconds = min(
+        max(settings.capture_max_seconds, required_seconds + 15),
+        settings.vision_max_duration_seconds,
+    )
+    return required_seconds, maximum_seconds, allowed_radius, deadline
+
+
+def _response(
+    session: VerificationSession,
+    inspection: Inspection,
+    *,
+    server_time,
+    clock_offset_ms: float | None,
+) -> SessionCreateResponse:
+    required_seconds, maximum_seconds, allowed_radius, deadline = _capture_contract(session, inspection)
+    return SessionCreateResponse(
+        session_id=session.id,
+        inspection_id=inspection.id,
+        status=session.status,
+        expires_at=session.expires_at,
+        server_time=server_time,
+        clock_offset_ms=clock_offset_ms,
+        required_capture_duration_seconds=required_seconds,
+        capture_maximum_seconds=maximum_seconds,
+        allowed_radius_meters=allowed_radius,
+        deadline=deadline,
+    )
+
+
 def create_verification_session(
     db: Session, current_user: User, inspection_id: uuid.UUID, payload: SessionCreateRequest
 ) -> SessionCreateResponse:
@@ -55,11 +94,9 @@ def create_verification_session(
         if expire_if_needed(db, same_device, actor_user_id=current_user.id):
             db.commit()
             raise SiteProofError(409, "SESSION_EXPIRED", "Verification session expired.")
-        return SessionCreateResponse(
-            session_id=same_device.id,
-            inspection_id=inspection.id,
-            status=same_device.status,
-            expires_at=same_device.expires_at,
+        return _response(
+            same_device,
+            inspection,
             server_time=now,
             clock_offset_ms=same_device.clock_offset_ms,
         )
@@ -139,11 +176,4 @@ def create_verification_session(
         db.rollback()
         raise SiteProofError(409, "ACTIVE_SESSION_EXISTS", "An active verification session already exists.") from exc
     db.refresh(session)
-    return SessionCreateResponse(
-        session_id=session.id,
-        inspection_id=inspection.id,
-        status=session.status,
-        expires_at=session.expires_at,
-        server_time=now,
-        clock_offset_ms=offset_ms,
-    )
+    return _response(session, inspection, server_time=now, clock_offset_ms=offset_ms)
