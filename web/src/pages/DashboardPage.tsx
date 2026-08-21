@@ -53,12 +53,18 @@ export function DashboardPage() {
           <h1>Trust & evidence dashboard</h1>
           <p>Current verification outcomes, reviewer attention, signed receipt state, and field workload in one operational view.</p>
         </div>
-        <div className={`status ${health.isSuccess ? 'online' : ''}`}><span className="dot" />{health.isSuccess ? 'Backend online' : health.isError ? 'Backend unavailable' : 'Checking backend'}</div>
+        <div className={`status ${health.isSuccess ? 'online' : ''}`} role="status" aria-live="polite"><span className="dot" aria-hidden="true" />{health.isSuccess ? 'Backend online' : health.isError ? 'Backend unavailable' : 'Checking backend'}</div>
       </section>
 
-      {summary.isError ? <div className="notice error">Unable to load dashboard summary: {summary.error.message}</div> : null}
+      {summary.isError ? (
+        <div className="notice error" role="alert">
+          <strong>Dashboard unavailable</strong>
+          <p>{summary.error.message}</p>
+          <button className="button ghost" type="button" onClick={() => summary.refetch()}>Retry dashboard</button>
+        </div>
+      ) : null}
 
-      <section className="metric-grid">
+      <section className="metric-grid" aria-label="Verification metrics" aria-busy={summary.isLoading}>
         <article className="metric-card"><span>Total inspections</span><strong>{summary.isLoading ? '…' : data?.total ?? 0}</strong></article>
         <article className="metric-card"><span>Verified</span><strong>{summary.isLoading ? '…' : data?.verified ?? 0}</strong></article>
         <article className="metric-card"><span>Review queue</span><strong>{summary.isLoading ? '…' : reviewQueue}</strong></article>
@@ -90,9 +96,10 @@ export function DashboardPage() {
         <article className="panel">
           <p className="eyebrow">LATEST VERIFICATION RESULTS</p>
           <h2>Recent trust decisions</h2>
-          {!data?.latestVerifications?.length ? <p className="muted">No completed verification results yet.</p> : (
+          {summary.isLoading ? <div className="async-state" role="status">Loading recent trust decisions…</div> : null}
+          {!summary.isLoading && !data?.latestVerifications?.length ? <p className="muted">No completed verification results yet.</p> : (
             <div className="recent-decision-list">
-              {data.latestVerifications.map((item) => (
+              {data?.latestVerifications?.map((item) => (
                 <article className="recent-decision-card" key={item.inspectionId}>
                   <div className="recent-decision-topline">
                     <div>
