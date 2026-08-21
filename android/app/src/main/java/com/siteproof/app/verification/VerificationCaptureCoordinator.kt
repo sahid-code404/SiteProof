@@ -49,6 +49,7 @@ class VerificationCaptureCoordinator(
         val prepared: Prepared,
         val directory: File,
         val captureStartNs: Long,
+        val videoStartNs: Long,
         val captureStartedAt: Instant,
         val environmentStart: EnvironmentSnapshot,
     )
@@ -69,6 +70,9 @@ class VerificationCaptureCoordinator(
     suspend fun prepare(inspectionId: String): Prepared {
         val inspection = repository.inspection(inspectionId)
         require(inspection.status == "READY") { "Inspection must be READY before live verification." }
+        require(inspection.captureDurationSeconds in 10..75) {
+            "Required video duration must be between 10 and 75 seconds."
+        }
         val capabilities = sensorRecorder.capabilities()
         require(capabilities.accelerometer) { "This device does not have an accelerometer." }
         val location = locationRecorder.freshLocation(
@@ -124,7 +128,7 @@ class VerificationCaptureCoordinator(
             val environmentStart = environmentCollector.snapshot(prepared.session.sessionId)
             sensorRecorder.start(captureStartNs, File(directory, "sensors.ndjson.gz"))
             locationRecorder.startCapture(captureStartNs)
-            cameraManager.startRecording(File(directory, "capture.mp4"))
+            val videoStartNs = cameraManager.startRecording(File(directory, "capture.mp4"))
             challengeTimeline.clear()
             activeChallenge = null
             pendingSubmission = null
@@ -132,6 +136,7 @@ class VerificationCaptureCoordinator(
                 prepared = prepared,
                 directory = directory,
                 captureStartNs = captureStartNs,
+                videoStartNs = videoStartNs,
                 captureStartedAt = Instant.now(),
                 environmentStart = environmentStart,
             )
@@ -145,6 +150,16 @@ class VerificationCaptureCoordinator(
     fun captureElapsedMs(): Long {
         val capture = active ?: return 0L
         return (SystemClock.elapsedRealtimeNanos() - capture.captureStartNs) / 1_000_000L
+    }
+
+    fun videoElapsedMs(): Long {
+        val capture = active ?: return 0L
+        return (SystemClock.elapsedRealtimeNanos() - capture.videoStartNs) / 1_000_000L
+    }
+
+    fun videoRemainingMs(requiredSeconds: Int): Long {
+        val requiredMs = requiredSeconds.coerceIn(10, 75) * 1_000L
+        return (requiredMs - videoElapsedMs()).coerceAtLeast(0L)
     }
 
     suspend fun beginNextChallenge(): ChallengeIssue {
@@ -263,10 +278,16 @@ class VerificationCaptureCoordinator(
         val capture = checkNotNull(active) { "No capture is active." }
         check(activeChallenge == null) { "Current challenge must finish before capture stops." }
         try {
-            val requestedMinimumMs = capture.prepared.inspection.captureDurationSeconds
-                .coerceIn(10, 45) * 1_000L
-            val remainingMinimumMs = (requestedMinimumMs - captureElapsedMs()).coerceAtLeast(0L)
+            val requestedSeconds = capture.prepared.inspection.captureDurationSeconds
+            require(requestedSeconds in 10..75) { "Unsupported required video duration: $requestedSeconds seconds." }
+            val requestedMinimumMs = requestedSeconds * 1_000L
+            val remainingMinimumMs = videoRemainingMs(requestedSeconds)
             if (remainingMinimumMs > 0L) delay(remainingMinimumMs)
+
+            // Give CameraX a short encoding margin after the exact monotonic minimum is reached.
+            // This avoids sub-second truncation on devices where the final media timestamp trails
+            // the Start/Stop callbacks very slightly.
+            delay(350L)
 
             val cameraResult = cameraManager.stopRecording()
             val sensorCounts = sensorRecorder.stop()
@@ -274,10 +295,10 @@ class VerificationCaptureCoordinator(
             // CameraX's encoded-media duration is the authoritative duration of capture.mp4.
             // Wall-clock start/end anchors are packaged separately for Phase 5 calibration.
             val durationMs = cameraResult.recordedDurationNs / 1_000_000L
-            require(durationMs >= requestedMinimumMs - 750L) {
-                "Capture ended before the configured ${capture.prepared.inspection.captureDurationSeconds} second minimum."
+            require(durationMs >= requestedMinimumMs) {
+                "Capture ended before the configured $requestedSeconds second minimum."
             }
-            require(durationMs <= 60_000L) { "Capture exceeded the 60 second maximum." }
+            require(durationMs <= 90_000L) { "Capture exceeded the 90 second technical maximum." }
             require(locations.isNotEmpty()) { "No GPS samples were recorded during capture." }
             val locationSummary = locationRecorder.writePackage(
                 File(capture.directory, "locations.json.gz"),
