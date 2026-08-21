@@ -53,13 +53,15 @@ class Settings(BaseSettings):
 
     # Phase 5 visual-motion analysis. The original evidence video is never rewritten;
     # OpenCV works only on derived, down-scaled frames.
-    vision_analysis_version: str = "vision-v1.3"
+    vision_analysis_version: str = "vision-v1.4"
     vision_analysis_fps: float = 12.0
     vision_max_width: int = 960
-    # Direction/magnitude are measured only inside the actual challenge interval. Padding
-    # allowed the user's return/reposition movement to contaminate the next/previous result.
-    vision_pre_challenge_padding_ms: int = 0
-    vision_post_challenge_padding_ms: int = 0
+    # The server-validated gyroscope onset/settle bounds are authoritative, but camera
+    # frames are sampled discretely and CameraX/video timestamps can differ by a fraction
+    # of a frame. A small 200 ms guard band keeps the true start/end optical motion while
+    # remaining far below the old padding that admitted return-to-neutral movement.
+    vision_pre_challenge_padding_ms: int = 200
+    vision_post_challenge_padding_ms: int = 200
     vision_min_features: int = 40
     vision_max_features: int = 600
     vision_grid_rows: int = 4
