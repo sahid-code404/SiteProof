@@ -5,6 +5,7 @@ on:
     branches:
       - phase5-visual-motion
       - phase9-advanced-security
+      - phase10-environment-anomaly
     paths:
       - 'android/**'
       - '.github/workflows/android-dev-ota.yml'

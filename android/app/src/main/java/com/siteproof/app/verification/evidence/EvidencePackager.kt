@@ -4,6 +4,7 @@ import android.os.Build
 import android.os.Debug
 import com.siteproof.app.BuildConfig
 import com.siteproof.app.data.InspectionDetail
+import com.siteproof.app.verification.environment.EnvironmentSnapshot
 import com.siteproof.app.verification.model.CaptureCompleteRequest
 import com.siteproof.app.verification.model.ChallengeTimelineMetadata
 import com.siteproof.app.verification.model.DeviceCapabilities
@@ -27,6 +28,7 @@ class EvidencePackager {
         capabilities: DeviceCapabilities,
         captureComplete: CaptureCompleteRequest,
         challenges: List<ChallengeTimelineMetadata> = emptyList(),
+        environmentSnapshots: List<EnvironmentSnapshot> = emptyList(),
     ): EvidencePackage {
         val video = File(directory, "capture.mp4")
         val sensors = File(directory, "sensors.ndjson.gz")
@@ -81,6 +83,28 @@ class EvidencePackager {
                 put("gyroscope", capabilities.gyroscope)
                 put("rotationVector", capabilities.rotationVector)
                 put("magnetometer", capabilities.magnetometer)
+            })
+            put("environment", JSONObject().apply {
+                put("version", "wifi-environment-v1")
+                put("privacy", "session-scoped AP hashes; SSID/raw BSSID not stored")
+                put("snapshots", JSONArray().apply {
+                    environmentSnapshots.forEach { snapshot ->
+                        put(JSONObject().apply {
+                            put("capturedAtEpochMs", snapshot.capturedAtEpochMs)
+                            put("wifiEnabled", snapshot.wifiEnabled)
+                            put("permissionGranted", snapshot.permissionGranted)
+                            put("accessPoints", JSONArray().apply {
+                                snapshot.accessPoints.forEach { accessPoint ->
+                                    put(JSONObject().apply {
+                                        put("apHash", accessPoint.apHash)
+                                        put("rssiDbm", accessPoint.rssiDbm)
+                                        put("frequencyMhz", accessPoint.frequencyMhz)
+                                    })
+                                }
+                            })
+                        })
+                    }
+                })
             })
             put("sensorSummary", JSONObject().apply {
                 put("accelerometerSamples", captureComplete.sensorSummary.accelerometerSamples)

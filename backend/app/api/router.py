@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     advanced_security,
+    advanced_signals,
     auth,
     challenges,
     fusion_analysis,
@@ -24,3 +25,4 @@ api_router.include_router(fusion_analysis.router)
 api_router.include_router(verification.router)
 api_router.include_router(receipts.router)
 api_router.include_router(advanced_security.router)
+api_router.include_router(advanced_signals.router)

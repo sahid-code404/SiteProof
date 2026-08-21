@@ -104,9 +104,19 @@ def test_optional_unavailable_signal_renormalizes_available_weight():
     assert score.raw_score == pytest.approx(95.0)
 
 
-def test_high_confidence_fusion_mismatch_forces_flagged():
+def test_high_confidence_fusion_physical_contradiction_forces_flagged():
     signals = [
-        replace(signal, status=VerificationSignalStatus.FAIL, score=0.75, confidence=0.95, metrics={"consistencyStatus": "MISMATCH"})
+        replace(
+            signal,
+            status=VerificationSignalStatus.FAIL,
+            score=0.75,
+            confidence=0.95,
+            metrics={
+                "consistencyStatus": "MISMATCH",
+                "mismatchReasons": ["OPPOSITE_DIRECTION"],
+                "strongContradictionCount": 1,
+            },
+        )
         if signal.type == VerificationSignalType.VISUAL_INERTIAL_CONSISTENCY
         else signal
         for signal in _all_good()
@@ -115,6 +125,28 @@ def test_high_confidence_fusion_mismatch_forces_flagged():
     assert decision.score > 85
     assert decision.verdict == VerificationVerdict.FLAGGED
     assert "HIGH_CONFIDENCE_FUSION_MISMATCH" in {rule.code for rule in decision.hard_rules}
+
+
+def test_same_direction_timing_magnitude_mismatch_does_not_force_flagged():
+    signals = [
+        replace(
+            signal,
+            status=VerificationSignalStatus.FAIL,
+            score=0.75,
+            confidence=0.95,
+            metrics={
+                "consistencyStatus": "MISMATCH",
+                "mismatchReasons": ["TEMPORAL_MISMATCH", "DURATION_MISMATCH", "MAGNITUDE_MISMATCH"],
+            },
+        )
+        if signal.type == VerificationSignalType.VISUAL_INERTIAL_CONSISTENCY
+        else signal
+        for signal in _all_good()
+    ]
+    decision = resolve_decision(signals, default_policy_definition())
+    assert decision.score > 85
+    assert decision.verdict == VerificationVerdict.VERIFIED
+    assert "HIGH_CONFIDENCE_FUSION_MISMATCH" not in {rule.code for rule in decision.hard_rules}
 
 
 def test_clear_wrong_location_forces_flagged():
@@ -158,7 +190,7 @@ def test_phase6_inputs_flow_into_persisted_verification_api_and_review(client, d
     body = reviewer.json()
     assert body["status"] == "COMPLETED"
     assert body["policy"]["version"] == "1.0"
-    assert body["policy"]["engineVersion"] == "verification-engine-v1.0"
+    assert body["policy"]["engineVersion"] == "verification-engine-v1.1"
     assert len(body["signals"]) == 7
 
     inspector = client.get(f"/api/v1/sessions/{session.id}/verification", headers=data["inspector_headers"])
@@ -181,7 +213,7 @@ def test_phase6_inputs_flow_into_persisted_verification_api_and_review(client, d
     assert inspection.status == InspectionStatus.APPROVED
 
 
-def test_persisted_high_confidence_fusion_mismatch_is_flagged(client, db, tmp_path):
+def test_persisted_high_confidence_fusion_physical_contradiction_is_flagged(client, db, tmp_path):
     data = _prepare_fusion_inputs(client, db, tmp_path)
     session = data["session"]
     analyze_session_fusion(db, session.id, storage=data["storage"])
@@ -197,3 +229,21 @@ def test_persisted_high_confidence_fusion_mismatch_is_flagged(client, db, tmp_pa
     result = calculate_verification(db, session.id, actor_user_id=data["identities"]["admin"].id)
     assert result.verdict == VerificationVerdict.FLAGGED
     assert "HIGH_CONFIDENCE_FUSION_MISMATCH" in result.hard_rule_codes_json
+
+
+def test_persisted_same_direction_quality_mismatch_is_not_hard_flagged(client, db, tmp_path):
+    data = _prepare_fusion_inputs(client, db, tmp_path)
+    session = data["session"]
+    analyze_session_fusion(db, session.id, storage=data["storage"])
+    rows = list(db.scalars(select(VisualInertialResult).where(VisualInertialResult.session_id == session.id)).all())
+    assert rows
+    rows[0].consistency_status = ConsistencyStatus.MISMATCH
+    rows[0].effective_consistency_score = 0.55
+    rows[0].raw_consistency_score = 0.55
+    rows[0].fusion_confidence = 0.95
+    rows[0].mismatch_reasons_json = ["TEMPORAL_MISMATCH", "DURATION_MISMATCH"]
+    db.commit()
+
+    result = calculate_verification(db, session.id, actor_user_id=data["identities"]["admin"].id)
+    assert "HIGH_CONFIDENCE_FUSION_MISMATCH" not in result.hard_rule_codes_json
+    assert result.verdict in {VerificationVerdict.VERIFIED, VerificationVerdict.REVIEW_REQUIRED}

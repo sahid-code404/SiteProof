@@ -8,6 +8,7 @@ from app.models.advanced_security import (
     RiskLevel,
     SensorAnomalyResult,
 )
+from app.models.advanced_signals import AdvancedSignalResult
 from app.models.assignment import AssignmentStatus, InspectionAssignment
 from app.models.audit import AuditLog
 from app.models.challenge import (
@@ -69,6 +70,7 @@ from app.models.visual_motion import (
 __all__ = [
     "AdvancedProcessStatus",
     "AdvancedSecurityResult",
+    "AdvancedSignalResult",
     "AssignmentStatus",
     "AttestationChallenge",
     "AuditLog",

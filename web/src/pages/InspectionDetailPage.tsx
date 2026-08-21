@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { AdvancedSecurityPanel } from '../components/AdvancedSecurityPanel'
+import { AdvancedSignalsPanel } from '../components/AdvancedSignalsPanel'
 import { ReceiptPanel } from '../components/ReceiptPanel'
 import { SiteMap } from '../components/SiteMap'
 import { StatusBadge } from '../components/StatusBadge'
@@ -59,6 +60,7 @@ export function InspectionDetailPage() {
           <VerificationReportPanel inspectionId={id} />
           <ReceiptPanel inspectionId={id} />
           <AdvancedSecurityPanel inspectionId={id} />
+          <AdvancedSignalsPanel inspectionId={id} />
           <VerificationSessionPanel inspectionId={id} />
 
           <article className="panel">
