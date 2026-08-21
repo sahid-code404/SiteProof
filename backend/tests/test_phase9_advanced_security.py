@@ -1,6 +1,11 @@
+from types import SimpleNamespace
+
 import numpy as np
 
 from app.models.advanced_security import RiskLevel
+from app.models.fusion import ConsistencyStatus, MismatchReason, MotionDirection
+from app.services.advanced_security_service import _fusion_row_replay_risk
+from app.services.verification.advanced import replay_risk
 from app.services.verification.advanced.device_metadata import analyze_device_metadata
 from app.services.verification.advanced.location_risk import analyze_location_samples
 from app.services.verification.advanced.replay_risk import analyze_frames
@@ -72,6 +77,47 @@ def test_display_rectangle_alone_cannot_trigger_high_replay_risk() -> None:
     )
     assert result["risk_level"] != RiskLevel.HIGH
     assert result["metrics"]["rectangleAloneCannotTriggerHigh"] is True
+
+
+def test_same_direction_fusion_gap_is_not_hard_replay_contradiction() -> None:
+    row = SimpleNamespace(
+        sensor_direction=MotionDirection.RIGHT,
+        visual_direction=MotionDirection.RIGHT,
+        consistency_status=ConsistencyStatus.MISMATCH,
+        effective_consistency_score=0.53,
+        mismatch_reasons_json=[
+            MismatchReason.SENSOR_WITHOUT_VISUAL_MOTION.value,
+            MismatchReason.MAGNITUDE_MISMATCH.value,
+            MismatchReason.TEMPORAL_MISMATCH.value,
+        ],
+    )
+    assert _fusion_row_replay_risk(row) == 0.47
+
+
+def test_opposite_direction_remains_hard_replay_corroboration() -> None:
+    row = SimpleNamespace(
+        sensor_direction=MotionDirection.RIGHT,
+        visual_direction=MotionDirection.LEFT,
+        consistency_status=ConsistencyStatus.MISMATCH,
+        effective_consistency_score=0.2,
+        mismatch_reasons_json=[MismatchReason.OPPOSITE_DIRECTION.value],
+    )
+    assert _fusion_row_replay_risk(row) == 1.0
+
+
+def test_banding_and_moire_are_one_artifact_family(monkeypatch) -> None:
+    frame = np.zeros((240, 320, 3), dtype=np.uint8)
+    monkeypatch.setattr(replay_risk, "display_rectangle_score", lambda _frame: 0.1)
+    monkeypatch.setattr(replay_risk, "banding_score", lambda _frame: 0.95)
+    monkeypatch.setattr(replay_risk, "moire_score", lambda _frame: 0.95)
+    result = replay_risk.analyze_frames(
+        [frame] * 8,
+        fusion_mismatch_score=0.40,
+        duplicate_frame_ratio=0.0,
+        evidence_reuse_score=0.0,
+    )
+    assert result["risk_level"] == RiskLevel.MODERATE
+    assert result["metrics"]["independentHighRiskFamilies"] == 1
 
 
 def test_emulator_metadata_is_high_device_risk() -> None:
