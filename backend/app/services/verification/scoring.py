@@ -13,6 +13,14 @@ from app.services.verification.domain import (
     VerificationSignal,
 )
 
+STRONG_FUSION_CONTRADICTIONS = frozenset(
+    {
+        "OPPOSITE_DIRECTION",
+        "VISUAL_WITHOUT_SENSOR_MOTION",
+        "SENSOR_WITHOUT_VISUAL_MOTION",
+    }
+)
+
 
 def calculate_score(
     signals: list[VerificationSignal],
@@ -48,11 +56,21 @@ def calculate_score(
 
 
 def _strong_fusion_mismatch(signal: VerificationSignal) -> bool:
+    mismatch_reasons = {
+        str(value)
+        for value in (signal.metrics.get("mismatchReasons") or [])
+    }
+    contradiction_count = int(signal.metrics.get("strongContradictionCount") or 0)
+    has_physical_contradiction = (
+        contradiction_count > 0
+        or bool(mismatch_reasons & STRONG_FUSION_CONTRADICTIONS)
+    )
     return (
         signal.type == VerificationSignalType.VISUAL_INERTIAL_CONSISTENCY
         and signal.status == VerificationSignalStatus.FAIL
         and signal.confidence >= 0.80
         and signal.metrics.get("consistencyStatus") == "MISMATCH"
+        and has_physical_contradiction
     )
 
 
@@ -96,7 +114,7 @@ def evaluate_hard_rules(
                     code="HIGH_CONFIDENCE_FUSION_MISMATCH",
                     maximum_verdict=VerificationVerdict.FLAGGED,
                     explanation=(
-                        "High-confidence camera motion contradicted physical device motion."
+                        "High-confidence camera motion physically contradicted device motion."
                     ),
                 )
             )
