@@ -31,3 +31,6 @@ local.properties
 .minio/
 postgres-data/
 backend/siteproof-evidence/
+
+# Local secrets
+.secrets/
