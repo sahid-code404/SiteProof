@@ -71,7 +71,10 @@ export function DashboardPage() {
           <p className="eyebrow">AUTOMATED VERIFICATION</p>
           <h2>{summary.isLoading ? 'Calculating…' : `${data?.verificationRate ?? 0}% verified`}</h2>
           <p>{data?.verificationCompleted ?? 0} latest immutable verification decisions are represented in the current rate. Historical results remain preserved but do not inflate current verdict counts.</p>
-          <Link className="button primary" to="/inspections">Open inspection evidence</Link>
+          <div className="dashboard-actions">
+            <Link className="button primary" to="/review">Open reviewer workspace</Link>
+            <Link className="button ghost" to="/inspections">All inspections</Link>
+          </div>
         </article>
         <article className="panel">
           <p className="eyebrow">REVIEW ATTENTION</p>
@@ -79,6 +82,7 @@ export function DashboardPage() {
           <div className="attention-row"><span>Inconclusive</span><strong>{data?.inconclusive ?? 0}</strong></div>
           <div className="attention-row"><span>Overdue inspections</span><strong>{data?.overdue ?? 0}</strong></div>
           <div className="attention-row"><span>High / critical priority</span><strong>{data?.highPriority ?? 0}</strong></div>
+          <Link className="button ghost dashboard-review-link" to="/review">Review current decisions</Link>
         </article>
       </section>
 
@@ -86,19 +90,29 @@ export function DashboardPage() {
         <article className="panel">
           <p className="eyebrow">LATEST VERIFICATION RESULTS</p>
           <h2>Recent trust decisions</h2>
-          {!data?.latestVerifications?.length ? <p className="muted">No completed verification results yet.</p> : data.latestVerifications.map((item) => (
-            <div className="challenge-row" key={item.inspectionId}>
-              <div>
-                <Link className="table-link" to={`/inspections/${item.inspectionId}`}>{item.title}</Link>
-                <small>{item.locationName || 'Unnamed site'} · {item.engineVersion}</small>
-              </div>
-              <div className="badge-row">
-                <span className={verdictBadgeClass(item.verdict)}>{item.verdict?.replace(/_/g, ' ') ?? item.verificationStatus.replace(/_/g, ' ')}</span>
-                {item.receiptStatus ? <span className={item.receiptStatus === 'ISSUED' ? 'badge badge-ready' : 'badge badge-acknowledged'}>{item.receiptStatus}</span> : <span className="badge">NO RECEIPT</span>}
-              </div>
-              <small>Score {typeof item.score === 'number' ? item.score.toFixed(2) : '—'} · confidence {percent(item.confidence)}{item.receiptNumber ? ` · ${item.receiptNumber}` : ''}</small>
+          {!data?.latestVerifications?.length ? <p className="muted">No completed verification results yet.</p> : (
+            <div className="recent-decision-list">
+              {data.latestVerifications.map((item) => (
+                <article className="recent-decision-card" key={item.inspectionId}>
+                  <div className="recent-decision-topline">
+                    <div>
+                      <Link className="table-link" to={`/inspections/${item.inspectionId}`}>{item.title}</Link>
+                      <small>{item.locationName || 'Unnamed site'} · {item.engineVersion}</small>
+                    </div>
+                    <div className="badge-row">
+                      <span className={verdictBadgeClass(item.verdict)}>{item.verdict?.replace(/_/g, ' ') ?? item.verificationStatus.replace(/_/g, ' ')}</span>
+                      {item.receiptStatus ? <span className={item.receiptStatus === 'ISSUED' ? 'badge badge-ready' : 'badge badge-acknowledged'}>{item.receiptStatus}</span> : <span className="badge">NO RECEIPT</span>}
+                    </div>
+                  </div>
+                  <div className="recent-decision-metrics">
+                    <span><small>Score</small><strong>{typeof item.score === 'number' ? item.score.toFixed(2) : '—'}</strong></span>
+                    <span><small>Confidence</small><strong>{percent(item.confidence)}</strong></span>
+                    <span><small>Receipt</small><strong>{item.receiptNumber ?? 'Not issued'}</strong></span>
+                  </div>
+                </article>
+              ))}
             </div>
-          ))}
+          )}
         </article>
 
         <article className="panel">
