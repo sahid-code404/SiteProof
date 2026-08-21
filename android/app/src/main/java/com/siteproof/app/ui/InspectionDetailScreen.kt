@@ -9,17 +9,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -46,84 +48,102 @@ fun InspectionDetailScreen(
     onStartVerification: () -> Unit,
 ) {
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("Inspection details") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                title = { Text("Inspection") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
             )
         },
     ) { padding ->
         when {
-            state.loading -> Column(
-                modifier = Modifier.padding(padding).fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) { CircularProgressIndicator() }
-            state.item == null -> Column(
-                modifier = Modifier.padding(padding).fillMaxSize().padding(28.dp),
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Text("Unable to load inspection.", style = MaterialTheme.typography.headlineSmall)
-                Text(state.error ?: "Unknown error", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 12.dp))
-                Button(onClick = onRetry) { Text("Retry") }
-            }
+            state.loading -> LoadingDetail(Modifier.padding(padding))
+            state.item == null -> MissingDetail(
+                modifier = Modifier.padding(padding),
+                message = state.error ?: "Inspection not found.",
+                onRetry = onRetry,
+            )
             else -> {
                 val item = state.item
                 Column(
-                    modifier = Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+                    modifier = Modifier
+                        .padding(padding)
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     if (state.offline) {
-                        Text("Offline — showing last synced data", color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelLarge)
-                        Spacer(Modifier.height(12.dp))
-                    }
-                    Text(item.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-                    Row(modifier = Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(item.status, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                        Text(item.priority, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
-                    }
-                    HorizontalDivider(Modifier.padding(vertical = 20.dp))
-                    DetailField("Location", item.locationName ?: item.locationAddress ?: "${item.expectedLatitude}, ${item.expectedLongitude}")
-                    DetailField("Allowed verification radius", "${item.allowedRadiusMeters} m")
-                    DetailField("Deadline", detailDeadline(item.deadline))
-                    DetailField("Inspection type", item.inspectionType.replace('_', ' '))
-                    DetailField("Instructions", item.instructions ?: "No additional instructions.")
-                    if (state.error != null) {
-                        Text(state.error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 12.dp))
-                    }
-                    Spacer(Modifier.height(20.dp))
-                    when (item.status) {
-                        "ASSIGNED" -> Button(
-                            onClick = onAcknowledge,
-                            enabled = !state.actionInProgress && !state.offline,
+                        Surface(
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text(if (state.actionInProgress) "UPDATING…" else "ACKNOWLEDGE") }
-                        "ACKNOWLEDGED" -> Button(
-                            onClick = onReady,
-                            enabled = !state.actionInProgress && !state.offline,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text(if (state.actionInProgress) "UPDATING…" else "MARK READY") }
-                        "READY" -> Button(
-                            onClick = onStartVerification,
-                            enabled = !state.offline,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("START LIVE VERIFICATION") }
-                        "SESSION_STARTED", "EVIDENCE_UPLOADING" -> Text(
-                            "Live evidence session in progress",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        "PROCESSING" -> Text(
-                            "Evidence uploaded — awaiting verification analysis",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.10f),
+                        ) {
+                            Column(Modifier.padding(14.dp)) {
+                                Text("Offline", color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Showing the last synced copy.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
-                    Spacer(Modifier.height(24.dp))
-                    Text(
-                        "SiteProof records live camera, location and motion-sensor evidence. Phase 3 does not make an authenticity verdict.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(item.title, style = MaterialTheme.typography.headlineMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            DetailChip(item.status)
+                            DetailChip(item.priority)
+                        }
+                    }
+
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            DetailField(
+                                "Location",
+                                item.locationName ?: item.locationAddress ?: "${item.expectedLatitude}, ${item.expectedLongitude}",
+                            )
+                            DetailField("Capture area", "Within ${item.allowedRadiusMeters} m")
+                            DetailField("Deadline", detailDeadline(item.deadline))
+                            DetailField("Type", item.inspectionType.replace('_', ' '))
+                        }
+                    }
+
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Instructions", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                item.instructions ?: "No additional instructions.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+
+                    state.error?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                    }
+
+                    InspectionAction(
+                        status = item.status,
+                        actionInProgress = state.actionInProgress,
+                        offline = state.offline,
+                        onAcknowledge = onAcknowledge,
+                        onReady = onReady,
+                        onStartVerification = onStartVerification,
                     )
+
+                    if (item.status == "SESSION_STARTED" || item.status == "EVIDENCE_UPLOADING") {
+                        StatusMessage("Live verification is in progress.")
+                    } else if (item.status == "PROCESSING") {
+                        StatusMessage("Evidence uploaded. Verification is processing.")
+                    }
+
+                    Spacer(Modifier.height(8.dp))
                 }
             }
         }
@@ -131,7 +151,93 @@ fun InspectionDetailScreen(
 }
 
 @Composable
+private fun InspectionAction(
+    status: String,
+    actionInProgress: Boolean,
+    offline: Boolean,
+    onAcknowledge: () -> Unit,
+    onReady: () -> Unit,
+    onStartVerification: () -> Unit,
+) {
+    when (status) {
+        "ASSIGNED" -> Button(
+            onClick = onAcknowledge,
+            enabled = !actionInProgress && !offline,
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+        ) { Text(if (actionInProgress) "Updating…" else "Acknowledge") }
+
+        "ACKNOWLEDGED" -> Button(
+            onClick = onReady,
+            enabled = !actionInProgress && !offline,
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+        ) { Text(if (actionInProgress) "Updating…" else "Mark ready") }
+
+        "READY" -> Button(
+            onClick = onStartVerification,
+            enabled = !offline,
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+        ) { Text("Start verification") }
+    }
+}
+
+@Composable
 private fun DetailField(label: String, value: String) {
-    Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Text(value, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 3.dp, bottom = 16.dp))
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
+private fun DetailChip(value: String) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+    ) {
+        Text(
+            value.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() },
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+    }
+}
+
+@Composable
+private fun StatusMessage(message: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+    ) {
+        Text(
+            message,
+            modifier = Modifier.padding(14.dp),
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+    }
+}
+
+@Composable
+private fun LoadingDetail(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        CircularProgressIndicator()
+        Text("Loading inspection…", modifier = Modifier.padding(top = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun MissingDetail(modifier: Modifier, message: String, onRetry: () -> Unit) {
+    Column(
+        modifier = modifier.fillMaxSize().padding(28.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text("Could not load inspection", style = MaterialTheme.typography.headlineMedium)
+        Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 12.dp))
+        Button(onClick = onRetry) { Text("Try again") }
+    }
 }
