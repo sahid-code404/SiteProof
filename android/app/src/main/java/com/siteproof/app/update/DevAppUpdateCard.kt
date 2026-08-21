@@ -33,44 +33,20 @@ fun DevAppUpdateCard(manager: DevAppUpdateManager) {
     if (!BuildConfig.DEBUG) return
 
     val scope = rememberCoroutineScope()
-    var checking by remember { mutableStateOf(true) }
     var downloading by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<AppUpdateInfo?>(null) }
     var downloadedApk by remember { mutableStateOf<File?>(null) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var installMessage by remember { mutableStateOf<String?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var messageIsError by remember { mutableStateOf(false) }
 
-    fun checkNow() {
-        if (downloading) return
-        checking = true
-        errorMessage = null
-        installMessage = null
-        scope.launch {
-            runCatching { manager.checkForUpdate() }
-                .onSuccess { available ->
-                    update = available
-                    downloadedApk = null
-                }
-                .onFailure { error ->
-                    errorMessage = error.message ?: "Could not check for updates."
-                }
-            checking = false
-        }
+    LaunchedEffect(Unit) {
+        runCatching { manager.checkForUpdate() }
+            .onSuccess { update = it }
+        // Update checks stay silent when the device is offline or the channel is unavailable.
+        // They are not part of the inspector's primary workflow.
     }
 
-    LaunchedEffect(Unit) { checkNow() }
-
-    if (checking && update == null) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Checking for updates…", style = MaterialTheme.typography.bodyMedium)
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
-        }
-        return
-    }
-
-    if (update == null && errorMessage == null) return
+    val available = update ?: return
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -79,19 +55,6 @@ fun DevAppUpdateCard(manager: DevAppUpdateManager) {
                 .semantics { liveRegion = LiveRegionMode.Polite },
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            val available = update
-
-            if (available == null) {
-                Text("Could not check for updates", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    errorMessage.orEmpty(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Button(onClick = ::checkNow, modifier = Modifier.fillMaxWidth()) { Text("Try again") }
-                return@Column
-            }
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -119,24 +82,29 @@ fun DevAppUpdateCard(manager: DevAppUpdateManager) {
             if (downloading) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Text(
-                    "Downloading and checking the update…",
+                    "Downloading update…",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
-            installMessage?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            message?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (messageIsError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             Button(
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !checking && !downloading,
+                enabled = !downloading,
                 onClick = {
                     val existing = downloadedApk
                     if (existing != null && existing.isFile) {
                         val result = manager.launchInstaller(existing)
-                        installMessage = if (result == InstallLaunchResult.PERMISSION_REQUIRED) {
+                        messageIsError = false
+                        message = if (result == InstallLaunchResult.PERMISSION_REQUIRED) {
                             "Allow installs from SiteProof, then return and tap Install update."
                         } else {
                             "Confirm the update in Android."
@@ -145,21 +113,22 @@ fun DevAppUpdateCard(manager: DevAppUpdateManager) {
                     }
 
                     downloading = true
-                    installMessage = null
+                    message = null
+                    messageIsError = false
                     scope.launch {
                         runCatching { manager.download(available) }
                             .onSuccess { apk ->
                                 downloadedApk = apk
                                 val result = manager.launchInstaller(apk)
-                                installMessage = if (result == InstallLaunchResult.PERMISSION_REQUIRED) {
+                                message = if (result == InstallLaunchResult.PERMISSION_REQUIRED) {
                                     "Allow installs from SiteProof, then return and tap Install update."
                                 } else {
                                     "Confirm the update in Android."
                                 }
                             }
                             .onFailure { error ->
-                                errorMessage = error.message ?: "Update download failed."
-                                installMessage = errorMessage
+                                messageIsError = true
+                                message = error.message ?: "Could not download the update."
                             }
                         downloading = false
                     }
@@ -176,11 +145,11 @@ fun DevAppUpdateCard(manager: DevAppUpdateManager) {
 
             TextButton(
                 modifier = Modifier.align(Alignment.End),
-                enabled = !checking && !downloading,
+                enabled = !downloading,
                 onClick = {
                     update = null
                     downloadedApk = null
-                    installMessage = null
+                    message = null
                 },
             ) {
                 Text("Later")
