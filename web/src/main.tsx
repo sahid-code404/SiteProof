@@ -16,6 +16,7 @@ import './orange-login.css'
 import './reference-overrides.css'
 import './reference-polish.css'
 import './visibility-polish.css'
+import './professional-polish.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {
