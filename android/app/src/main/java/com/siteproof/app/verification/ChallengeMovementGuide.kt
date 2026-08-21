@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -149,9 +150,9 @@ private fun HumanHandMovementDiagram(
                     .height(154.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                // Fixed destination pose: the animation moves toward this ghost hand.
                 HumanHandPhonePose(
                     modifier = Modifier
+                        .size(124.dp)
                         .alpha(0.20f)
                         .graphicsLayer {
                             rotationY = targetY
@@ -162,13 +163,14 @@ private fun HumanHandMovementDiagram(
                     outline = guideColor,
                 )
 
-                // Real human-hand phone glyph animated from neutral to the requested pose.
                 HumanHandPhonePose(
-                    modifier = Modifier.graphicsLayer {
-                        rotationY = targetY * demoFraction
-                        rotationX = targetX * demoFraction
-                        cameraDistance = 18f * density
-                    },
+                    modifier = Modifier
+                        .size(124.dp)
+                        .graphicsLayer {
+                            rotationY = targetY * demoFraction
+                            rotationX = targetX * demoFraction
+                            cameraDistance = 18f * density
+                        },
                     label = "",
                     outline = Color.Transparent,
                 )
@@ -254,17 +256,15 @@ private fun HumanHandPhonePose(
         modifier = modifier,
         contentAlignment = Alignment.Center,
     ) {
-        // Android's native selfie emoji is an actual human hand holding a phone. It keeps
-        // the guide immediately recognizable and avoids the previous abstract rectangle hand.
         Text(
             "🤳",
-            fontSize = 92.sp,
+            fontSize = 72.sp,
             textAlign = TextAlign.Center,
         )
         if (outline != Color.Transparent) {
             Box(
                 modifier = Modifier
-                    .matchParentSize()
+                    .fillMaxSize()
                     .border(2.dp, outline, RoundedCornerShape(18.dp)),
             )
         }
