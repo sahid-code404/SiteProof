@@ -46,6 +46,10 @@ class SessionCreateResponse(APIModel):
     expires_at: datetime
     server_time: datetime
     clock_offset_ms: float | None = None
+    required_capture_duration_seconds: int = Field(ge=10, le=75)
+    capture_maximum_seconds: int = Field(ge=10, le=90)
+    allowed_radius_meters: int = Field(ge=10, le=5000)
+    deadline: datetime
 
 
 class StartCaptureRequest(APIModel):
