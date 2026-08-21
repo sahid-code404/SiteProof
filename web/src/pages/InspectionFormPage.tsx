@@ -180,8 +180,8 @@ export function InspectionFormPage() {
       setClientError(validationError)
       return
     }
-    if (!Number.isInteger(captureDurationSeconds) || captureDurationSeconds < 10 || captureDurationSeconds > 300) {
-      setClientError('Video length must be between 10 seconds and 5 minutes.')
+    if (!Number.isInteger(captureDurationSeconds) || captureDurationSeconds < 10 || captureDurationSeconds > 45) {
+      setClientError('Video length must be between 10 and 45 seconds.')
       return
     }
 
@@ -259,9 +259,6 @@ export function InspectionFormPage() {
                 <option value="20">20 seconds</option>
                 <option value="30">30 seconds · recommended</option>
                 <option value="45">45 seconds</option>
-                <option value="60">1 minute</option>
-                <option value="90">1 minute 30 seconds</option>
-                <option value="120">2 minutes</option>
               </select>
               <small>The app keeps one continuous video while the movement checks are completed.</small>
             </label>
