@@ -15,63 +15,63 @@ import androidx.compose.ui.unit.sp
 
 val SiteProofOrangeGradient = Brush.linearGradient(
     colors = listOf(
-        Color(0xFFFF9A24),
-        Color(0xFFFF6900),
-        Color(0xFFF04C00),
+        Color(0xFFFF9720),
+        Color(0xFFFF6B08),
+        Color(0xFFF05200),
     ),
 )
 
 private val SiteProofColors = lightColorScheme(
-    primary = Color(0xFFFF6200),
+    primary = Color(0xFFF45A00),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFFFE8D5),
-    onPrimaryContainer = Color(0xFF8A3300),
-    secondary = Color(0xFF53606F),
+    primaryContainer = Color(0xFFFFF1E7),
+    onPrimaryContainer = Color(0xFF823300),
+    secondary = Color(0xFF475467),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFF1F3F6),
-    onSecondaryContainer = Color(0xFF2E3640),
-    tertiary = Color(0xFFB86800),
+    secondaryContainer = Color(0xFFF0F2F5),
+    onSecondaryContainer = Color(0xFF303743),
+    tertiary = Color(0xFF9D5B08),
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFFFEED0),
-    onTertiaryContainer = Color(0xFF734100),
-    background = Color(0xFFF8F9FB),
-    onBackground = Color(0xFF1A1D22),
+    tertiaryContainer = Color(0xFFFFF3DF),
+    onTertiaryContainer = Color(0xFF694000),
+    background = Color(0xFFF7F8FA),
+    onBackground = Color(0xFF1A1C20),
     surface = Color.White,
-    onSurface = Color(0xFF1A1D22),
+    onSurface = Color(0xFF1A1C20),
     surfaceVariant = Color(0xFFF4F5F7),
-    onSurfaceVariant = Color(0xFF69717C),
-    outline = Color(0xFFD9DEE5),
-    outlineVariant = Color(0xFFE9ECF0),
-    error = Color(0xFFB8322A),
+    onSurfaceVariant = Color(0xFF667085),
+    outline = Color(0xFFDCE0E5),
+    outlineVariant = Color(0xFFE9EBEF),
+    error = Color(0xFFB42318),
     onError = Color.White,
 )
 
 private val SiteProofShapes = Shapes(
-    small = RoundedCornerShape(9.dp),
-    medium = RoundedCornerShape(13.dp),
-    large = RoundedCornerShape(18.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(18.dp),
+    large = RoundedCornerShape(24.dp),
 )
 
 private val SiteProofTypography = Typography(
     headlineMedium = TextStyle(
-        fontSize = 30.sp,
-        lineHeight = 36.sp,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
         fontWeight = FontWeight.SemiBold,
-        letterSpacing = (-0.4f).sp,
+        letterSpacing = (-0.35f).sp,
     ),
     titleLarge = TextStyle(
-        fontSize = 22.sp,
-        lineHeight = 29.sp,
+        fontSize = 21.sp,
+        lineHeight = 28.sp,
         fontWeight = FontWeight.SemiBold,
     ),
     titleMedium = TextStyle(
         fontSize = 17.sp,
-        lineHeight = 24.sp,
+        lineHeight = 23.sp,
         fontWeight = FontWeight.SemiBold,
     ),
     bodyLarge = TextStyle(
-        fontSize = 17.sp,
-        lineHeight = 25.sp,
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
     ),
     bodyMedium = TextStyle(
         fontSize = 15.sp,
