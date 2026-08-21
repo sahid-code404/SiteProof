@@ -50,16 +50,12 @@ class DevAppUpdateManager(private val context: Context) {
             .get()
             .build()
         client.newCall(request).execute().use { response ->
-            check(response.isSuccessful) {
-                "Update check failed with HTTP ${response.code}."
-            }
-            val body = response.body?.string() ?: error("Update manifest was empty.")
-            val info = adapter.fromJson(body) ?: error("Update manifest was invalid.")
-            require(info.versionCode > 0) { "Update version code is invalid." }
-            require(info.apkUrl.startsWith("https://")) { "Update APK must use HTTPS." }
-            require(info.sha256.matches(Regex("[0-9a-fA-F]{64}"))) {
-                "Update SHA-256 is invalid."
-            }
+            check(response.isSuccessful) { "Could not check for updates." }
+            val body = response.body?.string() ?: error("Could not read the update information.")
+            val info = adapter.fromJson(body) ?: error("Could not read the update information.")
+            require(info.versionCode > 0) { "The update information is invalid." }
+            require(info.apkUrl.startsWith("https://")) { "The update download address is invalid." }
+            require(info.sha256.matches(Regex("[0-9a-fA-F]{64}"))) { "The update information is invalid." }
             if (info.versionCode > BuildConfig.VERSION_CODE) info else null
         }
     }
@@ -73,22 +69,20 @@ class DevAppUpdateManager(private val context: Context) {
             .get()
             .build()
         client.newCall(request).execute().use { response ->
-            check(response.isSuccessful) {
-                "Update download failed with HTTP ${response.code}."
-            }
-            val body = response.body ?: error("Update download was empty.")
+            check(response.isSuccessful) { "Could not download the update." }
+            val body = response.body ?: error("Could not download the update.")
             destination.outputStream().use { output -> body.byteStream().copyTo(output) }
         }
         val actual = sha256(destination)
         check(actual.equals(update.sha256, ignoreCase = true)) {
             destination.delete()
-            "Downloaded update failed SHA-256 verification."
+            "The downloaded update could not be verified."
         }
         destination
     }
 
     fun launchInstaller(apk: File): InstallLaunchResult {
-        require(apk.isFile && apk.length() > 0L) { "Downloaded update APK is missing." }
+        require(apk.isFile && apk.length() > 0L) { "The downloaded update is missing." }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !context.packageManager.canRequestPackageInstalls()
         ) {
