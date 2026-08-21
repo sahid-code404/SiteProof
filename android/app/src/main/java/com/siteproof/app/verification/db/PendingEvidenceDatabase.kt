@@ -25,6 +25,10 @@ data class PendingEvidenceEntity(
     val uploadIdempotencyKey: String,
     val createdAtEpochMs: Long,
     val lastUploadAttemptEpochMs: Long? = null,
+    val uploadProgressPercent: Int = 0,
+    val uploadedBytes: Long = 0L,
+    val totalBytes: Long = 0L,
+    val networkLabel: String? = null,
 )
 
 @Entity(tableName = "active_challenges")
@@ -59,7 +63,36 @@ interface PendingEvidenceDao {
     suspend fun updateUploadStatus(sessionId: String, status: String, attempt: Long?)
 
     @Query(
-        "UPDATE pending_evidence SET uploadStatus = 'UPLOADED', localEvidencePath = '' WHERE sessionId = :sessionId",
+        """
+        UPDATE pending_evidence
+        SET uploadStatus = :status,
+            uploadProgressPercent = :percent,
+            uploadedBytes = :uploaded,
+            totalBytes = :total,
+            networkLabel = :network,
+            lastUploadAttemptEpochMs = :attempt
+        WHERE sessionId = :sessionId
+        """,
+    )
+    suspend fun updateUploadProgress(
+        sessionId: String,
+        status: String,
+        percent: Int,
+        uploaded: Long,
+        total: Long,
+        network: String?,
+        attempt: Long?,
+    )
+
+    @Query(
+        """
+        UPDATE pending_evidence
+        SET uploadStatus = 'UPLOADED',
+            uploadProgressPercent = 100,
+            uploadedBytes = totalBytes,
+            localEvidencePath = ''
+        WHERE sessionId = :sessionId
+        """,
     )
     suspend fun markUploaded(sessionId: String)
 }
@@ -98,7 +131,7 @@ interface ActiveChallengeDao {
 
 @Database(
     entities = [PendingEvidenceEntity::class, ActiveChallengeEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class PendingEvidenceDatabase : RoomDatabase() {
@@ -130,13 +163,22 @@ abstract class PendingEvidenceDatabase : RoomDatabase() {
             }
         }
 
+        private val migration2To3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE pending_evidence ADD COLUMN uploadProgressPercent INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE pending_evidence ADD COLUMN uploadedBytes INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE pending_evidence ADD COLUMN totalBytes INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE pending_evidence ADD COLUMN networkLabel TEXT")
+            }
+        }
+
         fun get(context: Context): PendingEvidenceDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 PendingEvidenceDatabase::class.java,
                 "siteproof-verification.db",
             )
-                .addMigrations(migration1To2)
+                .addMigrations(migration1To2, migration2To3)
                 .build()
                 .also { instance = it }
         }
