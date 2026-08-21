@@ -1,5 +1,7 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { getSummary } from '../lib/api'
 import { clearSession, getStoredUser } from '../lib/auth'
 import { NetworkStatusBanner } from './NetworkStatusBanner'
 
@@ -15,9 +17,22 @@ export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
   const user = getStoredUser()
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
+  const summary = useQuery({ queryKey: ['shell-summary'], queryFn: getSummary, staleTime: 30_000 })
   const canReview = user?.role === 'ADMIN' || user?.role === 'REVIEWER'
   const canManage = user?.role === 'ADMIN'
   const inspectorsActive = location.pathname.startsWith('/inspectors')
+  const notices = [
+    summary.data?.overdue ? `${summary.data.overdue} overdue inspection${summary.data.overdue === 1 ? '' : 's'}` : null,
+    summary.data?.reviewRequired ? `${summary.data.reviewRequired} result${summary.data.reviewRequired === 1 ? '' : 's'} need review` : null,
+    summary.data?.flagged ? `${summary.data.flagged} flagged verification${summary.data.flagged === 1 ? '' : 's'}` : null,
+  ].filter(Boolean) as string[]
+
+  function closeMenus() {
+    setNotificationsOpen(false)
+    setAccountOpen(false)
+  }
 
   function signOut() {
     clearSession()
@@ -30,51 +45,43 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside className="sidebar" aria-label="SiteProof navigation">
         <div className="brand brand-gradient">
           <img className="brand-logo" src="/siteproof-icon.svg" alt="" aria-hidden="true" />
-          <div>
-            <strong>SiteProof</strong>
-            <small>Field Verification</small>
-          </div>
+          <div><strong>SiteProof</strong><small>Field Verification</small></div>
         </div>
 
-        <nav aria-label="Primary">
+        <nav aria-label="Primary" onClick={closeMenus}>
           <NavLink to="/" end><NavIcon path="home"/><span>Overview</span></NavLink>
           <NavLink to="/inspections"><NavIcon path="inspection"/><span>Inspections</span></NavLink>
           {canReview ? <NavLink to="/review"><NavIcon path="review"/><span>Review</span></NavLink> : null}
           {canManage ? (
             <div className={`nav-group ${inspectorsActive ? 'open' : ''}`}>
               <NavLink to="/inspectors"><NavIcon path="people"/><span>Inspectors</span><span className="nav-chevron">⌄</span></NavLink>
-              {inspectorsActive ? (
-                <div className="nav-submenu" aria-label="Inspector management">
-                  <a href="#all-inspectors">All Inspectors</a>
-                  <a href="#add-inspector">Add Inspector</a>
-                  <a href="#password-management">Change Passwords</a>
-                </div>
-              ) : null}
+              {inspectorsActive ? <div className="nav-submenu" aria-label="Inspector management"><a href="#all-inspectors">All Inspectors</a><a href="#add-inspector">Add Inspector</a><a href="#password-management">Change Passwords</a></div> : null}
             </div>
           ) : null}
         </nav>
 
-        <div className="sidebar-user">
-          <div className="sidebar-avatar" aria-hidden="true">{(user?.fullName ?? 'S').slice(0, 1).toUpperCase()}</div>
-          <div className="sidebar-user-copy">
-            <strong>{user?.fullName ?? 'SiteProof user'}</strong>
-            <small>{user?.role?.replace(/_/g, ' ') ?? ''}</small>
-          </div>
-          <button className="icon-action" type="button" onClick={signOut} aria-label="Sign out">›</button>
-        </div>
+        <button className="sidebar-user account-trigger" type="button" onClick={() => { setAccountOpen(!accountOpen); setNotificationsOpen(false) }} aria-expanded={accountOpen}>
+          <span className="sidebar-avatar" aria-hidden="true">{(user?.fullName ?? 'S').slice(0, 1).toUpperCase()}</span>
+          <span className="sidebar-user-copy"><strong>{user?.fullName ?? 'SiteProof user'}</strong><small>{user?.email ?? ''}</small></span>
+          <span className="icon-action" aria-hidden="true">›</span>
+        </button>
       </aside>
 
       <div className="content-wrap">
         <header className="topbar topbar-gradient" aria-label="Application status">
-          <button className="topbar-icon" type="button" aria-label="Navigation menu">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-          </button>
+          <button className="topbar-icon" type="button" aria-label="Navigation menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
           <div className="topbar-actions">
-            <span className="notification-dot" aria-hidden="true" />
-            <button className="topbar-icon" type="button" aria-label="Notifications">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
-            </button>
-            <span className="topbar-avatar">{(user?.fullName ?? 'A').slice(0, 1).toUpperCase()}</span>
+            <div className="popover-anchor">
+              <button className="topbar-icon" type="button" aria-label={`Notifications${notices.length ? `, ${notices.length} unread` : ''}`} aria-expanded={notificationsOpen} onClick={() => { setNotificationsOpen(!notificationsOpen); setAccountOpen(false) }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
+                {notices.length ? <span className="notification-count">{notices.length}</span> : null}
+              </button>
+              {notificationsOpen ? <div className="glass-popover notification-popover" role="dialog" aria-label="Notifications"><div className="popover-title"><strong>Notifications</strong><small>Live inspection status</small></div>{summary.isLoading ? <p>Loading…</p> : notices.length ? notices.map((notice) => <button key={notice} type="button" className="notification-item" onClick={() => { closeMenus(); navigate(notice.includes('review') || notice.includes('flagged') ? '/review' : '/inspections') }}><span className="notification-pulse"/><span>{notice}</span><span>›</span></button>) : <div className="popover-empty"><strong>You're all set</strong><span>No items need attention.</span></div>}</div> : null}
+            </div>
+            <div className="popover-anchor">
+              <button className="topbar-avatar" type="button" aria-label="Account" aria-expanded={accountOpen} onClick={() => { setAccountOpen(!accountOpen); setNotificationsOpen(false) }}>{(user?.fullName ?? 'A').slice(0, 1).toUpperCase()}</button>
+              {accountOpen ? <div className="glass-popover account-popover" role="dialog" aria-label="Account"><div className="account-card"><span className="account-avatar-large">{(user?.fullName ?? 'A').slice(0, 1).toUpperCase()}</span><div><strong>{user?.fullName}</strong><span>{user?.email}</span><small>{user?.role?.replace(/_/g, ' ')}</small></div></div>{canManage ? <button type="button" onClick={() => { closeMenus(); navigate('/inspectors') }}>Manage inspectors</button> : null}<button type="button" onClick={() => { closeMenus(); navigate('/') }}>Overview</button><button type="button" className="signout-row" onClick={signOut}>Sign out</button></div> : null}
+            </div>
           </div>
         </header>
         <NetworkStatusBanner />
