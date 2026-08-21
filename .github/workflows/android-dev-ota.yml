@@ -3,6 +3,7 @@ name: Android Dev OTA
 on:
   push:
     branches:
+      - main
       - phase5-visual-motion
       - phase9-advanced-security
       - phase10-environment-anomaly
@@ -71,7 +72,7 @@ jobs:
             "versionName": "${{ steps.version.outputs.name }}",
             "apkUrl": "https://github.com/sahid-code404/SiteProof/releases/download/dev-latest/SiteProof-debug.apk",
             "sha256": "$SHA256",
-            "notes": "Interface polish and reliability improvements."
+            "notes": "Reliable configured video duration, live remaining-time guidance, and custom capture lengths."
           }
           JSON
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
