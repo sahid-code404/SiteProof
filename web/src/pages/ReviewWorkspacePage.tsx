@@ -12,6 +12,11 @@ function score(value?: number | null) {
   return typeof value === 'number' ? value.toFixed(2) : '—'
 }
 
+function captured(value?: string | null) {
+  if (!value) return 'Capture time unavailable'
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+}
+
 function verdictClass(value: VerificationVerdict) {
   if (value === 'VERIFIED') return 'badge badge-ready'
   if (value === 'REVIEW_REQUIRED') return 'badge badge-high'
@@ -28,18 +33,24 @@ function reviewClass(value?: string | null) {
 
 export function ReviewWorkspacePage() {
   const [search, setSearch] = useState('')
+  const [inspector, setInspector] = useState('')
   const [verdict, setVerdict] = useState<VerificationVerdict | ''>('')
   const [reviewState, setReviewState] = useState<'all' | 'pending' | 'reviewed'>('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const params = useMemo(() => {
     const next = new URLSearchParams({ limit: '150' })
     if (search.trim()) next.set('search', search.trim())
+    if (inspector.trim()) next.set('inspector', inspector.trim())
     if (verdict) next.set('verdict', verdict)
     if (reviewState === 'pending') next.set('reviewed', 'false')
     if (reviewState === 'reviewed') next.set('reviewed', 'true')
+    if (dateFrom) next.set('dateFrom', `${dateFrom}T00:00:00Z`)
+    if (dateTo) next.set('dateTo', `${dateTo}T23:59:59Z`)
     return next
-  }, [search, verdict, reviewState])
+  }, [search, inspector, verdict, reviewState, dateFrom, dateTo])
 
   const queue = useQuery({
     queryKey: ['review-workspace', params.toString()],
@@ -83,6 +94,14 @@ export function ReviewWorkspacePage() {
           <option value="pending">Pending human review</option>
           <option value="reviewed">Reviewed</option>
         </select>
+        <input
+          placeholder="Filter inspector name"
+          value={inspector}
+          onChange={(event) => setInspector(event.target.value)}
+          aria-label="Filter by inspector"
+        />
+        <label className="review-date-filter">From<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>
+        <label className="review-date-filter">To<input type="date" value={dateTo} min={dateFrom || undefined} onChange={(event) => setDateTo(event.target.value)} /></label>
       </section>
 
       {queue.isError ? <div className="notice error">Unable to load reviewer workspace: {queue.error.message}</div> : null}
@@ -97,7 +116,7 @@ export function ReviewWorkspacePage() {
         <article className="panel review-map-panel">
           <div className="review-section-heading">
             <div><p className="eyebrow">SITE OVERVIEW</p><h2>Verification map</h2></div>
-            <small className="muted">Pins show expected inspection sites for the current verification decision.</small>
+            <small className="muted">Pins show expected inspection sites; the popup includes inspector, capture time, automated verdict and confidence.</small>
           </div>
           {queue.isLoading ? <div className="loading-block">Loading verification sites…</div> : null}
           {!queue.isLoading && !items.length ? <div className="empty-state"><h3>No matching sites</h3><p>Change the active filters to show current verification decisions.</p></div> : null}
@@ -126,6 +145,10 @@ export function ReviewWorkspacePage() {
                     <span>{item.locationName || item.locationAddress || 'Unnamed site'}</span>
                   </div>
                   <span className={verdictClass(item.verdict)}>{item.verdict.replace(/_/g, ' ')}</span>
+                </div>
+                <div className="review-card-context">
+                  <span>Inspector: <strong>{item.inspectorName || 'Unassigned'}</strong></span>
+                  <span>Captured: <strong>{captured(item.captureEndedAt)}</strong></span>
                 </div>
                 <div className="review-score-row">
                   <span><small>Score</small><strong>{score(item.score)}</strong></span>
