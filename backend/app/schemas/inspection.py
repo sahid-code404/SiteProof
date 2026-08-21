@@ -5,6 +5,7 @@ from pydantic import Field, field_validator
 
 from app.models.assignment import AssignmentStatus
 from app.models.inspection import InspectionPriority, InspectionStatus, InspectionType
+from app.models.trust import VerificationProcessingStatus, VerificationVerdict
 from app.schemas.base import APIModel
 from app.schemas.inspector import InspectorResponse
 
@@ -114,6 +115,21 @@ class InspectionPage(APIModel):
     total_pages: int
 
 
+class DashboardVerificationItem(APIModel):
+    inspection_id: uuid.UUID
+    title: str
+    location_name: str | None = None
+    inspection_status: InspectionStatus
+    verification_status: VerificationProcessingStatus
+    verdict: VerificationVerdict | None = None
+    score: float | None = None
+    confidence: float | None = None
+    engine_version: str
+    calculated_at: datetime | None = None
+    receipt_number: str | None = None
+    receipt_status: str | None = None
+
+
 class DashboardSummary(APIModel):
     total: int
     draft: int
@@ -124,3 +140,11 @@ class DashboardSummary(APIModel):
     due_today: int
     overdue: int
     high_priority: int
+    verified: int = 0
+    review_required: int = 0
+    flagged: int = 0
+    inconclusive: int = 0
+    verification_processing: int = 0
+    verification_completed: int = 0
+    verification_rate: float = 0.0
+    latest_verifications: list[DashboardVerificationItem] = Field(default_factory=list)
