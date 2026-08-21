@@ -1,6 +1,6 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import type { FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Inspector } from '../lib/api'
 import {
   createInspector,
   listInspectors,
@@ -39,7 +39,7 @@ export function InspectorManagementPage() {
     queryFn: () => listInspectors(search, activeFilter),
   })
 
-  const allInspectors = inspectors.data?.items ?? []
+  const allInspectors = useMemo(() => inspectors.data?.items ?? [], [inspectors.data?.items])
   const selected = useMemo(
     () => allInspectors.find((item) => item.id === selectedId) ?? null,
     [allInspectors, selectedId],
