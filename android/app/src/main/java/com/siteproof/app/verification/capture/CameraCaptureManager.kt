@@ -79,7 +79,7 @@ class CameraCaptureManager(private val context: Context) {
         videoCapture = capture
     }
 
-    suspend fun startRecording(outputFile: File) {
+    suspend fun startRecording(outputFile: File): Long {
         check(recording == null) { "A recording is already active." }
         val capture = checkNotNull(videoCapture) { "Camera preview is not ready." }
         outputFile.parentFile?.mkdirs()
@@ -142,7 +142,7 @@ class CameraCaptureManager(private val context: Context) {
             }
 
         // Do not expose an active verification until CameraX confirms recording began.
-        started.await()
+        return started.await()
     }
 
     suspend fun stopRecording(): RecordingResult {
