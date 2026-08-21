@@ -23,6 +23,7 @@ class InspectionCreate(APIModel):
     inspection_type: InspectionType = InspectionType.GENERAL
     location: LocationInput
     allowed_radius_meters: int = Field(default=100, ge=10, le=5000)
+    capture_duration_seconds: int = Field(default=30, ge=10, le=300)
     deadline: datetime
     priority: InspectionPriority = InspectionPriority.MEDIUM
     instructions: str | None = Field(default=None, max_length=5000)
@@ -43,6 +44,7 @@ class InspectionUpdate(APIModel):
     inspection_type: InspectionType | None = None
     location: LocationInput | None = None
     allowed_radius_meters: int | None = Field(default=None, ge=10, le=5000)
+    capture_duration_seconds: int | None = Field(default=None, ge=10, le=300)
     deadline: datetime | None = None
     priority: InspectionPriority | None = None
     instructions: str | None = Field(default=None, max_length=5000)
@@ -90,6 +92,7 @@ class InspectionResponse(APIModel):
     expected_latitude: float
     expected_longitude: float
     allowed_radius_meters: int
+    capture_duration_seconds: int
     location_name: str | None
     location_address: str | None
     deadline: datetime
