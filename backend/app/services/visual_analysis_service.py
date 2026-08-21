@@ -86,6 +86,43 @@ def _load_metadata(storage: StorageService, record: EvidenceFile) -> dict:
     return value
 
 
+def _sensor_motion_window_ms(
+    challenge: VerificationChallenge,
+    item: dict,
+) -> tuple[int, int] | None:
+    """Return server-validated gyro movement bounds when they fit the client timeline.
+
+    Phase 4 already identifies motion onset and settle while validating the submitted
+    gyroscope slice. These values are server-derived from the same capture-relative sensor
+    timestamps, so Phase 5 can use them without changing the Android capture lifecycle.
+    Older challenges simply fall back to their original client challenge window.
+    """
+    metrics = challenge.metrics_json or {}
+    start_ns = metrics.get("motionStartRelativeNs")
+    end_ns = metrics.get("motionEndRelativeNs")
+    if start_ns is None or end_ns is None:
+        return None
+    try:
+        start_ms = int(start_ns) // 1_000_000
+        end_ms = int(end_ns) // 1_000_000
+        protocol_start_ms = int(
+            item.get("startedRelativeMs", item.get("issuedRelativeMs", -1))
+        )
+        protocol_end_ms = int(item.get("completedRelativeMs", -1))
+    except (TypeError, ValueError):
+        return None
+
+    if (
+        protocol_start_ms < 0
+        or protocol_end_ms <= protocol_start_ms
+        or start_ms < protocol_start_ms
+        or end_ms <= start_ms
+        or end_ms > protocol_end_ms
+    ):
+        return None
+    return start_ms, end_ms
+
+
 def _result_for_challenge(
     db: Session,
     challenge_id: uuid.UUID,
@@ -331,20 +368,50 @@ def analyze_session_visual_motion(
                 started_relative_ms = int(
                     item.get("startedRelativeMs", item.get("issuedRelativeMs", -1))
                 )
+                protocol_completed_relative_ms = int(item.get("completedRelativeMs", -1))
                 alignment_difference_ms = validate_client_server_start_alignment(
                     capture_anchor_monotonic_ns=session.capture_anchor_monotonic_ns,
                     challenge_client_start_monotonic_ns=challenge.client_start_monotonic_ns,
                     challenge_started_relative_ms=started_relative_ms,
                     tolerance_ms=settings.vision_timeline_tolerance_ms,
                 )
-                window = map_challenge_window(
-                    metadata,
-                    challenge_id=str(challenge.id),
-                    challenge_type=challenge.challenge_type.value,
-                    pre_padding_ms=settings.vision_pre_challenge_padding_ms,
-                    post_padding_ms=settings.vision_post_challenge_padding_ms,
-                    video_duration_ms=video_metadata.duration_ms,
-                )
+
+                sensor_motion_window = _sensor_motion_window_ms(challenge, item)
+                movement_window_source = "CLIENT_CHALLENGE"
+                if sensor_motion_window is None:
+                    window = map_challenge_window(
+                        metadata,
+                        challenge_id=str(challenge.id),
+                        challenge_type=challenge.challenge_type.value,
+                        pre_padding_ms=settings.vision_pre_challenge_padding_ms,
+                        post_padding_ms=settings.vision_post_challenge_padding_ms,
+                        video_duration_ms=video_metadata.duration_ms,
+                    )
+                else:
+                    movement_window_source = "SENSOR_GYROSCOPE"
+                    original_started = item.get("startedRelativeMs")
+                    original_completed = item.get("completedRelativeMs")
+                    item["startedRelativeMs"] = sensor_motion_window[0]
+                    item["completedRelativeMs"] = sensor_motion_window[1]
+                    try:
+                        window = map_challenge_window(
+                            metadata,
+                            challenge_id=str(challenge.id),
+                            challenge_type=challenge.challenge_type.value,
+                            pre_padding_ms=settings.vision_pre_challenge_padding_ms,
+                            post_padding_ms=settings.vision_post_challenge_padding_ms,
+                            video_duration_ms=video_metadata.duration_ms,
+                        )
+                    finally:
+                        if original_started is None:
+                            item.pop("startedRelativeMs", None)
+                        else:
+                            item["startedRelativeMs"] = original_started
+                        if original_completed is None:
+                            item.pop("completedRelativeMs", None)
+                        else:
+                            item["completedRelativeMs"] = original_completed
+
                 frames, invalid_ratio = sample_window(
                     video_path,
                     metadata=video_metadata,
@@ -373,10 +440,23 @@ def analyze_session_visual_motion(
                         },
                         "timeline": {
                             "videoStartRelativeMs": video_offset_ms,
+                            "protocolChallengeStartSessionMs": started_relative_ms,
+                            "protocolChallengeEndSessionMs": protocol_completed_relative_ms,
                             "challengeStartSessionMs": window.challenge_start_session_ms,
                             "challengeEndSessionMs": window.challenge_end_session_ms,
                             "analysisVideoStartMs": window.video_start_ms,
                             "analysisVideoEndMs": window.video_end_ms,
+                            "movementWindowSource": movement_window_source,
+                            "sensorMotionStartSessionMs": (
+                                sensor_motion_window[0]
+                                if sensor_motion_window is not None
+                                else None
+                            ),
+                            "sensorMotionEndSessionMs": (
+                                sensor_motion_window[1]
+                                if sensor_motion_window is not None
+                                else None
+                            ),
                             "clientServerStartDifferenceMs": alignment_difference_ms,
                         },
                         "sampledFrames": len(frames),
