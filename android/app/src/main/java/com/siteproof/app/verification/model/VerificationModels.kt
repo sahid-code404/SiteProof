@@ -40,6 +40,10 @@ data class SessionCreateResponse(
     val expiresAt: String,
     val serverTime: String,
     val clockOffsetMs: Double? = null,
+    val requiredCaptureDurationSeconds: Int,
+    val captureMaximumSeconds: Int,
+    val allowedRadiusMeters: Int,
+    val deadline: String,
 )
 
 @JsonClass(generateAdapter = false)

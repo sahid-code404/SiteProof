@@ -67,17 +67,22 @@ def start_capture(
     )
     radius = float(snapshot["allowedRadiusMeters"])
     uncertainty = max(payload.location.accuracy_meters, 0.0)
-    if distance > radius + uncertainty:
+    nearest_possible_distance = max(distance - uncertainty, 0.0)
+    farthest_possible_distance = distance + uncertainty
+
+    # Treat the reported GPS accuracy as an uncertainty interval, not as permission to accept
+    # a noisy fix. The entire uncertainty circle must fit inside the allowed site for PASS.
+    if nearest_possible_distance > radius:
         raise SiteProofError(
             409,
             "OUTSIDE_ALLOWED_LOCATION",
             f"Current location is approximately {round(distance)} m from the assigned site.",
         )
-    if distance > radius:
+    if farthest_possible_distance > radius:
         raise SiteProofError(
             409,
             "LOCATION_INCONCLUSIVE",
-            "Location is near the allowed boundary but GPS uncertainty is too high. Retry for a more accurate position.",
+            "GPS uncertainty overlaps the site boundary. Move to an open area and retry for a more accurate position.",
         )
 
     session.status = VerificationSessionStatus.CAPTURING
@@ -88,6 +93,8 @@ def start_capture(
     session.pre_capture_location = {
         **payload.location.model_dump(mode="json"),
         "distanceMeters": distance,
+        "nearestPossibleDistanceMeters": nearest_possible_distance,
+        "farthestPossibleDistanceMeters": farthest_possible_distance,
         "allowedRadiusMeters": int(radius),
     }
     session.device_capabilities = payload.capabilities.model_dump()
@@ -99,7 +106,11 @@ def start_capture(
         entity_type="VERIFICATION_SESSION",
         entity_id=session.id,
         action="CAPTURE_STARTED",
-        metadata={"distanceMeters": round(distance, 2), "locationAccuracyMeters": payload.location.accuracy_meters},
+        metadata={
+            "distanceMeters": round(distance, 2),
+            "locationAccuracyMeters": payload.location.accuracy_meters,
+            "farthestPossibleDistanceMeters": round(farthest_possible_distance, 2),
+        },
     )
     db.commit()
     db.refresh(session)
@@ -166,11 +177,10 @@ def complete_capture(
             f"This inspection requires at least {configured_min_seconds} seconds of continuous video.",
         )
 
-    # Keep a bounded allowance for retries/finalization while preserving the administrator's
-    # snapshotted minimum. Existing 60-second deployments remain compatible, while longer
-    # configured captures can safely finish below the 90-second visual-analysis ceiling.
-    effective_max_seconds = max(settings.capture_max_seconds, required_seconds + 15)
-    effective_max_seconds = min(effective_max_seconds, 90)
+    effective_max_seconds = min(
+        max(settings.capture_max_seconds, required_seconds + 15),
+        settings.vision_max_duration_seconds,
+    )
     if payload.capture_duration_ms > effective_max_seconds * 1000:
         raise SiteProofError(
             422,

@@ -26,6 +26,8 @@ import java.io.File
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -62,6 +64,7 @@ class VerificationCaptureCoordinator(
         val idempotencyKey: String,
     )
 
+    private val startMutex = Mutex()
     private var active: ActiveCapture? = null
     private var activeChallenge: ActiveChallenge? = null
     private var pendingSubmission: ChallengeSubmitRequest? = null
@@ -70,23 +73,41 @@ class VerificationCaptureCoordinator(
     suspend fun prepare(inspectionId: String): Prepared {
         val inspection = repository.inspection(inspectionId)
         require(inspection.status == "READY") { "Inspection must be READY before live verification." }
-        require(inspection.captureDurationSeconds in 10..75) {
-            "Required video duration must be between 10 and 75 seconds."
-        }
         val capabilities = sensorRecorder.capabilities()
         require(capabilities.accelerometer) { "This device does not have an accelerometer." }
-        val location = locationRecorder.freshLocation(
-            inspection.expectedLatitude,
-            inspection.expectedLongitude,
-            inspection.allowedRadiusMeters,
-        )
-        if (!location.withinAllowedArea && !location.inconclusive) {
-            throw IllegalStateException(
-                "You are approximately ${location.distanceMeters.toInt()} m from the assigned inspection location.",
-            )
-        }
+
+        // The server creates and snapshots the authoritative contract before Android decides
+        // duration/radius. This prevents an admin edit between GET inspection and session creation
+        // from creating a client/server mismatch.
         val session = repository.createSession(inspectionId, UUID.randomUUID().toString())
-        return Prepared(inspection, session, location, capabilities)
+        return try {
+            require(session.requiredCaptureDurationSeconds in 10..75) {
+                "Required video duration must be between 10 and 75 seconds."
+            }
+            require(session.captureMaximumSeconds in session.requiredCaptureDurationSeconds..90) {
+                "Server returned an invalid capture time limit."
+            }
+            ensureStorage(session.requiredCaptureDurationSeconds)
+            val location = locationRecorder.freshLocation(
+                inspection.expectedLatitude,
+                inspection.expectedLongitude,
+                session.allowedRadiusMeters,
+            )
+            if (!location.withinAllowedArea) {
+                if (location.inconclusive) {
+                    throw IllegalStateException(
+                        "GPS accuracy is not precise enough to prove you are inside the assigned site. Move to an open area and retry.",
+                    )
+                }
+                throw IllegalStateException(
+                    "You are approximately ${location.distanceMeters.toInt()} m from the assigned inspection location.",
+                )
+            }
+            Prepared(inspection, session, location, capabilities)
+        } catch (error: Exception) {
+            repository.abort(session.sessionId, "LOCATION_LOST")
+            throw error
+        }
     }
 
     suspend fun bindCamera(previewView: PreviewView, lifecycleOwner: LifecycleOwner) {
@@ -100,16 +121,19 @@ class VerificationCaptureCoordinator(
         }
     }
 
-    suspend fun start(prepared: Prepared) {
+    suspend fun start(prepared: Prepared) = startMutex.withLock {
         check(active == null) { "Capture is already active." }
+        ensureStorage(prepared.session.requiredCaptureDurationSeconds)
         val fresh = locationRecorder.freshLocation(
             prepared.inspection.expectedLatitude,
             prepared.inspection.expectedLongitude,
-            prepared.inspection.allowedRadiusMeters,
+            prepared.session.allowedRadiusMeters,
         )
         if (!fresh.withinAllowedArea) {
             if (fresh.inconclusive) {
-                throw IllegalStateException("Location is inconclusive. Acquire a more accurate GPS position.")
+                throw IllegalStateException(
+                    "GPS accuracy is not precise enough to prove you are inside the assigned site. Move to an open area and retry.",
+                )
             }
             throw IllegalStateException("Verification cannot begin outside the assigned location.")
         }
@@ -152,10 +176,8 @@ class VerificationCaptureCoordinator(
         return (SystemClock.elapsedRealtimeNanos() - capture.captureStartNs) / 1_000_000L
     }
 
-    fun videoElapsedMs(): Long {
-        val capture = active ?: return 0L
-        return (SystemClock.elapsedRealtimeNanos() - capture.videoStartNs) / 1_000_000L
-    }
+    /** CameraX encoded-media time. This is authoritative for visible duration/countdown. */
+    fun videoElapsedMs(): Long = cameraManager.encodedDurationNs() / 1_000_000L
 
     fun videoRemainingMs(requiredSeconds: Int): Long {
         val requiredMs = requiredSeconds.coerceIn(10, 75) * 1_000L
@@ -268,37 +290,37 @@ class VerificationCaptureCoordinator(
             })
         }
         file.writeText(root.toString(), Charsets.UTF_8)
-        repository.preserveChallengeEvidence(
-            challenge.issue.challengeId,
-            file.absolutePath,
-        )
+        repository.preserveChallengeEvidence(challenge.issue.challengeId, file.absolutePath)
     }
 
     suspend fun stop(): EvidencePackage {
         val capture = checkNotNull(active) { "No capture is active." }
         check(activeChallenge == null) { "Current challenge must finish before capture stops." }
         try {
-            val requestedSeconds = capture.prepared.inspection.captureDurationSeconds
+            val requestedSeconds = capture.prepared.session.requiredCaptureDurationSeconds
+            val maximumSeconds = capture.prepared.session.captureMaximumSeconds
             require(requestedSeconds in 10..75) { "Unsupported required video duration: $requestedSeconds seconds." }
             val requestedMinimumMs = requestedSeconds * 1_000L
-            val remainingMinimumMs = videoRemainingMs(requestedSeconds)
-            if (remainingMinimumMs > 0L) delay(remainingMinimumMs)
 
-            // Give CameraX a short encoding margin after the exact monotonic minimum is reached.
-            // This avoids sub-second truncation on devices where the final media timestamp trails
-            // the Start/Stop callbacks very slightly.
-            delay(350L)
+            // Wait on CameraX's encoded duration, not a wall-clock approximation. Status events
+            // continuously update this clock and remove the old device-dependent 350 ms guess.
+            while (videoElapsedMs() < requestedMinimumMs) {
+                delay(100L)
+            }
 
             val cameraResult = cameraManager.stopRecording()
             val sensorCounts = sensorRecorder.stop()
             val locations = locationRecorder.stopCapture()
-            // CameraX's encoded-media duration is the authoritative duration of capture.mp4.
-            // Wall-clock start/end anchors are packaged separately for Phase 5 calibration.
             val durationMs = cameraResult.recordedDurationNs / 1_000_000L
             require(durationMs >= requestedMinimumMs) {
                 "Capture ended before the configured $requestedSeconds second minimum."
             }
-            require(durationMs <= 90_000L) { "Capture exceeded the 90 second technical maximum." }
+            require(durationMs <= maximumSeconds * 1_000L) {
+                "Capture exceeded the server-authorized $maximumSeconds second maximum."
+            }
+            require(cameraResult.fileSizeBytes <= MAX_CAPTURE_VIDEO_BYTES) {
+                "Recorded video is too large to upload safely. Retry with the device under normal recording conditions."
+            }
             require(locations.isNotEmpty()) { "No GPS samples were recorded during capture." }
             val locationSummary = locationRecorder.writePackage(
                 File(capture.directory, "locations.json.gz"),
@@ -356,6 +378,20 @@ class VerificationCaptureCoordinator(
         cameraManager.release()
     }
 
+    private fun ensureStorage(requiredSeconds: Int) {
+        // FHD evidence commonly stays below ~2.5 MB/s; reserve extra space for encoder variance,
+        // sensors, packaging and app/database writes. This fails before capture instead of losing
+        // a completed proof because the device storage filled up.
+        val estimatedEvidenceBytes = requiredSeconds * 2_500_000L
+        val requiredFreeBytes = estimatedEvidenceBytes + STORAGE_RESERVE_BYTES
+        val available = context.filesDir.usableSpace
+        require(available >= requiredFreeBytes) {
+            val neededMb = (requiredFreeBytes + MB - 1) / MB
+            val availableMb = available / MB
+            "Not enough free storage for this verification. Need about ${neededMb} MB free; ${availableMb} MB is available."
+        }
+    }
+
     private fun cleanupCapture() {
         cameraManager.abortRecording()
         sensorRecorder.stop()
@@ -363,5 +399,11 @@ class VerificationCaptureCoordinator(
         active = null
         activeChallenge = null
         pendingSubmission = null
+    }
+
+    private companion object {
+        const val MB = 1024L * 1024L
+        const val STORAGE_RESERVE_BYTES = 100L * MB
+        const val MAX_CAPTURE_VIDEO_BYTES = 240L * MB
     }
 }

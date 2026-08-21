@@ -69,7 +69,14 @@ def login(client, user):
     return {"Authorization": f"Bearer {response.json()['accessToken']}"}
 
 
-def create_ready_inspection(client, admin_headers, inspector_headers, profile_id):
+def create_ready_inspection(
+    client,
+    admin_headers,
+    inspector_headers,
+    profile_id,
+    *,
+    capture_duration_seconds: int = 10,
+):
     payload = {
         "title": "Verify repaired road section",
         "description": "Phase 3 live capture test",
@@ -80,6 +87,7 @@ def create_ready_inspection(client, admin_headers, inspector_headers, profile_id
             "name": "Central Avenue",
         },
         "allowedRadiusMeters": 100,
+        "captureDurationSeconds": capture_duration_seconds,
         "deadline": (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat(),
         "priority": "HIGH",
         "instructions": "Record the repaired road surface.",
@@ -147,13 +155,13 @@ def start_capture(client, headers, session_id, **location_overrides):
     )
 
 
-def finish_capture(client, headers, session_id):
+def finish_capture(client, headers, session_id, capture_duration_ms: int = 10_000):
     complete_required_challenges(client, headers, session_id)
     return client.post(
         f"/api/v1/sessions/{session_id}/capture-complete",
         headers=headers,
         json={
-            "captureDurationMs": 9000,
+            "captureDurationMs": capture_duration_ms,
             "videoFileCount": 1,
             "sensorSummary": {
                 "accelerometerSamples": 3,
@@ -171,7 +179,7 @@ def finish_capture(client, headers, session_id):
     )
 
 
-def build_evidence(session_id):
+def build_evidence(session_id, capture_duration_ms: int = 10_000):
     video = b"\x00\x00\x00\x18ftypmp42siteproof-phase3-test"
     sensor_lines = [
         {"type": "ACCELEROMETER", "relativeTimestampNs": 100, "values": [0.1, 9.7, 0.2], "accuracy": 3},
@@ -194,7 +202,7 @@ def build_evidence(session_id):
         {
             "sessionId": session_id,
             "inspectionId": "test",
-            "capture": {"durationMs": 9000},
+            "capture": {"durationMs": capture_duration_ms},
             "device": {"model": "Test device"},
         },
         separators=(",", ":"),

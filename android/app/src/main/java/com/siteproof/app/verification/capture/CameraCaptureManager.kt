@@ -38,6 +38,8 @@ class CameraCaptureManager(private val context: Context) {
     private var completion: CompletableDeferred<RecordingResult>? = null
     private var startCompletion: CompletableDeferred<Long>? = null
     private var startNs: Long = 0L
+    @Volatile private var encodedDurationNs: Long = 0L
+    @Volatile private var encodedBytes: Long = 0L
 
     suspend fun bind(previewView: PreviewView, lifecycleOwner: LifecycleOwner) {
         val existingPreview = previewUseCase
@@ -47,9 +49,7 @@ class CameraCaptureManager(private val context: Context) {
             if (recording != null) {
                 // Evidence recording has priority over UI recovery. Never swap Preview surface
                 // providers while Recorder is active: some CameraX/device combinations stall the
-                // shared camera graph for hundreds of milliseconds or more during that change.
-                // The persistent-overlay UI should make this path unnecessary, but keeping this
-                // guard prevents a future Compose refactor from damaging the encoded evidence.
+                // shared camera graph during that change.
                 return
             }
 
@@ -88,23 +88,30 @@ class CameraCaptureManager(private val context: Context) {
         completion = result
         startCompletion = started
         startNs = 0L
+        encodedDurationNs = 0L
+        encodedBytes = 0L
         recording = capture.output
             .prepareRecording(context, FileOutputOptions.Builder(outputFile).build())
             .start(ContextCompat.getMainExecutor(context)) { event ->
                 when (event) {
                     is VideoRecordEvent.Start -> {
-                        // Anchor the wall-clock video interval only when CameraX confirms that
-                        // recording has actually started.
                         val monotonicStartNs = SystemClock.elapsedRealtimeNanos()
                         startNs = monotonicStartNs
-                        if (!started.isCompleted) {
-                            started.complete(monotonicStartNs)
-                        }
+                        if (!started.isCompleted) started.complete(monotonicStartNs)
+                    }
+
+                    is VideoRecordEvent.Status -> {
+                        // CameraX's encoded-media clock is authoritative for the required video
+                        // duration. Keep monotonic time separately only for sensor alignment.
+                        encodedDurationNs = event.recordingStats.recordedDurationNanos
+                        encodedBytes = event.recordingStats.numBytesRecorded
                     }
 
                     is VideoRecordEvent.Finalize -> {
                         val activeCompletion = completion ?: return@start
                         val recordedDurationNs = event.recordingStats.recordedDurationNanos
+                        encodedDurationNs = recordedDurationNs
+                        encodedBytes = event.recordingStats.numBytesRecorded
                         val finalizedAtNs = SystemClock.elapsedRealtimeNanos()
                         val effectiveStartNs = if (startNs > 0L) {
                             startNs
@@ -112,23 +119,14 @@ class CameraCaptureManager(private val context: Context) {
                             (finalizedAtNs - recordedDurationNs).coerceAtLeast(0L)
                         }
                         if (event.hasError()) {
-                            val error = IllegalStateException(
-                                "Camera recording failed with code ${event.error}.",
-                            )
-                            if (!started.isCompleted) {
-                                started.completeExceptionally(error)
-                            }
+                            val error = IllegalStateException("Camera recording failed with code ${event.error}.")
+                            if (!started.isCompleted) started.completeExceptionally(error)
                             activeCompletion.completeExceptionally(error)
                         } else {
-                            if (!started.isCompleted) {
-                                started.complete(effectiveStartNs)
-                            }
+                            if (!started.isCompleted) started.complete(effectiveStartNs)
                             activeCompletion.complete(
                                 RecordingResult(
                                     videoStartMonotonicNs = effectiveStartNs,
-                                    // Keep the real Finalize callback time as the wall-clock end
-                                    // anchor. CameraX's encoded duration is stored separately and
-                                    // remains authoritative for MP4 duration validation.
                                     videoEndMonotonicNs = finalizedAtNs,
                                     recordedDurationNs = recordedDurationNs,
                                     fileSizeBytes = outputFile.length(),
@@ -141,9 +139,12 @@ class CameraCaptureManager(private val context: Context) {
                 }
             }
 
-        // Do not expose an active verification until CameraX confirms recording began.
         return started.await()
     }
+
+    fun encodedDurationNs(): Long = encodedDurationNs
+
+    fun encodedBytes(): Long = encodedBytes
 
     suspend fun stopRecording(): RecordingResult {
         val active = checkNotNull(recording) { "No camera recording is active." }
@@ -159,6 +160,8 @@ class CameraCaptureManager(private val context: Context) {
         startCompletion = null
         completion?.cancel()
         completion = null
+        encodedDurationNs = 0L
+        encodedBytes = 0L
     }
 
     fun release() {
