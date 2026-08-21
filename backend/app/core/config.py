@@ -122,6 +122,13 @@ class Settings(BaseSettings):
     max_manifest_bytes: int = 1 * 1024 * 1024
     max_thumbnail_bytes: int = 5 * 1024 * 1024
 
+    # Phase 8 server-side cryptographic receipts. Only an external key path is configured;
+    # private key bytes are never stored in settings, Git, or PostgreSQL.
+    receipt_signing_enabled: bool = False
+    receipt_signing_key_id: str = "siteproof-signing-dev-01"
+    receipt_signing_private_key_path: str = "/run/siteproof-secrets/siteproof-signing-private.pem"
+    public_receipt_details: str = "MINIMAL"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @field_validator("challenge_max_retries", mode="after")

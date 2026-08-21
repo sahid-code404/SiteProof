@@ -6,6 +6,7 @@ from app.api.routes import (
     fusion_analysis,
     inspections,
     inspectors,
+    receipts,
     sessions,
     verification,
     visual_analysis,
@@ -20,3 +21,4 @@ api_router.include_router(challenges.router)
 api_router.include_router(visual_analysis.router)
 api_router.include_router(fusion_analysis.router)
 api_router.include_router(verification.router)
+api_router.include_router(receipts.router)
