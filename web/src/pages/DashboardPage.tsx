@@ -44,6 +44,7 @@ export function DashboardPage() {
   const summary = useQuery({ queryKey: ['inspection-summary'], queryFn: getSummary })
   const data = summary.data as DashboardSummary | undefined
   const reviewQueue = (data?.reviewRequired ?? 0) + (data?.inconclusive ?? 0)
+  const verificationRate = Math.round(data?.verificationRate ?? 0)
 
   return (
     <>
@@ -75,18 +76,24 @@ export function DashboardPage() {
         <article className="metric-card"><span>Processing</span><strong>{summary.isLoading ? '…' : data?.verificationProcessing ?? 0}</strong></article>
       </section>
 
-      <section className="dashboard-grid">
-        <article className="panel accent-panel">
-          <p className="eyebrow">Verification</p>
-          <h2>{summary.isLoading ? 'Loading…' : `${data?.verificationRate ?? 0}% verified`}</h2>
-          <p>{data?.verificationCompleted ?? 0} inspections have a current verification result. Older results remain available in each inspection's history.</p>
-          <div className="dashboard-actions">
+      <section className="dashboard-grid dashboard-priority-grid">
+        <article className="panel verification-overview-card">
+          <div className="verification-rate-tile" aria-label={`${verificationRate}% verified`}>
+            <strong>{summary.isLoading ? '…' : `${verificationRate}%`}</strong>
+            <span>verified</span>
+          </div>
+          <div className="verification-overview-copy">
+            <p className="eyebrow">Verification</p>
+            <h2>Automated results</h2>
+            <p>{summary.isLoading ? 'Loading current verification results…' : `${data?.verificationCompleted ?? 0} inspections have a current verification result. Historical decisions remain preserved in each inspection.`}</p>
+          </div>
+          <div className="verification-overview-actions">
             <Link className="button primary" to="/review">Review results</Link>
             <Link className="button ghost" to="/inspections">View inspections</Link>
           </div>
         </article>
 
-        <article className="panel">
+        <article className="panel attention-panel">
           <p className="eyebrow">Attention</p>
           <h2>Work to check</h2>
           <div className="attention-row"><span>Review required</span><strong>{data?.reviewRequired ?? 0}</strong></div>
