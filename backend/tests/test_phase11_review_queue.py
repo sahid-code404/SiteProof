@@ -26,6 +26,8 @@ def test_reviewer_queue_uses_current_result_and_tracks_separate_human_review(cli
     assert item["engineVersion"] == result.engine_version
     assert isinstance(item["latitude"], float)
     assert isinstance(item["longitude"], float)
+    assert item["inspectorName"] == data["identities"]["inspector"].full_name
+    assert item["captureEndedAt"] is not None
     assert item["latestReview"] is None
 
     verdict_filter = client.get(
@@ -34,6 +36,13 @@ def test_reviewer_queue_uses_current_result_and_tracks_separate_human_review(cli
     )
     assert verdict_filter.status_code == 200, verdict_filter.text
     assert verdict_filter.json()["total"] == 1
+
+    inspector_filter = client.get(
+        f"/api/v1/review-queue?inspector={data['identities']['inspector'].full_name}",
+        headers=data["reviewer_headers"],
+    )
+    assert inspector_filter.status_code == 200, inspector_filter.text
+    assert inspector_filter.json()["total"] == 1
 
     pending = client.get(
         "/api/v1/review-queue?reviewed=false",
