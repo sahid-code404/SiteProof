@@ -148,6 +148,28 @@ def test_perfect_and_noisy_legitimate_motion_are_not_unnecessarily_rejected():
     assert decision.effective_consistency_score >= settings.fusion_partial_threshold
 
 
+def test_high_confidence_poor_visual_label_remains_comparable_with_clean_scene():
+    settings = Settings()
+    sensor = _motion(source=MotionSource.SENSOR, angle=40.0, curve=_curve())
+    visual = _motion(
+        source=MotionSource.VISION,
+        angle=37.0,
+        start=4080,
+        end=5580,
+        confidence=0.88,
+        quality="POOR",
+        curve=_curve(delay_ms=100, scale=0.8),
+    )
+    decision = _decision(sensor, visual, settings)
+    assert decision.consistency_status in {
+        ConsistencyStatus.CONSISTENT.value,
+        ConsistencyStatus.PARTIALLY_CONSISTENT.value,
+    }
+    assert MismatchReason.LOW_VISUAL_QUALITY.value in decision.mismatch_reasons
+    assert decision.effective_consistency_score is not None
+    assert decision.effective_consistency_score >= settings.fusion_partial_threshold
+
+
 def test_high_confidence_opposite_direction_is_strong_mismatch():
     sensor = _motion(source=MotionSource.SENSOR, direction="RIGHT", curve=_curve())
     visual = _motion(source=MotionSource.VISION, direction="LEFT", angle=39, curve=_curve())
