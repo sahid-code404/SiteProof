@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -152,7 +153,32 @@ private fun cameraPrepared(state: VerificationUiState): VerificationCaptureCoord
     is VerificationUiState.ChallengeChecking -> state.prepared
     is VerificationUiState.ChallengeNetworkWait -> state.prepared
     is VerificationUiState.ChallengeResultState -> state.prepared
+    is VerificationUiState.CaptureFinishing -> state.prepared
     else -> null
+}
+
+private fun liveElapsedMs(state: VerificationUiState): Long? = when (state) {
+    is VerificationUiState.ChallengeLoading -> state.elapsedMs
+    is VerificationUiState.ChallengeActive -> state.elapsedMs
+    is VerificationUiState.ChallengeChecking -> state.elapsedMs
+    is VerificationUiState.ChallengeNetworkWait -> state.elapsedMs
+    is VerificationUiState.ChallengeResultState -> state.elapsedMs
+    is VerificationUiState.CaptureFinishing -> state.elapsedMs
+    else -> null
+}
+
+private fun requiredRemainingMs(state: VerificationUiState, requiredSeconds: Int): Long? {
+    if (state is VerificationUiState.CaptureFinishing) return state.remainingMs
+    val elapsed = liveElapsedMs(state) ?: return null
+    return (requiredSeconds * 1_000L - elapsed).coerceAtLeast(0L)
+}
+
+private fun secondsLabel(milliseconds: Long): String = "${ceil(milliseconds / 1000.0).toInt()}s"
+
+private fun durationLabel(seconds: Int): String = when {
+    seconds >= 60 && seconds % 60 == 0 -> "${seconds / 60} min"
+    seconds >= 60 -> "${seconds / 60} min ${seconds % 60} sec"
+    else -> "$seconds sec"
 }
 
 @Composable
@@ -174,6 +200,7 @@ private fun PersistentCameraHost(
             modifier = Modifier.fillMaxSize(),
         )
 
+        val recordingRemaining = requiredRemainingMs(state, prepared.inspection.captureDurationSeconds)
         Surface(
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
@@ -184,7 +211,13 @@ private fun PersistentCameraHost(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    if (state is VerificationUiState.Ready) "Ready to verify" else "Recording",
+                    if (state is VerificationUiState.Ready) {
+                        "Ready to verify"
+                    } else if (recordingRemaining != null && recordingRemaining > 0L) {
+                        "Recording · ${secondsLabel(recordingRemaining)} minimum remaining"
+                    } else {
+                        "Recording · minimum reached"
+                    },
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -203,6 +236,7 @@ private fun PersistentCameraHost(
             is VerificationUiState.ChallengeChecking -> LiveLoadingOverlay("Checking movement…", onAbort)
             is VerificationUiState.ChallengeNetworkWait -> NetworkWaitOverlay(state, retryConnection, onAbort)
             is VerificationUiState.ChallengeResultState -> ChallengeResultOverlay(state.result, retryChallenge, onAbort)
+            is VerificationUiState.CaptureFinishing -> CaptureFinishingOverlay(state, onAbort)
             else -> Unit
         }
     }
@@ -258,6 +292,12 @@ private fun BoxScope.ReadyOverlay(
             StatusRow("Location", "${prepared.location.accuracyLabel} · ±${prepared.location.location.accuracyMeters.roundToInt()} m")
             StatusRow("Site distance", "${prepared.location.distanceMeters.roundToInt()} m of ${prepared.inspection.allowedRadiusMeters} m")
             StatusRow("Motion sensors", if (sensorsReady) "Ready" else "Limited")
+            StatusRow("Required video", "${durationLabel(prepared.inspection.captureDurationSeconds)} minimum")
+            Text(
+                "The video will keep recording until this minimum is reached, even if the movement checks finish earlier.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Button(onClick = onStart, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Start verification") }
             TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Back") }
         }
@@ -292,7 +332,7 @@ private fun BoxScope.ChallengeActiveOverlay(
                 modifier = Modifier.padding(top = 4.dp),
             )
             Text(
-                "${ceil(state.remainingMs / 1000.0).toInt()}s",
+                "Challenge window · ${secondsLabel(state.remainingMs)} remaining",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp),
@@ -385,12 +425,46 @@ private fun BoxScope.ChallengeResultOverlay(
     }
 }
 
+@Composable
+private fun BoxScope.CaptureFinishingOverlay(
+    state: VerificationUiState.CaptureFinishing,
+    onAbort: () -> Unit,
+) {
+    val requiredMs = state.prepared.inspection.captureDurationSeconds * 1_000f
+    val progress = (state.elapsedMs / requiredMs).coerceIn(0f, 1f)
+    Surface(
+        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        tonalElevation = 4.dp,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("Movement checks complete", style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+            if (state.remainingMs > 0L) {
+                Text(
+                    "Keep the camera steady · ${secondsLabel(state.remainingMs)} recording remaining",
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text("Minimum recording reached. Finalizing secure video…", textAlign = TextAlign.Center)
+            }
+            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+            TextButton(onClick = onAbort) { Text("Stop") }
+        }
+    }
+}
+
 private fun isLiveState(state: VerificationUiState): Boolean = when (state) {
     is VerificationUiState.ChallengeLoading,
     is VerificationUiState.ChallengeActive,
     is VerificationUiState.ChallengeChecking,
     is VerificationUiState.ChallengeNetworkWait,
     is VerificationUiState.ChallengeResultState,
+    is VerificationUiState.CaptureFinishing,
     -> true
     else -> false
 }
