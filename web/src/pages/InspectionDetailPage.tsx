@@ -16,6 +16,10 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
 
+function formatVideoLength(seconds: number) {
+  return seconds >= 60 ? `${Math.floor(seconds / 60)} min ${seconds % 60 ? `${seconds % 60} sec` : ''}`.trim() : `${seconds} sec`
+}
+
 export function InspectionDetailPage() {
   const { id = '' } = useParams()
   const user = getStoredUser()
@@ -78,16 +82,9 @@ export function InspectionDetailPage() {
             <h2>Location</h2>
             <SiteMap latitude={item.expectedLatitude} longitude={item.expectedLongitude} radius={item.allowedRadiusMeters} />
             <div className="definition-grid">
-              <div>
-                <span>Site</span>
-                <strong>{item.locationName || 'Unnamed site'}</strong>
-                <small>{item.locationAddress || 'No address provided'}</small>
-              </div>
-              <div>
-                <span>Capture area</span>
-                <strong>{item.allowedRadiusMeters} m radius</strong>
-                <small>{item.expectedLatitude.toFixed(6)}, {item.expectedLongitude.toFixed(6)}</small>
-              </div>
+              <div><span>Site</span><strong>{item.locationName || 'Unnamed site'}</strong><small>{item.locationAddress || 'No address provided'}</small></div>
+              <div><span>Capture area</span><strong>{item.allowedRadiusMeters} m radius</strong><small>{item.expectedLatitude.toFixed(6)}, {item.expectedLongitude.toFixed(6)}</small></div>
+              <div><span>Required video</span><strong>{formatVideoLength(item.captureDurationSeconds)}</strong><small>One continuous capture through the movement checks</small></div>
             </div>
           </article>
 
@@ -95,24 +92,12 @@ export function InspectionDetailPage() {
             <p className="eyebrow">Instructions</p>
             <h2>{item.inspectionType.replace('_', ' ')}</h2>
             {item.description ? <p>{item.description}</p> : null}
-            <div className="callout">
-              <strong>Inspector notes</strong>
-              <p>{item.instructions || 'No additional instructions.'}</p>
-            </div>
+            <div className="callout"><strong>Inspector notes</strong><p>{item.instructions || 'No additional instructions.'}</p></div>
           </article>
 
           <details className="panel technical-evidence">
-            <summary>
-              <span>
-                <strong>Technical evidence</strong>
-                <small>Security signals, sensor details and capture diagnostics</small>
-              </span>
-            </summary>
-            <div className="technical-evidence-content">
-              <AdvancedSecurityPanel inspectionId={id} />
-              <AdvancedSignalsPanel inspectionId={id} />
-              <VerificationSessionPanel inspectionId={id} />
-            </div>
+            <summary><span><strong>Technical evidence</strong><small>Security signals, sensor details and capture diagnostics</small></span></summary>
+            <div className="technical-evidence-content"><AdvancedSecurityPanel inspectionId={id} /><AdvancedSignalsPanel inspectionId={id} /><VerificationSessionPanel inspectionId={id} /></div>
           </details>
 
           <article className="panel">
@@ -123,11 +108,7 @@ export function InspectionDetailPage() {
                 {item.assignmentHistory.map((assignment) => (
                   <div className="timeline-item" key={assignment.id}>
                     <span className="timeline-dot" />
-                    <div>
-                      <strong>{assignment.inspector.name}</strong>
-                      <p>{assignment.status.replace(/_/g, ' ')} · {formatDate(assignment.assignedAt)}</p>
-                      {assignment.reason ? <small>{assignment.reason}</small> : null}
-                    </div>
+                    <div><strong>{assignment.inspector.name}</strong><p>{assignment.status.replace(/_/g, ' ')} · {formatDate(assignment.assignedAt)}</p>{assignment.reason ? <small>{assignment.reason}</small> : null}</div>
                   </div>
                 ))}
               </div>
@@ -139,6 +120,7 @@ export function InspectionDetailPage() {
           <article className="panel compact">
             <p className="eyebrow">Schedule</p>
             <span className="label">Deadline</span><strong>{formatDate(item.deadline)}</strong>
+            <span className="label">Video length</span><strong>{formatVideoLength(item.captureDurationSeconds)}</strong>
             <span className="label">Created by</span><strong>{item.createdByName}</strong>
             <span className="label">Updated</span><strong>{formatDate(item.updatedAt)}</strong>
           </article>
