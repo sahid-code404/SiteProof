@@ -21,6 +21,22 @@ function percentage(value?: number | null) {
   return typeof value === 'number' ? `${Math.round(value * 100)}%` : '—'
 }
 
+function confidenceQuality(value?: number | null) {
+  if (typeof value !== 'number') return 'Unknown'
+  if (value >= 0.90) return 'Very high'
+  if (value >= 0.80) return 'High'
+  if (value >= 0.70) return 'Good'
+  if (value >= 0.55) return 'Moderate'
+  return 'Low'
+}
+
+function scoreQuality(value?: number | null) {
+  if (typeof value !== 'number') return 'Unknown'
+  if (value >= 85) return 'Strong'
+  if (value >= 65) return 'Moderate'
+  return 'Weak'
+}
+
 function words(value: string) {
   return value.replace(/_/g, ' ')
 }
@@ -102,6 +118,8 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
   }
 
   const score = displayScore(data.score)
+  const confidenceText = `${percentage(data.confidence)} · ${confidenceQuality(data.confidence)}`
+  const scoreText = score === null ? '—' : `${score} / 100 · ${scoreQuality(data.score)}`
 
   return (
     <article className="panel verification-summary-panel">
@@ -115,10 +133,17 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
       </div>
 
       <div className="verification-key-metrics">
-        <div><span>Score</span><strong>{score ?? '—'} / 100</strong></div>
-        <div><span>Confidence</span><strong>{percentage(data.confidence)}</strong></div>
+        <div><span>Evidence score</span><strong>{scoreText}</strong></div>
+        <div><span>Decision confidence</span><strong>{confidenceText}</strong></div>
         <div><span>Engine</span><strong>{data.policy?.engineVersion ?? '—'}</strong></div>
       </div>
+
+      {data.verdict === 'INCONCLUSIVE' && typeof data.confidence === 'number' && data.confidence >= 0.70 ? (
+        <div className="notice">
+          <strong>Evidence confidence is good</strong>
+          <p>The result is inconclusive because at least one required verification signal could not be resolved, not because the overall evidence confidence is low.</p>
+        </div>
+      ) : null}
 
       {data.hardRules.length ? (
         <div className="notice error">
