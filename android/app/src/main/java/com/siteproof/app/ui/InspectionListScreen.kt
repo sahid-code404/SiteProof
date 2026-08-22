@@ -1,11 +1,6 @@
 package com.siteproof.app.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -27,8 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExitToApp
-import androidx.compose.material.icons.filled.NotificationsNone
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.WorkOutline
 import androidx.compose.material3.Button
@@ -45,20 +37,16 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -75,7 +63,7 @@ import java.util.Locale
 private enum class InspectionFilter { ACTIVE, COMPLETED, ALL }
 
 private fun formatDeadline(value: String): String = runCatching {
-    OffsetDateTime.parse(value).format(DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a", Locale.getDefault()))
+    OffsetDateTime.parse(value).format(DateTimeFormatter.ofPattern("dd MMM, hh:mm a", Locale.getDefault()))
 }.getOrDefault(value)
 
 private fun isFinished(status: String): Boolean = status in setOf("PROCESSING", "COMPLETED", "CANCELLED", "APPROVED", "REJECTED")
@@ -92,6 +80,7 @@ fun InspectionListScreen(
 ) {
     var filter by rememberSaveable { mutableStateOf(InspectionFilter.ACTIVE) }
     var search by rememberSaveable { mutableStateOf("") }
+    var accountOpen by rememberSaveable { mutableStateOf(false) }
 
     val activeCount = state.items.count { !isFinished(it.status) }
     val completedCount = state.items.count { isFinished(it.status) }
@@ -116,11 +105,32 @@ fun InspectionListScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            ReferenceHeader(
-                inspectorName = inspectorName,
-                activeCount = activeCount,
-                overdueCount = overdueCount,
-                onSignOut = onSignOut,
+            TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                title = {
+                    Column {
+                        Text("SiteProof", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(inspectorName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                },
+                actions = {
+                    Box {
+                        IconButton(onClick = { accountOpen = true }) {
+                            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                                Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+                                    Text(inspectorName.trim().firstOrNull()?.uppercase() ?: "I", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                        DropdownMenu(expanded = accountOpen, onDismissRequest = { accountOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Sign out") },
+                                leadingIcon = { Icon(Icons.Default.ExitToApp, contentDescription = null) },
+                                onClick = { accountOpen = false; onSignOut() },
+                            )
+                        }
+                    }
+                },
             )
         },
     ) { padding ->
@@ -133,52 +143,60 @@ fun InspectionListScreen(
                 state.error != null -> ErrorState(message = state.error, onRetry = onRefresh)
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 34.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 36.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    item(key = "title") {
-                        Text("My Inspections", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    item("summary") {
+                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text("My inspections", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                when {
+                                    overdueCount > 0 -> "$overdueCount overdue · $activeCount active"
+                                    activeCount > 0 -> "$activeCount active assignment${if (activeCount == 1) "" else "s"}"
+                                    else -> "No active work needs attention"
+                                },
+                                color = if (overdueCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
                     }
-                    item(key = "search") {
+
+                    item("search") {
                         OutlinedTextField(
                             value = search,
                             onValueChange = { search = it },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(16.dp),
                             placeholder = { Text("Search inspections") },
                             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                             colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
                                 focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                                focusedContainerColor = Color.White,
-                                unfocusedContainerColor = Color.White,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
                             ),
                         )
                     }
-                    item(key = "tabs") {
-                        InspectionTabs(
-                            filter = filter,
-                            activeCount = activeCount,
-                            completedCount = completedCount,
-                            totalCount = state.items.size,
-                            onFilter = { filter = it },
-                        )
+
+                    item("tabs") {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            FilterButton("Active", activeCount, filter == InspectionFilter.ACTIVE, Modifier.weight(1f)) { filter = InspectionFilter.ACTIVE }
+                            FilterButton("Done", completedCount, filter == InspectionFilter.COMPLETED, Modifier.weight(1f)) { filter = InspectionFilter.COMPLETED }
+                            FilterButton("All", state.items.size, filter == InspectionFilter.ALL, Modifier.weight(1f)) { filter = InspectionFilter.ALL }
+                        }
                     }
-                    item(key = "app-update") { DevAppUpdateCard(updateManager) }
-                    if (state.offline) item(key = "offline") { OfflineBanner() }
+
+                    if (state.offline) item("offline") { OfflineBanner() }
+                    item("app-update") { DevAppUpdateCard(updateManager) }
 
                     if (!state.loading && visible.isEmpty()) {
-                        item(key = "empty") { EmptyState(filter = filter, hasQuery = search.isNotBlank()) }
+                        item("empty") { EmptyState(hasQuery = search.isNotBlank(), filter = filter) }
                     } else {
                         items(visible, key = { it.id }) { inspection ->
                             InspectionCard(inspection = inspection, onClick = { onOpen(inspection.id) })
                         }
                     }
-
-                    if (!state.loading && !state.offline && visible.isNotEmpty()) {
-                        item(key = "sync-state") { SyncedCard() }
-                    }
                 }
             }
         }
@@ -186,178 +204,16 @@ fun InspectionListScreen(
 }
 
 @Composable
-private fun ReferenceHeader(
-    inspectorName: String,
-    activeCount: Int,
-    overdueCount: Int,
-    onSignOut: () -> Unit,
-) {
-    var notificationsOpen by remember { mutableStateOf(false) }
-    var accountOpen by remember { mutableStateOf(false) }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                Brush.linearGradient(
-                    listOf(Color(0xFFFF9827), Color(0xFFFF6900), Color(0xFFF04C00)),
-                ),
-            )
-            .statusBarsPadding()
-            .height(112.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(112.dp)
-                .align(Alignment.TopEnd)
-                .blur(30.dp)
-                .background(Color.White.copy(alpha = 0.20f), CircleShape),
-        )
-        Box(
-            modifier = Modifier
-                .size(84.dp)
-                .align(Alignment.BottomStart)
-                .blur(26.dp)
-                .background(Color(0xFFFFC27A).copy(alpha = 0.30f), CircleShape),
-        )
-
-        Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 17.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column {
-                Text("SiteProof", style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
-                Text("Field Verification", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.92f))
-                Text(inspectorName, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.78f), modifier = Modifier.padding(top = 2.dp))
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box {
-                    IconButton(
-                        onClick = { notificationsOpen = !notificationsOpen; accountOpen = false },
-                        modifier = Modifier.background(Color.White.copy(alpha = 0.13f), CircleShape),
-                    ) {
-                        Icon(Icons.Default.NotificationsNone, contentDescription = "Notifications", tint = Color.White)
-                    }
-                    if (overdueCount > 0) {
-                        Surface(
-                            modifier = Modifier.align(Alignment.TopEnd).size(19.dp),
-                            shape = CircleShape,
-                            color = Color(0xFFD92D20),
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(overdueCount.coerceAtMost(9).toString(), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                    DropdownMenu(expanded = notificationsOpen, onDismissRequest = { notificationsOpen = false }) {
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text("Notifications", fontWeight = FontWeight.Bold)
-                                    Text("Live assignment status", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            },
-                            onClick = {},
-                            enabled = false,
-                        )
-                        if (overdueCount > 0) {
-                            DropdownMenuItem(
-                                text = { Text("$overdueCount overdue inspection${if (overdueCount == 1) "" else "s"}") },
-                                onClick = { notificationsOpen = false },
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = { Text("$activeCount active inspection${if (activeCount == 1) "" else "s"}") },
-                            onClick = { notificationsOpen = false },
-                        )
-                        if (overdueCount == 0 && activeCount == 0) {
-                            DropdownMenuItem(text = { Text("You're all set") }, onClick = { notificationsOpen = false })
-                        }
-                    }
-                }
-
-                Box {
-                    Surface(
-                        modifier = Modifier.size(44.dp).clickable { accountOpen = !accountOpen; notificationsOpen = false },
-                        shape = CircleShape,
-                        color = Color.White,
-                        shadowElevation = 4.dp,
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                inspectorName.trim().firstOrNull()?.uppercase() ?: "I",
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                    }
-                    DropdownMenu(expanded = accountOpen, onDismissRequest = { accountOpen = false }) {
-                        DropdownMenuItem(
-                            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
-                            text = {
-                                Column {
-                                    Text(inspectorName, fontWeight = FontWeight.Bold)
-                                    Text("Inspector account", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            },
-                            onClick = {},
-                            enabled = false,
-                        )
-                        DropdownMenuItem(
-                            leadingIcon = { Icon(Icons.Default.ExitToApp, contentDescription = null) },
-                            text = { Text("Sign out") },
-                            onClick = { accountOpen = false; onSignOut() },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun InspectionTabs(
-    filter: InspectionFilter,
-    activeCount: Int,
-    completedCount: Int,
-    totalCount: Int,
-    onFilter: (InspectionFilter) -> Unit,
-) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilterChipButton("Active ($activeCount)", filter == InspectionFilter.ACTIVE, Modifier.weight(1f)) { onFilter(InspectionFilter.ACTIVE) }
-        FilterChipButton("Completed ($completedCount)", filter == InspectionFilter.COMPLETED, Modifier.weight(1f)) { onFilter(InspectionFilter.COMPLETED) }
-        FilterChipButton("All ($totalCount)", filter == InspectionFilter.ALL, Modifier.weight(1f)) { onFilter(InspectionFilter.ALL) }
-    }
-}
-
-@Composable
-private fun FilterChipButton(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun FilterButton(label: String, count: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Surface(
-        modifier = modifier
-            .shadow(if (selected) 6.dp else 1.dp, RoundedCornerShape(11.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(11.dp),
-        color = if (selected) MaterialTheme.colorScheme.primary else Color.White,
-        border = if (selected) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-    ) {
-        Box(modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-            Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface, maxLines = 1)
-        }
-    }
-}
-
-@Composable
-private fun OfflineBanner() {
-    Surface(
-        modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
+        modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.tertiaryContainer,
+        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+        border = if (selected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Column(Modifier.padding(14.dp)) {
-            Text("Offline", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onTertiaryContainer)
-            Text("Showing the last synced copy. Wi-Fi or mobile data can be used when you're back online.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(label, color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.labelLarge)
+            Text(count.toString(), color = if (selected) MaterialTheme.colorScheme.onPrimary.copy(alpha = .8f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -365,26 +221,35 @@ private fun OfflineBanner() {
 @Composable
 private fun InspectionCard(inspection: InspectionSummary, onClick: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().animateContentSize().shadow(7.dp, RoundedCornerShape(16.dp)).clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp, pressedElevation = 2.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            Modifier.fillMaxWidth().padding(15.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(modifier = Modifier.size(46.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-                Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.WorkOutline, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp)) }
+            Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                Box(Modifier.size(46.dp), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.WorkOutline, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                }
             }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(inspection.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(inspection.locationName ?: inspection.locationAddress ?: "${inspection.expectedLatitude}, ${inspection.expectedLongitude}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Due: ${formatDeadline(inspection.deadline)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    inspection.locationName ?: inspection.locationAddress ?: "${inspection.expectedLatitude}, ${inspection.expectedLongitude}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text("Due ${formatDeadline(inspection.deadline)}", style = MaterialTheme.typography.bodySmall, color = if (inspection.isOverdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
                     StatusPill(inspection.status)
-                    Text(inspection.priority.lowercase().replaceFirstChar { it.titlecase() }, style = MaterialTheme.typography.labelMedium, color = priorityColor(inspection.priority))
+                    Text(inspection.priority.lowercase().replaceFirstChar { it.titlecase() }, color = priorityColor(inspection.priority), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                 }
             }
             Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -395,44 +260,54 @@ private fun InspectionCard(inspection: InspectionSummary, onClick: () -> Unit) {
 @Composable
 private fun StatusPill(status: String) {
     val finished = isFinished(status)
-    Surface(shape = RoundedCornerShape(7.dp), color = if (finished) Color(0xFFEAF2FF) else MaterialTheme.colorScheme.primaryContainer) {
-        Text(status.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() }, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = if (finished) Color(0xFF2260A8) else MaterialTheme.colorScheme.primary)
+    Surface(shape = RoundedCornerShape(999.dp), color = if (finished) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primaryContainer) {
+        Text(
+            status.replace('_', ' ').lowercase().replaceFirstChar { it.titlecase() },
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            color = if (finished) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onPrimaryContainer,
+            style = MaterialTheme.typography.labelSmall,
+        )
     }
 }
 
 @Composable
-private fun SyncedCard() {
-    AnimatedVisibility(visible = true, enter = fadeIn() + slideInVertically { it / 3 }, exit = fadeOut() + slideOutVertically { it / 3 }) {
-        Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Color(0xFFFFF2E2)) {
-            Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column {
-                    Text("You're all set!", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("No pending uploads", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Surface(modifier = Modifier.size(44.dp), shape = CircleShape, color = Color(0xFFFFD29B)) {
-                    Box(contentAlignment = Alignment.Center) { Text("✓", color = Color(0xFF159447), fontWeight = FontWeight.Bold) }
-                }
-            }
+private fun OfflineBanner() {
+    Surface(
+        modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = .22f)),
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text("Offline · showing last synced data", color = MaterialTheme.colorScheme.onTertiaryContainer, fontWeight = FontWeight.Bold)
+            Text("Keep working with cached assignments. SiteProof will reconnect automatically.", color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = .8f), style = MaterialTheme.typography.bodySmall)
         }
     }
 }
 
 @Composable
-private fun EmptyState(filter: InspectionFilter, hasQuery: Boolean) {
-    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Color.White) {
-        Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.Start) {
+private fun EmptyState(hasQuery: Boolean, filter: InspectionFilter) {
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+        Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(if (hasQuery) "No matching inspections" else if (filter == InspectionFilter.ACTIVE) "Nothing needs action" else "No inspections here", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(if (hasQuery) "Try another search." else "New assignments will appear here.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+            Text(if (hasQuery) "Try another search." else "New assignments will appear here when available.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
 private fun ErrorState(message: String, onRetry: () -> Unit) {
-    Column(modifier = Modifier.fillMaxSize().padding(32.dp).semantics { liveRegion = LiveRegionMode.Assertive }, verticalArrangement = Arrangement.Center) {
-        Text("Could not load inspections", style = MaterialTheme.typography.headlineMedium)
-        Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 12.dp))
-        Button(onClick = onRetry) { Text("Try again") }
+    Box(Modifier.fillMaxSize().padding(18.dp).semantics { liveRegion = LiveRegionMode.Assertive }, contentAlignment = Alignment.Center) {
+        Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = .28f))) {
+            Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+                Text("Couldn't load inspections", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Your saved data is safe. Check the connection and retry.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.errorContainer) {
+                    Text(message, Modifier.padding(11.dp), color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodySmall)
+                }
+                Button(onClick = onRetry, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(14.dp)) { Text("Try again") }
+            }
+        }
     }
 }
 

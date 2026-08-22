@@ -18,6 +18,20 @@ function receiptStatusBadgeClass(status: Receipt['status']) {
   return 'badge badge-acknowledged'
 }
 
+function confidenceQuality(value: number) {
+  if (value >= 0.90) return 'Very high'
+  if (value >= 0.80) return 'High'
+  if (value >= 0.70) return 'Good'
+  if (value >= 0.55) return 'Moderate'
+  return 'Low'
+}
+
+function scoreQuality(value: number) {
+  if (value >= 85) return 'Strong'
+  if (value >= 65) return 'Moderate'
+  return 'Weak'
+}
+
 export function ReceiptPanel({ inspectionId }: { inspectionId: string }) {
   const canIssue = getStoredUser()?.role === 'ADMIN'
   const queryClient = useQueryClient()
@@ -80,8 +94,8 @@ export function ReceiptPanel({ inspectionId }: { inspectionId: string }) {
 
       <div className="receipt-key-metrics">
         <div><span>Engine</span><strong>{current.engineVersion}</strong></div>
-        <div><span>Score</span><strong>{current.score.toFixed(2)}</strong></div>
-        <div><span>Confidence</span><strong>{Math.round(current.confidence * 100)}%</strong></div>
+        <div><span>Evidence score</span><strong>{current.score.toFixed(2)} · {scoreQuality(current.score)}</strong></div>
+        <div><span>Decision confidence</span><strong>{Math.round(current.confidence * 100)}% · {confidenceQuality(current.confidence)}</strong></div>
       </div>
 
       {current.status === 'REVOKED' ? <div className="notice error"><strong>Receipt revoked</strong><p>{current.revocationReason}</p></div> : null}

@@ -21,6 +21,22 @@ function percentage(value?: number | null) {
   return typeof value === 'number' ? `${Math.round(value * 100)}%` : '—'
 }
 
+function confidenceQuality(value?: number | null) {
+  if (typeof value !== 'number') return 'Unknown'
+  if (value >= 0.90) return 'Very high'
+  if (value >= 0.80) return 'High'
+  if (value >= 0.70) return 'Good'
+  if (value >= 0.55) return 'Moderate'
+  return 'Low'
+}
+
+function scoreQuality(value?: number | null) {
+  if (typeof value !== 'number') return 'Unknown'
+  if (value >= 90) return 'Strong'
+  if (value >= 65) return 'Moderate'
+  return 'Weak'
+}
+
 function words(value: string) {
   return value.replace(/_/g, ' ')
 }
@@ -30,6 +46,25 @@ function verdictBadgeClass(verdict?: string | null) {
   if (verdict === 'FLAGGED') return 'badge badge-critical'
   if (verdict === 'REVIEW_REQUIRED') return 'badge badge-high'
   return 'badge'
+}
+
+function reviewDecisionLabel(decision: ReviewDecision) {
+  if (decision === 'APPROVED') return 'Approved'
+  if (decision === 'REJECTED') return 'Rejected'
+  return 'Recapture required'
+}
+
+function reviewDecisionClass(decision: ReviewDecision) {
+  if (decision === 'APPROVED') return 'badge badge-ready'
+  if (decision === 'REJECTED') return 'badge badge-critical'
+  return 'badge badge-high'
+}
+
+function reviewDecisionMessage(decision: ReviewDecision, automatedVerdict: string) {
+  const automated = verdictLabel(automatedVerdict as Parameters<typeof verdictLabel>[0])
+  if (decision === 'APPROVED') return `Approved by reviewer. Automated result: ${automated}.`
+  if (decision === 'REJECTED') return `Rejected by reviewer. Automated result: ${automated}.`
+  return `Reviewer requested a new capture. Automated result: ${automated}.`
 }
 
 export function VerificationReportPanel({ inspectionId }: { inspectionId: string }) {
@@ -60,6 +95,7 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
     queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] })
     queryClient.invalidateQueries({ queryKey: ['inspections'] })
     queryClient.invalidateQueries({ queryKey: ['inspection-summary'] })
+    queryClient.invalidateQueries({ queryKey: ['review-workspace'] })
     queryClient.invalidateQueries({ queryKey: ['receipts', session.data?.id] })
   }
 
@@ -102,23 +138,41 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
   }
 
   const score = displayScore(data.score)
+  const confidenceText = `${percentage(data.confidence)} · ${confidenceQuality(data.confidence)}`
+  const scoreText = score === null ? '—' : `${score} / 100 · ${scoreQuality(data.score)}`
+  const completedReview = data.latestReview
+  const finalTitle = completedReview ? reviewDecisionLabel(completedReview.decision) : verdictLabel(data.verdict)
+  const finalMessage = completedReview
+    ? reviewDecisionMessage(completedReview.decision, data.verdict)
+    : verdictMessage(data.verdict)
+  const finalBadgeClass = completedReview
+    ? reviewDecisionClass(completedReview.decision)
+    : verdictBadgeClass(data.verdict)
 
   return (
     <article className="panel verification-summary-panel">
       <div className="verification-summary-heading">
         <div>
           <p className="eyebrow">Verification</p>
-          <h2>{verdictLabel(data.verdict)}</h2>
-          <p className="muted">{verdictMessage(data.verdict)}</p>
+          <h2>{finalTitle}</h2>
+          <p className="muted">{finalMessage}</p>
         </div>
-        <span className={verdictBadgeClass(data.verdict)}>{verdictLabel(data.verdict)}</span>
+        <span className={finalBadgeClass}>{finalTitle}</span>
       </div>
 
       <div className="verification-key-metrics">
-        <div><span>Score</span><strong>{score ?? '—'} / 100</strong></div>
-        <div><span>Confidence</span><strong>{percentage(data.confidence)}</strong></div>
+        <div><span>Evidence score</span><strong>{scoreText}</strong></div>
+        <div><span>Decision confidence</span><strong>{confidenceText}</strong></div>
+        <div><span>Automated result</span><strong>{verdictLabel(data.verdict)}</strong></div>
         <div><span>Engine</span><strong>{data.policy?.engineVersion ?? '—'}</strong></div>
       </div>
+
+      {data.verdict === 'INCONCLUSIVE' && typeof data.confidence === 'number' && data.confidence >= 0.70 ? (
+        <div className="notice">
+          <strong>Evidence confidence is good</strong>
+          <p>The result is inconclusive because at least one required verification signal could not be resolved, not because the overall evidence confidence is low.</p>
+        </div>
+      ) : null}
 
       {data.hardRules.length ? (
         <div className="notice error">
@@ -131,21 +185,44 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
         <div className="review-decision-box">
           <div>
             <strong>Reviewer decision</strong>
-            <p className="muted">Reviewer actions are stored separately from the automated result.</p>
+            <p className="muted">
+              {completedReview
+                ? 'This result has been reviewed. The automated result remains preserved for audit.'
+                : 'Reviewer actions are stored separately from the automated result.'}
+            </p>
           </div>
-          {data.latestReview ? (
-            <p><strong>{words(data.latestReview.decision)}</strong>{data.latestReview.reason ? ` · ${data.latestReview.reason}` : ''}</p>
+          {completedReview ? (
+            <p><strong>{words(completedReview.decision)}</strong>{completedReview.reason ? ` · ${completedReview.reason}` : ''}</p>
           ) : null}
           <textarea
             rows={2}
-            placeholder="Add a note for reject or recapture"
+            placeholder={completedReview ? 'Review completed' : 'Add a note for reject or recapture'}
             value={reviewReason}
+            disabled={Boolean(completedReview)}
             onChange={(event) => setReviewReason(event.target.value)}
           />
           <div className="review-decision-actions">
-            <button className="button primary" disabled={review.isPending} onClick={() => review.mutate('APPROVED')}>Accept</button>
-            <button className="button ghost" disabled={review.isPending || reviewReason.trim().length < 8} onClick={() => review.mutate('RECAPTURE_REQUIRED')}>Recapture</button>
-            <button className="button danger" disabled={review.isPending || reviewReason.trim().length < 8} onClick={() => review.mutate('REJECTED')}>Reject</button>
+            <button
+              className="button primary"
+              disabled={review.isPending || Boolean(completedReview)}
+              onClick={() => review.mutate('APPROVED')}
+            >
+              {completedReview?.decision === 'APPROVED' ? 'Approved' : 'Accept'}
+            </button>
+            <button
+              className="button ghost"
+              disabled={review.isPending || Boolean(completedReview) || reviewReason.trim().length < 8}
+              onClick={() => review.mutate('RECAPTURE_REQUIRED')}
+            >
+              Recapture
+            </button>
+            <button
+              className="button danger"
+              disabled={review.isPending || Boolean(completedReview) || reviewReason.trim().length < 8}
+              onClick={() => review.mutate('REJECTED')}
+            >
+              Reject
+            </button>
           </div>
           {review.error ? <div className="notice error">{review.error.message}</div> : null}
         </div>

@@ -235,22 +235,57 @@ export type EvidenceFile = {
   downloadPath?: string | null
 }
 
-type ErrorBody = { error?: { code?: string; message?: string } }
+type ValidationField = { field?: string; message?: string }
+type ErrorBody = {
+  error?: {
+    code?: string
+    message?: string
+    details?: { fields?: ValidationField[] } | Record<string, unknown> | null
+  }
+}
+
+function readableField(field?: string) {
+  if (!field) return 'Field'
+  return field.split('.').pop()?.replace(/_/g, ' ').replace(/^./, (value) => value.toUpperCase()) ?? 'Field'
+}
+
+function friendlyHttpFallback(status: number) {
+  if (status === 401) return 'Your session is no longer valid. Sign in again.'
+  if (status === 403) return 'You do not have permission to perform this action.'
+  if (status === 404) return 'The requested SiteProof record could not be found.'
+  if (status === 409) return 'This record changed while you were working. Refresh and try again.'
+  if (status === 413) return 'The uploaded evidence is larger than the allowed limit.'
+  if (status >= 500) return 'SiteProof could not complete the request. Try again in a moment.'
+  return `Request failed (${status}).`
+}
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken()
   const headers = new Headers(init.headers)
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   if (token) headers.set('Authorization', `Bearer ${token}`)
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers })
+
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers })
+  } catch {
+    throw new Error('Cannot reach SiteProof. Check the server or network connection and try again.')
+  }
+
   if (response.status === 401 && token) clearSession()
   if (!response.ok) {
-    let message = `Request failed (${response.status})`
+    let message = friendlyHttpFallback(response.status)
     try {
       const body = (await response.json()) as ErrorBody
-      message = body.error?.message ?? message
+      const details = body.error?.details
+      const fields = details && 'fields' in details && Array.isArray(details.fields) ? details.fields : []
+      if (fields.length) {
+        message = fields.map((item) => `${readableField(item.field)}: ${item.message || 'Invalid value'}`).join(' · ')
+      } else if (body.error?.message) {
+        message = body.error.message
+      }
     } catch {
-      // Keep the HTTP fallback message.
+      // The HTTP fallback above is intentionally user-facing and safe.
     }
     throw new Error(message)
   }
@@ -258,9 +293,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export async function getBackendHealth(): Promise<{ status: string; service: string }> {
-  const response = await fetch(`${BACKEND_BASE_URL}/health`)
-  if (!response.ok) throw new Error('Backend health check failed')
-  return response.json()
+  try {
+    const response = await fetch(`${BACKEND_BASE_URL}/health`)
+    if (!response.ok) throw new Error()
+    return response.json()
+  } catch {
+    throw new Error('Backend is unavailable. Check the SiteProof server and try again.')
+  }
 }
 
 export function login(email: string, password: string): Promise<{ accessToken: string; user: AuthUser }> {
@@ -289,24 +328,15 @@ export function updateInspection(id: string, payload: InspectionPayload): Promis
 }
 
 export function assignInspection(id: string, inspectorId: string): Promise<Inspection> {
-  return request(`/inspections/${id}/assign`, {
-    method: 'POST',
-    body: JSON.stringify({ inspectorId }),
-  })
+  return request(`/inspections/${id}/assign`, { method: 'POST', body: JSON.stringify({ inspectorId }) })
 }
 
 export function reassignInspection(id: string, inspectorId: string, reason: string): Promise<Inspection> {
-  return request(`/inspections/${id}/reassign`, {
-    method: 'POST',
-    body: JSON.stringify({ inspectorId, reason }),
-  })
+  return request(`/inspections/${id}/reassign`, { method: 'POST', body: JSON.stringify({ inspectorId, reason }) })
 }
 
 export function cancelInspection(id: string, reason: string): Promise<Inspection> {
-  return request(`/inspections/${id}/cancel`, {
-    method: 'POST',
-    body: JSON.stringify({ reason }),
-  })
+  return request(`/inspections/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) })
 }
 
 export function getInspectors(search = ''): Promise<Page<Inspector>> {
@@ -338,10 +368,13 @@ export function getSessionEvidence(sessionId: string): Promise<{ sessionId: stri
 export async function fetchEvidenceBlob(downloadPath: string): Promise<Blob> {
   const token = getToken()
   const normalized = downloadPath.replace(/^\/+/, '')
-  const response = await fetch(`${API_BASE_URL}/${normalized}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
-  if (!response.ok) throw new Error(`Unable to load evidence (${response.status})`)
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}/${normalized}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  } catch {
+    throw new Error('Cannot reach SiteProof to load this evidence file.')
+  }
+  if (!response.ok) throw new Error(friendlyHttpFallback(response.status))
   return response.blob()
 }
 

@@ -22,6 +22,7 @@ import com.siteproof.app.verification.model.StartCaptureRequest
 import com.siteproof.app.verification.model.VerificationSession
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import java.net.Proxy
 import java.nio.ByteBuffer
 import java.security.KeyStore
 import java.util.concurrent.TimeUnit
@@ -197,8 +198,9 @@ class TokenStore(context: Context) : SessionStore {
 fun createApi(context: Context, tokenStore: SessionStore): SiteProofApi {
     val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
     val client = OkHttpClient.Builder()
-        // Resolve the local development backend at request time. OTA APKs are therefore portable
-        // across Wi-Fi networks and never contain a developer machine IP address.
+        // SiteProof development endpoints are local-only. Never send localhost/LAN traffic
+        // through a managed Wi-Fi HTTP proxy or PAC configuration.
+        .proxy(Proxy.NO_PROXY)
         .addInterceptor(BackendEndpointInterceptor(context))
         // CONNECTED WorkManager jobs already allow Wi-Fi and cellular. These larger budgets
         // keep login, challenge and evidence requests usable on slower links once an endpoint is reachable.

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { ReviewMap } from '../components/ReviewMap'
-import { getReviewQueue, type VerificationVerdict } from '../lib/verificationApi'
+import { getReviewQueue, type ReviewDecision, type VerificationVerdict } from '../lib/verificationApi'
 
 function percent(value?: number | null) {
   return typeof value === 'number' ? `${Math.round(value * 100)}%` : '—'
@@ -24,11 +24,17 @@ function verdictClass(value: VerificationVerdict) {
   return 'badge badge-acknowledged'
 }
 
-function reviewClass(value?: string | null) {
+function reviewClass(value?: ReviewDecision | null) {
   if (value === 'APPROVED') return 'badge badge-ready'
   if (value === 'REJECTED') return 'badge badge-critical'
   if (value === 'RECAPTURE_REQUIRED') return 'badge badge-high'
   return 'badge'
+}
+
+function reviewLabel(value: ReviewDecision) {
+  if (value === 'APPROVED') return 'APPROVED'
+  if (value === 'REJECTED') return 'REJECTED'
+  return 'RECAPTURE REQUIRED'
 }
 
 export function ReviewWorkspacePage() {
@@ -59,7 +65,9 @@ export function ReviewWorkspacePage() {
 
   const items = queue.data?.items ?? []
   const pending = items.filter((item) => !item.latestReview).length
-  const attention = items.filter((item) => ['REVIEW_REQUIRED', 'FLAGGED', 'INCONCLUSIVE'].includes(item.verdict)).length
+  const attention = items.filter(
+    (item) => !item.latestReview && ['REVIEW_REQUIRED', 'FLAGGED', 'INCONCLUSIVE'].includes(item.verdict),
+  ).length
   const hasFilters = Boolean(search || inspector || verdict || reviewState !== 'all' || dateFrom || dateTo)
 
   function clearFilters() {
@@ -164,38 +172,47 @@ export function ReviewWorkspacePage() {
           {!queue.isLoading && !items.length ? <div className="empty-state"><h3>No results found</h3><p>Nothing matches the current filters.</p></div> : null}
 
           <div className="review-card-list">
-            {items.map((item) => (
-              <article
-                className={`review-card ${selectedId === item.inspectionId ? 'selected' : ''}`}
-                key={item.inspectionId}
-                onMouseEnter={() => setSelectedId(item.inspectionId)}
-                aria-label={`${item.title}, ${item.verdict.replace(/_/g, ' ')}`}
-              >
-                <div className="review-card-topline">
-                  <div>
-                    <strong>{item.title}</strong>
-                    <span>{item.locationName || item.locationAddress || 'Unnamed site'}</span>
+            {items.map((item) => {
+              const resolvedReview = item.latestReview?.decision
+              const displayLabel = resolvedReview ? reviewLabel(resolvedReview) : item.verdict.replace(/_/g, ' ')
+              const displayClass = resolvedReview ? reviewClass(resolvedReview) : verdictClass(item.verdict)
+
+              return (
+                <article
+                  className={`review-card ${selectedId === item.inspectionId ? 'selected' : ''}`}
+                  key={item.inspectionId}
+                  onMouseEnter={() => setSelectedId(item.inspectionId)}
+                  aria-label={`${item.title}, ${displayLabel}`}
+                >
+                  <div className="review-card-topline">
+                    <div>
+                      <strong>{item.title}</strong>
+                      <span>{item.locationName || item.locationAddress || 'Unnamed site'}</span>
+                    </div>
+                    <span className={displayClass}>{displayLabel}</span>
                   </div>
-                  <span className={verdictClass(item.verdict)}>{item.verdict.replace(/_/g, ' ')}</span>
-                </div>
-                <div className="review-card-context">
-                  <span>{item.inspectorName || 'Unassigned'}</span>
-                  <span>{captured(item.captureEndedAt)}</span>
-                </div>
-                <div className="review-score-row">
-                  <span><small>Score</small><strong>{score(item.score)}</strong></span>
-                  <span><small>Confidence</small><strong>{percent(item.confidence)}</strong></span>
-                  <span><small>Review</small><strong>{item.latestReview ? item.latestReview.decision.replace(/_/g, ' ') : 'Pending'}</strong></span>
-                </div>
-                <div className="review-card-footer">
-                  <span className={reviewClass(item.latestReview?.decision)}>{item.latestReview ? 'REVIEWED' : 'PENDING'}</span>
-                  <div className="review-card-actions">
-                    <button className="review-card-focus" type="button" onClick={() => setSelectedId(item.inspectionId)}>Locate</button>
-                    <Link className="button ghost" to={`/inspections/${item.inspectionId}`}>Open</Link>
+                  <div className="review-card-context">
+                    <span>{item.inspectorName || 'Unassigned'}</span>
+                    <span>{captured(item.captureEndedAt)}</span>
                   </div>
-                </div>
-              </article>
-            ))}
+                  <div className="review-score-row">
+                    <span><small>Score</small><strong>{score(item.score)}</strong></span>
+                    <span><small>Confidence</small><strong>{percent(item.confidence)}</strong></span>
+                    <span><small>Review</small><strong>{resolvedReview ? reviewLabel(resolvedReview) : 'Pending'}</strong></span>
+                  </div>
+                  {resolvedReview ? (
+                    <p className="muted">Automated result: {item.verdict.replace(/_/g, ' ')}</p>
+                  ) : null}
+                  <div className="review-card-footer">
+                    <span className={reviewClass(resolvedReview)}>{resolvedReview ? 'REVIEWED' : 'PENDING'}</span>
+                    <div className="review-card-actions">
+                      <button className="review-card-focus" type="button" onClick={() => setSelectedId(item.inspectionId)}>Locate</button>
+                      <Link className="button ghost" to={`/inspections/${item.inspectionId}`}>Open</Link>
+                    </div>
+                  </div>
+                </article>
+              )
+            })}
           </div>
         </article>
       </section>

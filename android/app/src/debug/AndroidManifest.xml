@@ -4,7 +4,7 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
-        android:label="SiteProof Dev"
+        android:label="SiteProof Dev 0.7 USB"
         android:usesCleartextTraffic="true"
         tools:replace="android:label,android:usesCleartextTraffic">
         <provider

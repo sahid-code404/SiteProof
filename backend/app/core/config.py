@@ -42,11 +42,14 @@ class Settings(BaseSettings):
     tilt_max_target_degrees: float = 45.0
     rotation_right_sign: float = -1.0
     tilt_down_sign: float = 1.0
-    challenge_direction_weight: float = 0.30
-    challenge_angle_weight: float = 0.30
-    challenge_agreement_weight: float = 0.20
+    # Human field motion is intentionally coarse. Correct direction and a clearly visible
+    # movement matter much more than reproducing an exact requested angle or making two
+    # commodity phone sensors agree to a few degrees.
+    challenge_direction_weight: float = 0.45
+    challenge_angle_weight: float = 0.20
+    challenge_agreement_weight: float = 0.10
     challenge_timing_weight: float = 0.10
-    challenge_smoothness_weight: float = 0.10
+    challenge_smoothness_weight: float = 0.15
 
     # Phase 5 accepted visual-motion analysis.
     vision_analysis_version: str = "vision-v1.4"

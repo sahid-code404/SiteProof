@@ -6,6 +6,20 @@ from app.services.vision.domain import ContinuityMetrics, VisualFrame
 from app.services.vision.preprocessing import brightness, preprocess_frame, sharpness
 
 
+def _clarity_score(mean_sharpness: float) -> float:
+    """Map measured frame sharpness to a soft evidence-quality factor.
+
+    This is deliberately not a binary blur gate. Handheld field video can be somewhat soft
+    while still showing trustworthy motion. Strongly blurred/featureless footage therefore
+    lowers confidence, but does not independently fail an otherwise genuine capture.
+    """
+    if mean_sharpness >= 30.0:
+        return 1.0
+    if mean_sharpness >= 10.0:
+        return 0.65 + 0.35 * ((mean_sharpness - 10.0) / 20.0)
+    return max(0.25, 0.25 + 0.40 * (max(mean_sharpness, 0.0) / 10.0))
+
+
 def analyze_continuity(
     frames: list[VisualFrame],
     *,
@@ -28,6 +42,9 @@ def analyze_continuity(
     grays = [preprocess_frame(frame.image, settings.vision_max_width) for frame in frames]
     brightness_values = [brightness(gray) for gray in grays]
     sharpness_values = [sharpness(gray) for gray in grays]
+    mean_brightness = float(np.mean(brightness_values))
+    mean_sharpness = float(np.mean(sharpness_values))
+    clarity = _clarity_score(mean_sharpness)
     black_count = sum(value < 8.0 for value in brightness_values)
 
     duplicate_pairs = 0
@@ -65,7 +82,7 @@ def analyze_continuity(
     duplicate_ratio = duplicate_pairs / float(pair_count)
     black_ratio = black_count / float(max(1, len(grays)))
     cut_penalty = min(1.0, scene_cut_count / float(max(1, pair_count // 3 or 1)))
-    continuity_score = max(
+    structural_score = max(
         0.0,
         min(
             1.0,
@@ -76,6 +93,9 @@ def analyze_continuity(
             - 0.10 * invalid_frame_ratio,
         ),
     )
+    # Clarity contributes at most a 25% soft adjustment. This makes real blur visible in
+    # scoring while preserving motion/location/challenge evidence as the primary decision basis.
+    continuity_score = max(0.0, min(1.0, structural_score * (0.75 + 0.25 * clarity)))
 
     return ContinuityMetrics(
         score=continuity_score,
@@ -85,6 +105,6 @@ def analyze_continuity(
         freeze_duration_ms=max_freeze_ms,
         invalid_frame_ratio=invalid_frame_ratio,
         black_frame_ratio=black_ratio,
-        mean_brightness=float(np.mean(brightness_values)),
-        mean_sharpness=float(np.mean(sharpness_values)),
+        mean_brightness=mean_brightness,
+        mean_sharpness=mean_sharpness,
     )

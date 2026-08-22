@@ -1,9 +1,12 @@
 package com.siteproof.app.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -23,6 +26,7 @@ import com.siteproof.app.verification.VerificationScreen
 import com.siteproof.app.verification.VerificationViewModel
 import com.siteproof.app.verification.db.PendingEvidenceDatabase
 import com.siteproof.app.verification.upload.EvidenceUploadWorker
+import kotlinx.coroutines.delay
 
 @Composable
 fun SiteProofApp() {
@@ -49,9 +53,17 @@ fun SiteProofApp() {
         factory = SiteProofViewModelFactory { AuthViewModel(repository) },
     )
     val authState by authViewModel.state.collectAsStateWithLifecycle()
+    var splashVisible by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        delay(850)
+        splashVisible = false
+    }
 
     SiteProofTheme {
-        if (authState !is AuthState.Authenticated) {
+        if (splashVisible) {
+            SiteProofSplash()
+        } else if (authState !is AuthState.Authenticated) {
             LoginScreen(state = authState, onLogin = authViewModel::login)
         } else {
             val sessionScopeKey = repository.sessionScopeKey()
