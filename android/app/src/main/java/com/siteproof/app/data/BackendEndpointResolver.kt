@@ -6,6 +6,7 @@ import android.net.NetworkCapabilities
 import com.siteproof.app.BuildConfig
 import java.io.IOException
 import java.net.Inet4Address
+import java.net.Proxy
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.Executors
@@ -25,7 +26,6 @@ private const val DISCOVERY_PREF_URL = "base_url"
 private const val MAX_DISCOVERY_CANDIDATES = 1022
 private const val DISCOVERY_THREADS = 48
 private const val DISCOVERY_DEADLINE_SECONDS = 7L
-private const val ADB_REVERSE_NETWORK_KEY = "adb-reverse"
 private const val PRECONFIGURED_NETWORK_KEY = "preconfigured"
 
 private data class LocalNetworkIpv4(
@@ -35,22 +35,23 @@ private data class LocalNetworkIpv4(
 )
 
 /**
- * Finds the redesign SiteProof development backend.
+ * Finds the redesign SiteProof development backend when the direct ADB path is unavailable.
  *
- * Resolution order:
- * 1. 127.0.0.1:8010 for `adb reverse tcp:8010 tcp:8010`.
- * 2. Debug-build preconfigured backend URL, currently the active Fedora redesign backend.
- * 3. Last known healthy endpoint.
- * 4. Automatic LAN discovery on port 8010.
+ * Fallback order:
+ * 1. Debug-build preconfigured backend URL, currently the active Fedora redesign backend.
+ * 2. Last known healthy endpoint.
+ * 3. Automatic LAN discovery on port 8010.
  *
- * The preconfigured address is only a debug convenience. If it changes or is blocked by the
- * network, the resolver continues automatically instead of failing on that address.
+ * The application interceptor tries 127.0.0.1:8010 directly before this resolver. That direct
+ * request is intentionally not gated by a separate health probe, because managed Wi-Fi proxy
+ * settings can interfere with probes even when `adb reverse` itself is valid.
  */
 internal class BackendEndpointResolver(context: Context) {
     private val appContext = context.applicationContext
     private val connectivity = appContext.getSystemService(ConnectivityManager::class.java)
     private val preferences = appContext.getSharedPreferences(DISCOVERY_PREFS, Context.MODE_PRIVATE)
     private val probeClient = OkHttpClient.Builder()
+        .proxy(Proxy.NO_PROXY)
         .connectTimeout(300, TimeUnit.MILLISECONDS)
         .readTimeout(600, TimeUnit.MILLISECONDS)
         .callTimeout(800, TimeUnit.MILLISECONDS)
@@ -68,17 +69,8 @@ internal class BackendEndpointResolver(context: Context) {
     @Volatile
     private var resolvedNetwork: String? = null
 
-    fun resolve(): HttpUrl {
+    fun resolve(skipAdbReverse: Boolean = false): HttpUrl {
         synchronized(this) {
-            // Works even when the Wi-Fi isolates clients, as long as USB debugging is connected
-            // and `adb reverse tcp:8010 tcp:8010` is active.
-            if (isHealthy(adbReverseEndpoint)) {
-                remember(adbReverseEndpoint, ADB_REVERSE_NETWORK_KEY)
-                return adbReverseEndpoint
-            }
-
-            // Fast path for the current development machine. Never trust it blindly: the health
-            // check must succeed, otherwise continue to cached/LAN discovery.
             preconfiguredEndpoint
                 ?.takeIf { it.port == SITEPROOF_BACKEND_PORT && isHealthy(it) }
                 ?.let {
@@ -89,19 +81,25 @@ internal class BackendEndpointResolver(context: Context) {
             val localNetwork = localNetworkIpv4()
                 ?: throw IOException(
                     "Could not reach the SiteProof redesign server on port $SITEPROOF_BACKEND_PORT. " +
-                        "Use USB debugging with `adb reverse tcp:$SITEPROOF_BACKEND_PORT tcp:$SITEPROOF_BACKEND_PORT`, " +
-                        "or connect to a local network that allows device-to-device traffic.",
+                        "Keep USB debugging connected and run " +
+                        "`adb reverse tcp:$SITEPROOF_BACKEND_PORT tcp:$SITEPROOF_BACKEND_PORT`.",
                 )
             val networkKey = "${localNetwork.address.hostAddress}/${localNetwork.prefixLength}"
 
             resolved?.takeIf {
                 resolvedNetwork == networkKey &&
                     it.port == SITEPROOF_BACKEND_PORT &&
+                    (!skipAdbReverse || it != adbReverseEndpoint) &&
                     isHealthy(it)
             }?.let { return it }
 
             val persisted = preferences.getString(DISCOVERY_PREF_URL, null)?.toHttpUrlOrNull()
-            if (persisted != null && persisted.port == SITEPROOF_BACKEND_PORT && isHealthy(persisted)) {
+            if (
+                persisted != null &&
+                persisted.port == SITEPROOF_BACKEND_PORT &&
+                (!skipAdbReverse || persisted != adbReverseEndpoint) &&
+                isHealthy(persisted)
+            ) {
                 remember(persisted, networkKey)
                 return persisted
             }
@@ -109,7 +107,7 @@ internal class BackendEndpointResolver(context: Context) {
             val discovered = discoverOnLocalSubnet(localNetwork)
                 ?: throw IOException(
                     "Could not find the SiteProof redesign server on port $SITEPROOF_BACKEND_PORT. " +
-                        "This Wi-Fi may block device-to-device traffic. Keep USB connected and run " +
+                        "This Wi-Fi blocks device-to-device traffic. Keep USB connected and run " +
                         "`adb reverse tcp:$SITEPROOF_BACKEND_PORT tcp:$SITEPROOF_BACKEND_PORT`.",
                 )
             remember(discovered, networkKey)
@@ -279,19 +277,20 @@ internal class BackendEndpointResolver(context: Context) {
 /** Rewrites only SiteProof's placeholder Retrofit host; absolute evidence URLs remain untouched. */
 internal class BackendEndpointInterceptor(context: Context) : Interceptor {
     private val resolver = BackendEndpointResolver(context)
+    private val adbReverseEndpoint = "http://127.0.0.1:$SITEPROOF_BACKEND_PORT/api/v1/".toHttpUrl()
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
         if (original.url.host != SITEPROOF_DISCOVERY_HOST) return chain.proceed(original)
 
-        val firstEndpoint = resolver.resolve()
+        // Do not preflight ADB reverse. Send the real API request through the USB tunnel first.
+        // This avoids managed Wi-Fi proxy/PAC behavior interfering with localhost detection.
         return try {
-            chain.proceed(rewrite(original, firstEndpoint))
-        } catch (firstFailure: IOException) {
-            resolver.invalidate(firstEndpoint)
-            val secondEndpoint = resolver.resolve()
-            if (secondEndpoint == firstEndpoint) throw firstFailure
-            chain.proceed(rewrite(original, secondEndpoint))
+            chain.proceed(rewrite(original, adbReverseEndpoint))
+        } catch (_: IOException) {
+            resolver.invalidate(adbReverseEndpoint)
+            val fallbackEndpoint = resolver.resolve(skipAdbReverse = true)
+            chain.proceed(rewrite(original, fallbackEndpoint))
         }
     }
 
