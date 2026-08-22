@@ -9,6 +9,8 @@ import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -36,22 +38,30 @@ private data class LocalNetworkIpv4(
  * Runtime backend configuration for development/test APKs.
  *
  * A manually configured endpoint always wins over local-network discovery and is kept in app
- * preferences, so it survives OTA updates. This is intentionally runtime configuration: no
- * developer machine IP address is compiled into the APK.
+ * preferences, so it survives OTA updates. No developer machine IP address is compiled into the APK.
+ * Manual addresses are verified against both /health and the current SiteProof auth route before
+ * they are persisted, which prevents accidentally pointing the app at the web server or a stale API.
  */
 class BackendEndpointSettings(context: Context) {
     private val preferences = context.applicationContext
         .getSharedPreferences(DISCOVERY_PREFS, Context.MODE_PRIVATE)
+    private val validationClient = OkHttpClient.Builder()
+        .connectTimeout(2, TimeUnit.SECONDS)
+        .readTimeout(3, TimeUnit.SECONDS)
+        .callTimeout(5, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(false)
+        .build()
 
     fun configuredEndpoint(): String? = preferences.getString(MANUAL_PREF_URL, null)
 
-    fun configure(raw: String): String {
+    suspend fun configureAndValidate(raw: String): String = withContext(Dispatchers.IO) {
         val endpoint = normalizeEndpoint(raw)
+        validateEndpoint(endpoint)
         preferences.edit()
             .putString(MANUAL_PREF_URL, endpoint.toString())
             .remove(DISCOVERY_PREF_URL)
             .apply()
-        return endpoint.toString()
+        endpoint.toString()
     }
 
     fun useAutomaticDiscovery() {
@@ -82,6 +92,48 @@ class BackendEndpointSettings(context: Context) {
             builder.port(SITEPROOF_BACKEND_PORT)
         }
         return builder.build()
+    }
+
+    private fun validateEndpoint(endpoint: HttpUrl) {
+        val healthUrl = endpoint.newBuilder()
+            .encodedPath("/health")
+            .query(null)
+            .build()
+        val healthRequest = Request.Builder().url(healthUrl).get().build()
+        val healthy = runCatching {
+            validationClient.newCall(healthRequest).execute().use { response ->
+                if (!response.isSuccessful) return@use false
+                val body = response.body?.string().orEmpty()
+                body.contains("\"status\":\"ok\"") &&
+                    body.contains("\"service\":\"siteproof-api\"")
+            }
+        }.getOrElse { error ->
+            throw IllegalArgumentException(
+                "Could not reach SiteProof at ${endpoint.host}:${endpoint.port}. " +
+                    "Check the IP, port, Wi-Fi and backend container.",
+                error,
+            )
+        }
+        require(healthy) {
+            "The address responds, but it is not the SiteProof backend. Use the backend port (normally 8000), not the web dashboard port."
+        }
+
+        val authUrl = endpoint.newBuilder()
+            .encodedPath("/api/v1/auth/me")
+            .query(null)
+            .build()
+        val authRequest = Request.Builder().url(authUrl).get().build()
+        val authStatus = runCatching {
+            validationClient.newCall(authRequest).execute().use { it.code }
+        }.getOrElse { error ->
+            throw IllegalArgumentException("The SiteProof backend became unreachable while checking its API.", error)
+        }
+        require(authStatus != 404) {
+            "This server is running an older or incorrect SiteProof API: /api/v1/auth/me was not found (HTTP 404). Rebuild/restart the current backend."
+        }
+        require(authStatus in setOf(200, 401, 403)) {
+            "The SiteProof auth API returned HTTP $authStatus. Verify that the current backend is running on this address."
+        }
     }
 }
 
