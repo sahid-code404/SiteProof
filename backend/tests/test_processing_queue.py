@@ -55,11 +55,16 @@ def test_queue_is_idempotent_leased_retryable_and_terminal(client, db):
     assert claimed.attempts == 1
     first_lease = claimed.lease_expires_at
 
-    assert heartbeat_processing_job(db, claimed.id, lease_seconds=120) is True
+    assert heartbeat_processing_job(db, claimed.id, claimed.attempts, lease_seconds=120) is True
     db.refresh(claimed)
     assert claimed.lease_expires_at > first_lease
 
-    mark_processing_job_failed(db, claimed.id, RuntimeError("temporary processing failure"))
+    assert mark_processing_job_failed(
+        db,
+        claimed.id,
+        claimed.attempts,
+        RuntimeError("temporary processing failure"),
+    ) is True
     db.refresh(claimed)
     assert claimed.status == "RETRY"
     assert claimed.next_attempt_at is not None
@@ -72,19 +77,20 @@ def test_queue_is_idempotent_leased_retryable_and_terminal(client, db):
     assert retried.id == first.id
     assert retried.attempts == 2
 
-    mark_processing_job_succeeded(db, retried.id)
+    assert mark_processing_job_succeeded(db, retried.id, retried.attempts) is True
     db.refresh(retried)
     assert retried.status == "COMPLETED"
     assert retried.lease_expires_at is None
     assert claim_processing_job(db) is None
 
 
-def test_expired_worker_lease_is_reclaimed(client, db):
+def test_expired_worker_lease_is_reclaimed_and_stale_attempt_is_fenced(client, db):
     _, _, _, _, session_id = _ready_session(client, db)
     job = enqueue_processing_job(db, uuid.UUID(session_id), commit=True)
     claimed = claim_processing_job(db, lease_seconds=30)
     assert claimed is not None
     assert claimed.id == job.id
+    stale_attempt = claimed.attempts
 
     claimed.lease_expires_at = utc_now() - timedelta(seconds=1)
     db.commit()
@@ -92,7 +98,14 @@ def test_expired_worker_lease_is_reclaimed(client, db):
     assert reclaimed is not None
     assert reclaimed.id == job.id
     assert reclaimed.status == "RUNNING"
-    assert reclaimed.attempts == 2
+    assert reclaimed.attempts == stale_attempt + 1
+
+    assert heartbeat_processing_job(db, job.id, stale_attempt, lease_seconds=60) is False
+    assert mark_processing_job_succeeded(db, job.id, stale_attempt) is False
+    assert mark_processing_job_failed(db, job.id, stale_attempt, RuntimeError("stale")) is False
+    db.refresh(reclaimed)
+    assert reclaimed.status == "RUNNING"
+    assert reclaimed.attempts == stale_attempt + 1
 
 
 def test_evidence_completion_persists_durable_job(client, db):
