@@ -1,5 +1,8 @@
 package com.siteproof.app.verification
 
+import android.content.Context
+import android.media.AudioAttributes
+import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -20,12 +23,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -51,40 +50,108 @@ private val GuideWrong = Color(0xFFC9372C)
 private val GuideFar = Color(0xFFB05A00)
 private val GuideOrange = Color(0xFFF56200)
 
+/**
+ * Process-lifetime TTS speaker for live verification guidance.
+ *
+ * ChallengeActive is intentionally short-lived: Compose removes that overlay while a movement
+ * is checked and between challenge steps. Creating and shutting down TextToSpeech inside the
+ * overlay can therefore cancel an utterance before it becomes audible. Keeping one engine on the
+ * application context avoids that race and also avoids paying TTS initialization latency for
+ * every challenge.
+ */
+private object ChallengeVoiceSpeaker {
+    @Volatile
+    private var engine: TextToSpeech? = null
+
+    @Volatile
+    private var initializing = false
+
+    private var pendingPhrase: String? = null
+    private var pendingUtteranceId: String? = null
+
+    fun speak(context: Context, phrase: String, utteranceId: String) {
+        if (phrase.isBlank()) return
+        val ready = engine
+        if (ready != null) {
+            speakNow(ready, phrase, utteranceId)
+            return
+        }
+
+        synchronized(this) {
+            pendingPhrase = phrase
+            pendingUtteranceId = utteranceId
+            if (initializing || engine != null) {
+                engine?.let { speakNow(it, phrase, utteranceId) }
+                return
+            }
+            initializing = true
+
+            val appContext = context.applicationContext
+            var created: TextToSpeech? = null
+            created = TextToSpeech(appContext) { status ->
+                synchronized(this) {
+                    initializing = false
+                    val tts = created
+                    if (status != TextToSpeech.SUCCESS || tts == null) {
+                        tts?.shutdown()
+                        pendingPhrase = null
+                        pendingUtteranceId = null
+                        return@TextToSpeech
+                    }
+
+                    val localeResult = tts.setLanguage(Locale.getDefault())
+                    if (
+                        localeResult == TextToSpeech.LANG_MISSING_DATA ||
+                        localeResult == TextToSpeech.LANG_NOT_SUPPORTED
+                    ) {
+                        tts.setLanguage(Locale.US)
+                    }
+                    tts.setSpeechRate(0.92f)
+                    tts.setPitch(1.0f)
+                    tts.setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build(),
+                    )
+                    engine = tts
+
+                    val queuedPhrase = pendingPhrase
+                    val queuedId = pendingUtteranceId
+                    pendingPhrase = null
+                    pendingUtteranceId = null
+                    if (!queuedPhrase.isNullOrBlank() && queuedId != null) {
+                        speakNow(tts, queuedPhrase, queuedId)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun speakNow(tts: TextToSpeech, phrase: String, utteranceId: String) {
+        val params = Bundle().apply {
+            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+        }
+        tts.speak(phrase, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+    }
+}
+
 @Composable
 internal fun ChallengeMovementGuide(
     challenge: ChallengeIssue,
     guidance: ChallengeMovementGuidance,
 ) {
     val context = LocalContext.current
-    var speech by remember { mutableStateOf<TextToSpeech?>(null) }
-    DisposableEffect(context) {
-        lateinit var engine: TextToSpeech
-        engine = TextToSpeech(context) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                engine.language = Locale.getDefault()
-                engine.setSpeechRate(0.92f)
-                speech = engine
-            }
-        }
-        onDispose {
-            engine.stop()
-            engine.shutdown()
-            if (speech === engine) speech = null
-        }
-    }
-    LaunchedEffect(challenge.challengeId, guidance.status, speech) {
-        val engine = speech ?: return@LaunchedEffect
+    LaunchedEffect(challenge.challengeId, guidance.status) {
         val phrase = if (guidance.status == ChallengeGuidanceStatus.WAITING) {
             movementVoiceInstruction(challenge.type)
         } else {
             movementVoiceStatus(guidance.status)
         }
         if (phrase.isNotBlank()) {
-            engine.speak(
+            ChallengeVoiceSpeaker.speak(
+                context,
                 phrase,
-                TextToSpeech.QUEUE_FLUSH,
-                null,
                 "siteproof-${challenge.challengeId}-${guidance.status.name}",
             )
         }
