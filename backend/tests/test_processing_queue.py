@@ -19,6 +19,7 @@ from tests.phase3_helpers import (
     finish_capture,
     login,
     seed_identities,
+    sha256,
     start_capture,
     upload_all_evidence,
 )
@@ -99,11 +100,12 @@ def test_evidence_completion_persists_durable_job(client, db):
     assert start_capture(client, inspector_headers, session_id).status_code == 200
     assert finish_capture(client, inspector_headers, session_id).status_code == 200
 
+    files = build_evidence(session_id)
     completed = upload_all_evidence(
         client,
         inspector_headers,
         session_id,
-        build_evidence(session_id),
+        files,
     )
     assert completed.status_code == 200, completed.text
     assert completed.json()["status"] == "UPLOADED"
@@ -117,12 +119,11 @@ def test_evidence_completion_persists_durable_job(client, db):
     assert job.status == "PENDING"
     assert job.pipeline_version == "verification-v2.0"
 
-    # Retried completion is idempotent and does not create a second queue row.
-    duplicate = upload_all_evidence(
-        client,
-        inspector_headers,
-        session_id,
-        build_evidence(session_id),
+    # Retrying only the completion receipt is idempotent and must not duplicate the queue row.
+    duplicate = client.post(
+        f"/api/v1/sessions/{session_id}/evidence/complete",
+        headers=inspector_headers,
+        json={"manifestSha256": sha256(files["MANIFEST"][2])},
     )
     assert duplicate.status_code == 200, duplicate.text
     count = len(
