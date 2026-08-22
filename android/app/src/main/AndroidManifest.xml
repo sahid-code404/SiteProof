@@ -8,6 +8,13 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
 
+    <!-- Android 11+ package visibility: make the installed system TTS engine discoverable. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:icon="@drawable/ic_siteproof_launcher"
