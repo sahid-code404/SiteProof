@@ -2,7 +2,10 @@ package com.siteproof.app.verification
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -47,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -62,6 +66,19 @@ private val RecoveryAmber = Color(0xFFFFB34D)
 private val OverlaySurface = Color(0xFF111318)
 private val OverlayLine = Color(0xFF343A43)
 
+private val RequiredVerificationPermissions = listOf(
+    Manifest.permission.CAMERA,
+    Manifest.permission.RECORD_AUDIO,
+    Manifest.permission.ACCESS_FINE_LOCATION,
+)
+
+private fun permissionLabel(permission: String): String = when (permission) {
+    Manifest.permission.CAMERA -> "Camera"
+    Manifest.permission.RECORD_AUDIO -> "Microphone"
+    Manifest.permission.ACCESS_FINE_LOCATION -> "Precise location"
+    else -> "Required permission"
+}
+
 @Composable
 fun VerificationScreen(viewModel: VerificationViewModel, onBack: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -69,6 +86,8 @@ fun VerificationScreen(viewModel: VerificationViewModel, onBack: () -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val activity = context as? Activity
     var showAbortDialog by remember { mutableStateOf(false) }
+    var permissionMessage by remember { mutableStateOf<String?>(null) }
+    var permissionRequiresSettings by remember { mutableStateOf(false) }
     val live = isLiveState(state)
 
     DisposableEffect(activity) {
@@ -85,12 +104,48 @@ fun VerificationScreen(viewModel: VerificationViewModel, onBack: () -> Unit) {
     }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
-        val cameraGranted = grants[Manifest.permission.CAMERA] == true || ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-        val locationGranted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true || ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (cameraGranted && locationGranted) viewModel.permissionsGranted()
+        val missing = RequiredVerificationPermissions.filter { permission ->
+            grants[permission] != true &&
+                ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (missing.isEmpty()) {
+            permissionMessage = null
+            permissionRequiresSettings = false
+            viewModel.permissionsGranted()
+        } else {
+            val names = missing.map(::permissionLabel).joinToString()
+            val blocked = activity != null && missing.any { permission ->
+                !ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
+            }
+            permissionRequiresSettings = blocked
+            permissionMessage = if (blocked) {
+                "$names access is disabled for SiteProof. Open App settings, allow the required permissions, then return and check again."
+            } else {
+                "SiteProof still needs: $names. Allow the requested permissions to start verification."
+            }
+        }
     }
 
-    fun requestPermissions() = launcher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+    fun requestPermissions() {
+        permissionMessage = null
+        launcher.launch(
+            arrayOf(
+                Manifest.permission.CAMERA,
+                Manifest.permission.RECORD_AUDIO,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+            ),
+        )
+    }
+
+    fun openAppSettings() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    }
 
     BackHandler(enabled = state is VerificationUiState.Ready) { viewModel.cancelPrepared(onBack) }
     BackHandler(enabled = live) { showAbortDialog = true }
@@ -126,7 +181,13 @@ fun VerificationScreen(viewModel: VerificationViewModel, onBack: () -> Unit) {
                 }
             } else {
                 when (current) {
-                    VerificationUiState.PermissionIntro -> PermissionIntro(onBack, ::requestPermissions)
+                    VerificationUiState.PermissionIntro -> PermissionIntro(
+                        onBack = onBack,
+                        onContinue = ::requestPermissions,
+                        permissionMessage = permissionMessage,
+                        requiresSettings = permissionRequiresSettings,
+                        onOpenSettings = ::openAppSettings,
+                    )
                     VerificationUiState.Preparing -> Loading("Preparing secure capture…")
                     is VerificationUiState.Captured -> CaptureResult(current, viewModel::retryUpload, onBack)
                     is VerificationUiState.Error -> ErrorState(current.message, current.canRetry, viewModel::retryVerification, onBack)
@@ -221,16 +282,40 @@ private fun BoxScope.CaptureHeader(title: String, isRecording: Boolean, isStarti
 }
 
 @Composable
-private fun PermissionIntro(onBack: () -> Unit, onContinue: () -> Unit) {
+private fun PermissionIntro(
+    onBack: () -> Unit,
+    onContinue: () -> Unit,
+    permissionMessage: String?,
+    requiresSettings: Boolean,
+    onOpenSettings: () -> Unit,
+) {
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(18.dp), contentAlignment = Alignment.Center) {
         Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shadowElevation = 6.dp) {
             Column(Modifier.padding(21.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Live verification", style = MaterialTheme.typography.headlineMedium)
-                Text("Camera, location and motion data are recorded together so the result can be independently reviewed.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Camera, microphone, location and motion data are recorded together so the result can be independently reviewed.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 PermissionLine("Camera", "Records the assigned site while movement instructions appear over the preview.")
+                PermissionLine("Microphone", "Records environmental audio with the verification video.")
                 PermissionLine("Location", "Checks that capture starts inside the assigned radius.")
                 PermissionLine("Motion sensors", "Measures only the requested phone movement.")
-                Button(onClick = onContinue, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(15.dp)) { Text("Allow and continue") }
+                if (!permissionMessage.isNullOrBlank()) {
+                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.errorContainer) {
+                        Text(
+                            permissionMessage,
+                            Modifier.fillMaxWidth().padding(12.dp),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+                if (requiresSettings) {
+                    Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(15.dp)) { Text("Open app settings") }
+                    TextButton(onClick = onContinue, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Check permissions again") }
+                } else {
+                    Button(onClick = onContinue, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(15.dp)) {
+                        Text(if (permissionMessage == null) "Allow and continue" else "Retry permissions")
+                    }
+                }
                 TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Not now") }
             }
         }
@@ -394,7 +479,7 @@ private fun ErrorState(message: String, canRetry: Boolean, retry: () -> Unit, on
 private fun friendlyError(message: String): Pair<String, String> {
     val normalized = message.lowercase()
     return when {
-        "permission" in normalized || "camera" in normalized && "denied" in normalized -> "Camera access is needed" to "Allow camera and location access, then retry."
+        "permission" in normalized || "camera" in normalized && "denied" in normalized || "microphone" in normalized -> "Capture permissions are needed" to "Allow camera, microphone and precise location access, then retry."
         "location" in normalized || "gps" in normalized -> "Location could not be confirmed" to "Enable location services, move to an open area and try again."
         "sensor" in normalized || "gyro" in normalized || "accelerometer" in normalized -> "Motion sensing is unavailable" to "Keep the phone steady and retry. This device may not support the required challenge if the error continues."
         "network" in normalized || "connection" in normalized || "timeout" in normalized -> "Connection unavailable" to "Check the connection. Evidence is retained whenever the workflow can safely retry."
