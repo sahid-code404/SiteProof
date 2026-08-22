@@ -52,8 +52,8 @@ def test_default_policy_is_valid_and_totals_100():
     policy = default_policy_definition()
     validate_policy(policy)
     assert sum(policy.weights.values()) == pytest.approx(100.0)
-    assert policy.version == "1.2"
-    assert policy.verified_threshold == 85.0
+    assert policy.version == "1.3"
+    assert policy.verified_threshold == 90.0
     assert policy.review_threshold == 65.0
     assert policy.weights[VerificationSignalType.CHALLENGE_COMPLETION] == 45.0
     assert policy.weights[VerificationSignalType.LOCATION] == 20.0
@@ -82,6 +82,20 @@ def test_perfect_signals_are_verified():
     assert decision.confidence == pytest.approx(0.90)
     assert decision.verdict == VerificationVerdict.VERIFIED
     assert decision.hard_rules == []
+
+
+def test_90_is_auto_verify_boundary():
+    policy = default_policy_definition()
+    below = [replace(signal, score=0.899) for signal in _all_good()]
+    at_threshold = [replace(signal, score=0.90) for signal in _all_good()]
+
+    below_decision = resolve_decision(below, policy)
+    threshold_decision = resolve_decision(at_threshold, policy)
+
+    assert below_decision.score == pytest.approx(89.9)
+    assert below_decision.verdict == VerificationVerdict.REVIEW_REQUIRED
+    assert threshold_decision.score == pytest.approx(90.0)
+    assert threshold_decision.verdict == VerificationVerdict.VERIFIED
 
 
 def test_low_confidence_blocks_auto_verified_without_changing_score():
@@ -128,13 +142,8 @@ def test_inconclusive_fusion_is_supporting_and_does_not_block_genuine_capture():
     assert decision.hard_rules == []
 
 
-def test_human_tolerant_policy_verifies_three_pass_capture_with_supporting_uncertainty():
-    """Calibration regression from genuine handheld captures: good core evidence wins.
-
-    Fine-grained sensor/fusion uncertainty may lower confidence, but 3/3 successful
-    randomized challenges, strong location, continuous video and usable visual motion
-    remain sufficient for automatic verification when no hard contradiction exists.
-    """
+def test_genuine_three_pass_capture_below_90_routes_to_review():
+    """A genuine but weaker handheld capture is reviewable rather than auto-approved."""
     replacements = {
         VerificationSignalType.CHALLENGE_COMPLETION: dict(
             score=0.813,
@@ -184,9 +193,9 @@ def test_human_tolerant_policy_verifies_three_pass_capture_with_supporting_uncer
         for signal in _all_good()
     ]
     decision = resolve_decision(signals, default_policy_definition())
-    assert decision.score >= 85.0
+    assert 85.0 <= decision.score < 90.0
     assert decision.confidence >= 0.70
-    assert decision.verdict == VerificationVerdict.VERIFIED
+    assert decision.verdict == VerificationVerdict.REVIEW_REQUIRED
     assert decision.hard_rules == []
 
 
@@ -221,7 +230,7 @@ def test_high_confidence_fusion_physical_contradiction_forces_flagged():
         for signal in _all_good()
     ]
     decision = resolve_decision(signals, default_policy_definition())
-    assert decision.score > 85
+    assert decision.score > 90
     assert decision.verdict == VerificationVerdict.FLAGGED
     assert "HIGH_CONFIDENCE_FUSION_MISMATCH" in {rule.code for rule in decision.hard_rules}
 
@@ -243,7 +252,7 @@ def test_same_direction_timing_magnitude_mismatch_does_not_force_flagged():
         for signal in _all_good()
     ]
     decision = resolve_decision(signals, default_policy_definition())
-    assert decision.score > 85
+    assert decision.score > 90
     assert decision.verdict == VerificationVerdict.VERIFIED
     assert "HIGH_CONFIDENCE_FUSION_MISMATCH" not in {rule.code for rule in decision.hard_rules}
 
@@ -268,7 +277,7 @@ def test_major_scene_discontinuity_caps_verified_to_review():
         for signal in _all_good()
     ]
     decision = resolve_decision(signals, default_policy_definition())
-    assert decision.score >= 85
+    assert decision.score >= 90
     assert decision.verdict == VerificationVerdict.REVIEW_REQUIRED
     assert "MAJOR_SCENE_DISCONTINUITY" in {rule.code for rule in decision.hard_rules}
 
@@ -288,7 +297,7 @@ def test_phase6_inputs_flow_into_persisted_verification_api_and_review(client, d
     assert reviewer.status_code == 200, reviewer.text
     body = reviewer.json()
     assert body["status"] == "COMPLETED"
-    assert body["policy"]["version"] == "1.2"
+    assert body["policy"]["version"] == "1.3"
     assert body["policy"]["engineVersion"] == "verification-engine-v1.1"
     assert len(body["signals"]) == 7
 
