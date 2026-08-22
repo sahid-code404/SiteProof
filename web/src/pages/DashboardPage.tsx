@@ -43,7 +43,7 @@ export function DashboardPage() {
   const health = useQuery({ queryKey: ['backend-health'], queryFn: getBackendHealth, retry: 1 })
   const summary = useQuery({ queryKey: ['inspection-summary'], queryFn: getSummary })
   const data = summary.data as DashboardSummary | undefined
-  const reviewQueue = (data?.reviewRequired ?? 0) + (data?.inconclusive ?? 0)
+  const attentionQueue = (data?.reviewRequired ?? 0) + (data?.inconclusive ?? 0) + (data?.flagged ?? 0)
   const verificationRate = Math.round(data?.verificationRate ?? 0)
 
   return (
@@ -70,14 +70,14 @@ export function DashboardPage() {
 
       <section className="metric-grid" aria-label="Key metrics" aria-busy={summary.isLoading}>
         <article className="metric-card"><span>Total inspections</span><strong>{summary.isLoading ? '…' : data?.total ?? 0}</strong></article>
-        <article className="metric-card"><span>Verified</span><strong>{summary.isLoading ? '…' : data?.verified ?? 0}</strong></article>
-        <article className="metric-card"><span>Needs review</span><strong>{summary.isLoading ? '…' : reviewQueue}</strong></article>
+        <article className="metric-card"><span>Auto verified</span><strong>{summary.isLoading ? '…' : data?.verified ?? 0}</strong></article>
+        <article className="metric-card"><span>Needs attention</span><strong>{summary.isLoading ? '…' : attentionQueue}</strong></article>
         <article className="metric-card"><span>Overdue</span><strong>{summary.isLoading ? '…' : data?.overdue ?? 0}</strong></article>
       </section>
 
       <section className="dashboard-grid dashboard-priority-grid">
         <article className="panel verification-overview-card">
-          <div className="verification-rate-tile"><strong>{summary.isLoading ? '…' : `${verificationRate}%`}</strong><span>verified</span></div>
+          <div className="verification-rate-tile"><strong>{summary.isLoading ? '…' : `${verificationRate}%`}</strong><span>auto-verified</span></div>
           <div className="verification-overview-copy">
             <p className="eyebrow">Verification</p>
             <h2>Current decision state</h2>
