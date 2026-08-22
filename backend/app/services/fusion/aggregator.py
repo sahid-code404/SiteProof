@@ -126,16 +126,24 @@ def decide_fusion(
 
     sensor_angle = sensor.angular_change_deg or 0.0
     visual_angle = visual.angular_change_deg or 0.0
+    sensor_motion_absent = (
+        sensor.direction == "NONE"
+        and sensor_angle <= settings.fusion_motion_floor_deg
+    )
+    visual_motion_absent = (
+        visual.direction == "NONE"
+        and visual_angle <= settings.fusion_motion_floor_deg
+    )
     if high_confidence_pair:
-        if (
-            sensor_angle <= settings.fusion_motion_floor_deg
-            and visual_angle >= settings.fusion_large_motion_deg
-        ):
+        # A low degree estimate by itself is not proof that a source saw no movement.
+        # Stabilization and the approximate camera-FOV conversion can compress visual angle
+        # magnitude while still leaving a coherent, correctly directed motion track. Reserve
+        # the blocking "without motion" reasons for cases where the weak source also reports
+        # no reliable direction. Large magnitude disagreement remains available separately as
+        # MAGNITUDE_MISMATCH and can lower the consistency score without creating a false hard rule.
+        if sensor_motion_absent and visual_angle >= settings.fusion_large_motion_deg:
             mismatch.append(MismatchReason.VISUAL_WITHOUT_SENSOR_MOTION.value)
-        if (
-            visual_angle <= settings.fusion_motion_floor_deg
-            and sensor_angle >= settings.fusion_large_motion_deg
-        ):
+        if visual_motion_absent and sensor_angle >= settings.fusion_large_motion_deg:
             mismatch.append(MismatchReason.SENSOR_WITHOUT_VISUAL_MOTION.value)
 
     if (
