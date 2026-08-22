@@ -47,6 +47,33 @@ services:
       timeout: 5s
       retries: 5
 
+  worker:
+    build: ./backend
+    command: ["python", "-m", "app.worker"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://siteproof:siteproof_dev_password@postgres:5432/siteproof}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      LOCAL_STORAGE_PATH: ${LOCAL_STORAGE_PATH:-/data/evidence}
+      STORAGE_ENDPOINT_URL: ${STORAGE_ENDPOINT_URL:-http://minio:9000}
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-siteproof}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-siteproof_minio_password}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-siteproof-evidence}
+      STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
+      RECEIPT_SIGNING_ENABLED: ${RECEIPT_SIGNING_ENABLED:-false}
+      RECEIPT_SIGNING_KEY_ID: ${RECEIPT_SIGNING_KEY_ID:-siteproof-signing-dev-01}
+      RECEIPT_SIGNING_PRIVATE_KEY_PATH: ${RECEIPT_SIGNING_PRIVATE_KEY_PATH:-/run/siteproof-secrets/siteproof-signing-private.pem}
+      PUBLIC_RECEIPT_DETAILS: ${PUBLIC_RECEIPT_DETAILS:-MINIMAL}
+      SITEPROOF_WORKER_POLL_SECONDS: ${SITEPROOF_WORKER_POLL_SECONDS:-1.0}
+    volumes:
+      - evidence_data:/data/evidence
+      - ./.secrets:/run/siteproof-secrets:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
   web:
     build:
       context: ./web
