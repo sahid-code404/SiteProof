@@ -42,6 +42,7 @@ import com.siteproof.app.verification.model.ChallengeIssue
 import com.siteproof.app.verification.sensors.ChallengeGuidanceStatus
 import com.siteproof.app.verification.sensors.ChallengeMovementGuidance
 import java.util.Locale
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -49,6 +50,7 @@ private val GuideGood = Color(0xFF25834D)
 private val GuideWrong = Color(0xFFC9372C)
 private val GuideFar = Color(0xFFB05A00)
 private val GuideOrange = Color(0xFFF56200)
+private const val VOICE_CORRECTION_STABLE_MS = 900L
 
 /**
  * Process-lifetime TTS speaker for live verification guidance.
@@ -58,81 +60,122 @@ private val GuideOrange = Color(0xFFF56200)
  * overlay can therefore cancel an utterance before it becomes audible. Keeping one engine on the
  * application context avoids that race and also avoids paying TTS initialization latency for
  * every challenge.
+ *
+ * The movement state is recalculated roughly every 100 ms. The initial direction instruction must
+ * not be replaced by those fast status changes. Corrections are therefore queued behind an engine
+ * that is still initializing, and once the engine is ready they are spoken only after the status
+ * has remained stable long enough to be useful.
  */
 private object ChallengeVoiceSpeaker {
+    private data class PendingSpeech(
+        val phrase: String,
+        val utteranceId: String,
+        val queueMode: Int,
+    )
+
     @Volatile
     private var engine: TextToSpeech? = null
 
     @Volatile
     private var initializing = false
 
-    private var pendingPhrase: String? = null
-    private var pendingUtteranceId: String? = null
+    private val pending = mutableListOf<PendingSpeech>()
 
-    fun speak(context: Context, phrase: String, utteranceId: String) {
+    fun speakInstruction(context: Context, phrase: String, utteranceId: String) {
         if (phrase.isBlank()) return
         val ready = engine
         if (ready != null) {
-            speakNow(ready, phrase, utteranceId)
+            speakNow(ready, phrase, utteranceId, TextToSpeech.QUEUE_FLUSH)
             return
         }
 
         synchronized(this) {
-            pendingPhrase = phrase
-            pendingUtteranceId = utteranceId
-            if (initializing || engine != null) {
-                engine?.let { speakNow(it, phrase, utteranceId) }
+            engine?.let {
+                speakNow(it, phrase, utteranceId, TextToSpeech.QUEUE_FLUSH)
                 return
             }
-            initializing = true
+            pending.clear()
+            pending += PendingSpeech(phrase, utteranceId, TextToSpeech.QUEUE_FLUSH)
+            ensureEngine(context.applicationContext)
+        }
+    }
 
-            val appContext = context.applicationContext
-            var created: TextToSpeech? = null
-            created = TextToSpeech(appContext) { status ->
-                synchronized(this) {
-                    initializing = false
-                    val tts = created
-                    if (status != TextToSpeech.SUCCESS || tts == null) {
-                        tts?.shutdown()
-                        pendingPhrase = null
-                        pendingUtteranceId = null
-                        return@TextToSpeech
-                    }
+    fun speakCorrection(context: Context, phrase: String, utteranceId: String) {
+        if (phrase.isBlank()) return
+        val ready = engine
+        if (ready != null) {
+            // The correction has already been debounced by the composable. Flush any older
+            // correction so the spoken guidance always matches what is currently on screen.
+            speakNow(ready, phrase, utteranceId, TextToSpeech.QUEUE_FLUSH)
+            return
+        }
 
-                    val localeResult = tts.setLanguage(Locale.getDefault())
-                    if (
-                        localeResult == TextToSpeech.LANG_MISSING_DATA ||
-                        localeResult == TextToSpeech.LANG_NOT_SUPPORTED
-                    ) {
-                        tts.setLanguage(Locale.US)
-                    }
-                    tts.setSpeechRate(0.92f)
-                    tts.setPitch(1.0f)
-                    tts.setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build(),
-                    )
-                    engine = tts
+        synchronized(this) {
+            engine?.let {
+                speakNow(it, phrase, utteranceId, TextToSpeech.QUEUE_FLUSH)
+                return
+            }
+            // Never replace the initial direction while TTS is still starting. Queue this behind
+            // it so users first hear "Rotate right", "Tilt up", etc.
+            pending += PendingSpeech(phrase, utteranceId, TextToSpeech.QUEUE_ADD)
+            ensureEngine(context.applicationContext)
+        }
+    }
 
-                    val queuedPhrase = pendingPhrase
-                    val queuedId = pendingUtteranceId
-                    pendingPhrase = null
-                    pendingUtteranceId = null
-                    if (!queuedPhrase.isNullOrBlank() && queuedId != null) {
-                        speakNow(tts, queuedPhrase, queuedId)
-                    }
+    private fun ensureEngine(appContext: Context) {
+        if (engine != null || initializing) return
+        initializing = true
+
+        var created: TextToSpeech? = null
+        created = TextToSpeech(appContext) { status ->
+            synchronized(this) {
+                initializing = false
+                val tts = created
+                if (status != TextToSpeech.SUCCESS || tts == null) {
+                    tts?.shutdown()
+                    pending.clear()
+                    return@TextToSpeech
+                }
+
+                val localeResult = tts.setLanguage(Locale.getDefault())
+                if (
+                    localeResult == TextToSpeech.LANG_MISSING_DATA ||
+                    localeResult == TextToSpeech.LANG_NOT_SUPPORTED
+                ) {
+                    tts.setLanguage(Locale.US)
+                }
+                tts.setSpeechRate(0.92f)
+                tts.setPitch(1.0f)
+                tts.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        // Use the normal media output path. Some Android skins keep navigation
+                        // guidance on a separately-muted route even when media volume is audible.
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build(),
+                )
+                engine = tts
+
+                val queued = pending.toList()
+                pending.clear()
+                queued.forEachIndexed { index, speech ->
+                    val queueMode = if (index == 0) speech.queueMode else TextToSpeech.QUEUE_ADD
+                    speakNow(tts, speech.phrase, speech.utteranceId, queueMode)
                 }
             }
         }
     }
 
-    private fun speakNow(tts: TextToSpeech, phrase: String, utteranceId: String) {
+    private fun speakNow(
+        tts: TextToSpeech,
+        phrase: String,
+        utteranceId: String,
+        queueMode: Int,
+    ) {
         val params = Bundle().apply {
             putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
         }
-        tts.speak(phrase, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+        tts.speak(phrase, queueMode, params, utteranceId)
     }
 }
 
@@ -142,14 +185,26 @@ internal fun ChallengeMovementGuide(
     guidance: ChallengeMovementGuidance,
 ) {
     val context = LocalContext.current
+
+    // Always announce the challenge direction once, regardless of how quickly sensor guidance
+    // moves out of WAITING. Previously the status was part of this effect key and QUEUE_FLUSH
+    // could cancel "Rotate right/left" before the TTS engine produced any sound.
+    LaunchedEffect(challenge.challengeId) {
+        ChallengeVoiceSpeaker.speakInstruction(
+            context,
+            movementVoiceInstruction(challenge.type),
+            "siteproof-${challenge.challengeId}-instruction",
+        )
+    }
+
+    // Sensor guidance is refreshed around every 100 ms. Only speak a correction after the status
+    // has stayed unchanged for a short period; LaunchedEffect cancels this delay if status changes.
     LaunchedEffect(challenge.challengeId, guidance.status) {
-        val phrase = if (guidance.status == ChallengeGuidanceStatus.WAITING) {
-            movementVoiceInstruction(challenge.type)
-        } else {
-            movementVoiceStatus(guidance.status)
-        }
+        if (guidance.status == ChallengeGuidanceStatus.WAITING) return@LaunchedEffect
+        delay(VOICE_CORRECTION_STABLE_MS)
+        val phrase = movementVoiceStatus(guidance.status)
         if (phrase.isNotBlank()) {
-            ChallengeVoiceSpeaker.speak(
+            ChallengeVoiceSpeaker.speakCorrection(
                 context,
                 phrase,
                 "siteproof-${challenge.challengeId}-${guidance.status.name}",
