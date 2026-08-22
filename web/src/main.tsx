@@ -5,24 +5,19 @@ import { BrowserRouter } from 'react-router-dom'
 import 'leaflet/dist/leaflet.css'
 import App from './App'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
-import './styles.css'
-import './phase11.css'
-import './phase11b.css'
-import './phase11c.css'
-import './polish.css'
-import './product.css'
-import './orange-theme.css'
-import './orange-login.css'
-import './reference-overrides.css'
-import './reference-polish.css'
-import './visibility-polish.css'
-import './professional-polish.css'
-import './final-responsive-polish.css'
-import './adaptive-glass.css'
+import './industrial.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 15_000, refetchOnWindowFocus: false },
+    queries: {
+      staleTime: 15_000,
+      refetchOnWindowFocus: false,
+      retry: (failureCount, error) => {
+        if (error instanceof Error && /401|403|validation|invalid/i.test(error.message)) return false
+        return failureCount < 2
+      },
+    },
+    mutations: { retry: false },
   },
 })
 

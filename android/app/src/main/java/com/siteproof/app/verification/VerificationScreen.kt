@@ -58,13 +58,12 @@ import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 private val RecordingRed = Color(0xFFFF5147)
-private val RecoveryAmber = Color(0xFFFFA62B)
+private val RecoveryAmber = Color(0xFFFFB34D)
+private val OverlaySurface = Color(0xFF111318)
+private val OverlayLine = Color(0xFF343A43)
 
 @Composable
-fun VerificationScreen(
-    viewModel: VerificationViewModel,
-    onBack: () -> Unit,
-) {
+fun VerificationScreen(viewModel: VerificationViewModel, onBack: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -86,20 +85,12 @@ fun VerificationScreen(
     }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
-        val cameraGranted = grants[Manifest.permission.CAMERA] == true ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-        val locationGranted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val cameraGranted = grants[Manifest.permission.CAMERA] == true || ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        val locationGranted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true || ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (cameraGranted && locationGranted) viewModel.permissionsGranted()
     }
 
-    fun requestPermissions() = launcher.launch(
-        arrayOf(
-            Manifest.permission.CAMERA,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-        ),
-    )
+    fun requestPermissions() = launcher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
 
     BackHandler(enabled = state is VerificationUiState.Ready) { viewModel.cancelPrepared(onBack) }
     BackHandler(enabled = live) { showAbortDialog = true }
@@ -107,15 +98,11 @@ fun VerificationScreen(
     if (showAbortDialog) {
         AlertDialog(
             onDismissRequest = { showAbortDialog = false },
-            shape = RoundedCornerShape(26.dp),
+            shape = RoundedCornerShape(22.dp),
             title = { Text("Stop verification?") },
-            text = { Text("The current live capture will be discarded. You can restart verification from the inspection.") },
-            confirmButton = {
-                TextButton(onClick = { showAbortDialog = false; viewModel.abortByUser() }) { Text("Stop capture") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAbortDialog = false }) { Text("Keep recording") }
-            },
+            text = { Text("The current live capture will be discarded. You can restart from the inspection.") },
+            confirmButton = { TextButton(onClick = { showAbortDialog = false; viewModel.abortByUser() }) { Text("Stop capture") } },
+            dismissButton = { TextButton(onClick = { showAbortDialog = false }) { Text("Keep recording") } },
         )
     }
 
@@ -123,7 +110,6 @@ fun VerificationScreen(
         Box(Modifier.padding(padding).fillMaxSize()) {
             val current = state
             val prepared = cameraPrepared(current)
-
             if (prepared != null) {
                 key(prepared.session.sessionId) {
                     PersistentCameraHost(
@@ -143,12 +129,7 @@ fun VerificationScreen(
                     VerificationUiState.PermissionIntro -> PermissionIntro(onBack, ::requestPermissions)
                     VerificationUiState.Preparing -> Loading("Preparing secure capture…")
                     is VerificationUiState.Captured -> CaptureResult(current, viewModel::retryUpload, onBack)
-                    is VerificationUiState.Error -> ErrorState(
-                        message = current.message,
-                        canRetry = current.canRetry,
-                        retry = viewModel::retryVerification,
-                        onBack = onBack,
-                    )
+                    is VerificationUiState.Error -> ErrorState(current.message, current.canRetry, viewModel::retryVerification, onBack)
                     else -> Unit
                 }
             }
@@ -184,9 +165,8 @@ private fun requiredRemainingMs(state: VerificationUiState, requiredSeconds: Int
     return (requiredSeconds * 1_000L - elapsed).coerceAtLeast(0L)
 }
 
-private fun secondsLabel(milliseconds: Long): String = "${ceil(milliseconds / 1000.0).toInt()}s"
-
-private fun durationLabel(seconds: Int): String = when {
+private fun secondsLabel(milliseconds: Long) = "${ceil(milliseconds / 1000.0).toInt()}s"
+private fun durationLabel(seconds: Int) = when {
     seconds >= 60 && seconds % 60 == 0 -> "${seconds / 60} min"
     seconds >= 60 -> "${seconds / 60} min ${seconds % 60} sec"
     else -> "$seconds sec"
@@ -205,21 +185,9 @@ private fun PersistentCameraHost(
     onAbort: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        CameraPreview(
-            lifecycleOwner = lifecycleOwner,
-            bindCamera = bindCamera,
-            modifier = Modifier.fillMaxSize(),
-        )
-
+        CameraPreview(lifecycleOwner, bindCamera, Modifier.fillMaxSize())
         val requiredSeconds = prepared.session.requiredCaptureDurationSeconds
-        val recordingRemaining = requiredRemainingMs(state, requiredSeconds)
-        CaptureHeader(
-            title = prepared.inspection.title,
-            isRecording = state !is VerificationUiState.Ready,
-            isStarting = state is VerificationUiState.StartingCapture,
-            recordingRemaining = recordingRemaining,
-        )
-
+        CaptureHeader(prepared.inspection.title, state !is VerificationUiState.Ready, state is VerificationUiState.StartingCapture, requiredRemainingMs(state, requiredSeconds))
         when (state) {
             is VerificationUiState.Ready -> ReadyOverlay(prepared, onStart, onBack)
             is VerificationUiState.StartingCapture -> LiveLoadingOverlay("Locking location and starting camera…", onAbort)
@@ -235,62 +203,17 @@ private fun PersistentCameraHost(
 }
 
 @Composable
-private fun BoxScope.CaptureHeader(
-    title: String,
-    isRecording: Boolean,
-    isStarting: Boolean,
-    recordingRemaining: Long?,
-) {
-    GlassPanel(
-        modifier = Modifier
-            .align(Alignment.TopCenter)
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        alpha = 0.74f,
-        radius = 20,
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            if (isRecording && !isStarting) {
-                Box(
-                    Modifier
-                        .size(9.dp)
-                        .background(RecordingRed, CircleShape),
-                )
-            }
+private fun BoxScope.CaptureHeader(title: String, isRecording: Boolean, isStarting: Boolean, recordingRemaining: Long?) {
+    IndustrialOverlay(Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp), radius = 18) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            if (isRecording && !isStarting) Box(Modifier.size(9.dp).background(RecordingRed, CircleShape))
             Column(Modifier.weight(1f)) {
-                Text(
-                    when {
-                        isStarting -> "STARTING SECURE CAPTURE"
-                        isRecording -> "LIVE EVIDENCE"
-                        else -> "READY TO VERIFY"
-                    },
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (isRecording && !isStarting) RecordingRed else MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
-                    maxLines = 1,
-                )
+                Text(when { isStarting -> "STARTING CAPTURE"; isRecording -> "LIVE EVIDENCE"; else -> "READY" }, style = MaterialTheme.typography.labelMedium, color = if (isRecording && !isStarting) RecordingRed else MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Text(title, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1)
             }
             if (isRecording && !isStarting && recordingRemaining != null) {
-                Surface(
-                    shape = RoundedCornerShape(999.dp),
-                    color = Color.Black.copy(alpha = 0.28f),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
-                ) {
-                    Text(
-                        if (recordingRemaining > 0L) secondsLabel(recordingRemaining) else "MIN ✓",
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelLarge,
-                    )
+                Surface(shape = RoundedCornerShape(999.dp), color = Color(0xFF1D2127), border = BorderStroke(1.dp, OverlayLine)) {
+                    Text(if (recordingRemaining > 0L) secondsLabel(recordingRemaining) else "MIN ✓", Modifier.padding(horizontal = 9.dp, vertical = 4.dp), color = Color.White, style = MaterialTheme.typography.labelMedium)
                 }
             }
         }
@@ -299,33 +222,15 @@ private fun BoxScope.CaptureHeader(
 
 @Composable
 private fun PermissionIntro(onBack: () -> Unit, onContinue: () -> Unit) {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(20.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            shadowElevation = 8.dp,
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(18.dp), contentAlignment = Alignment.Center) {
+        Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shadowElevation = 6.dp) {
+            Column(Modifier.padding(21.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Live verification", style = MaterialTheme.typography.headlineMedium)
-                Text(
-                    "SiteProof records evidence and sensor context together so the result can be independently reviewed.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                PermissionLine("Camera", "Records the assigned site while movement checks are shown on top of the live view.")
-                PermissionLine("Location", "Confirms capture starts within the assigned site radius.")
-                PermissionLine("Motion sensors", "Measures only the requested phone movement during verification.")
-                Spacer(Modifier.height(2.dp))
-                Button(onClick = onContinue, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Allow and continue") }
+                Text("Camera, location and motion data are recorded together so the result can be independently reviewed.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                PermissionLine("Camera", "Records the assigned site while movement instructions appear over the preview.")
+                PermissionLine("Location", "Checks that capture starts inside the assigned radius.")
+                PermissionLine("Motion sensors", "Measures only the requested phone movement.")
+                Button(onClick = onContinue, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(15.dp)) { Text("Allow and continue") }
                 TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Not now") }
             }
         }
@@ -334,301 +239,136 @@ private fun PermissionIntro(onBack: () -> Unit, onContinue: () -> Unit) {
 
 @Composable
 private fun PermissionLine(title: String, body: String) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.56f),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    Surface(shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.surfaceVariant, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
-private fun BoxScope.ReadyOverlay(
-    prepared: VerificationCaptureCoordinator.Prepared,
-    onStart: () -> Unit,
-    onBack: () -> Unit,
-) {
+private fun BoxScope.ReadyOverlay(prepared: VerificationCaptureCoordinator.Prepared, onStart: () -> Unit, onBack: () -> Unit) {
     val sensorsReady = prepared.capabilities.accelerometer && prepared.capabilities.gyroscope
-    GlassPanel(
-        modifier = Modifier
-            .align(Alignment.BottomCenter)
-            .fillMaxWidth()
-            .padding(12.dp),
-        alpha = 0.86f,
-    ) {
-        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    IndustrialOverlay(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(10.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text("Capture check", style = MaterialTheme.typography.titleLarge, color = Color.White)
             StatusRow("Location", "${prepared.location.accuracyLabel} · ±${prepared.location.location.accuracyMeters.roundToInt()} m")
             StatusRow("Site distance", "${prepared.location.distanceMeters.roundToInt()} m of ${prepared.session.allowedRadiusMeters} m")
             StatusRow("Motion sensors", if (sensorsReady) "Ready" else "Limited")
             StatusRow("Required video", "${durationLabel(prepared.session.requiredCaptureDurationSeconds)} minimum")
-            StatusRow("Safety maximum", durationLabel(prepared.session.captureMaximumSeconds))
-            Text(
-                "The server locks these requirements for this session. The camera keeps recording while challenge animations appear over the live preview.",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.7f),
-            )
-            Button(onClick = onStart, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Start live verification") }
-            TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                Text("Back", color = Color.White.copy(alpha = 0.82f))
-            }
+            Text("Recording stays active while movement instructions appear on top of the camera.", style = MaterialTheme.typography.bodySmall, color = Color(0xFFB9C0C9))
+            Button(onClick = onStart, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(14.dp)) { Text("Start verification") }
+            TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Back", color = Color(0xFFCDD2D8)) }
         }
     }
 }
 
 @Composable
-private fun BoxScope.ChallengeActiveOverlay(
-    state: VerificationUiState.ChallengeActive,
-    onAbort: () -> Unit,
-) {
-    GlassPanel(
-        modifier = Modifier
-            .align(Alignment.BottomCenter)
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 12.dp),
-        alpha = 0.78f,
-    ) {
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    "MOVEMENT CHECK",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    "${state.challenge.sequenceNumber}/${state.challenge.totalChallenges}",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White.copy(alpha = 0.74f),
-                )
+private fun BoxScope.ChallengeActiveOverlay(state: VerificationUiState.ChallengeActive, onAbort: () -> Unit) {
+    IndustrialOverlay(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(10.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("MOVEMENT", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Text("${state.challenge.sequenceNumber}/${state.challenge.totalChallenges}", style = MaterialTheme.typography.labelMedium, color = Color(0xFFB9C0C9))
             }
             ChallengeMovementGuide(state.challenge, state.guidance)
-            Text(
-                state.feedback,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-            Text(
-                "${secondsLabel(state.remainingMs)} remaining · keep the site in frame",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.68f),
-                modifier = Modifier.padding(top = 3.dp),
-            )
-            TextButton(onClick = onAbort) { Text("Stop capture", color = Color.White.copy(alpha = 0.72f)) }
+            Text(state.feedback, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 2.dp))
+            Text("${secondsLabel(state.remainingMs)} remaining · keep the site in frame", style = MaterialTheme.typography.bodySmall, color = Color(0xFFADB4BD), modifier = Modifier.padding(top = 3.dp))
+            TextButton(onClick = onAbort) { Text("Stop capture", color = Color(0xFFB9C0C9)) }
         }
     }
 }
 
 @Composable
 private fun BoxScope.LiveLoadingOverlay(message: String, onAbort: () -> Unit) {
-    GlassPanel(
-        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp),
-        alpha = 0.78f,
-    ) {
-        Column(
-            Modifier.fillMaxWidth().padding(18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            CircularProgressIndicator(modifier = Modifier.size(34.dp), strokeWidth = 3.dp)
-            Text(message, color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.padding(10.dp))
-            Text(
-                "Recording continues in the background.",
-                color = Color.White.copy(alpha = 0.65f),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            TextButton(onClick = onAbort) { Text("Stop capture", color = Color.White.copy(alpha = 0.72f)) }
+    IndustrialOverlay(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(10.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator(Modifier.size(30.dp), strokeWidth = 3.dp)
+            Text(message, color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.padding(9.dp))
+            Text("Recording continues.", color = Color(0xFFADB4BD), style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = onAbort) { Text("Stop capture", color = Color(0xFFB9C0C9)) }
         }
     }
 }
 
 @Composable
-private fun BoxScope.NetworkWaitOverlay(
-    state: VerificationUiState.ChallengeNetworkWait,
-    retry: () -> Unit,
-    onAbort: () -> Unit,
-) {
-    GlassPanel(
-        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp),
-        alpha = 0.84f,
-        borderColor = RecoveryAmber.copy(alpha = 0.42f),
-    ) {
-        Column(
-            Modifier.fillMaxWidth().padding(18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
+private fun BoxScope.NetworkWaitOverlay(state: VerificationUiState.ChallengeNetworkWait, retry: () -> Unit, onAbort: () -> Unit) {
+    IndustrialOverlay(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(10.dp), borderColor = RecoveryAmber.copy(alpha = .62f)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Connection interrupted", style = MaterialTheme.typography.titleLarge, color = RecoveryAmber)
-            Text(state.message, color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 8.dp))
-            Text(
-                "Your evidence recording is still active. Reconnect and continue without restarting the capture.",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.68f),
-                textAlign = TextAlign.Center,
-            )
-            Button(onClick = retry, modifier = Modifier.fillMaxWidth().padding(top = 14.dp)) { Text("Reconnect") }
-            TextButton(onClick = onAbort) { Text("Stop capture", color = Color.White.copy(alpha = 0.72f)) }
+            Text(state.message, color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 7.dp))
+            Text("Evidence recording is still active. Reconnect and continue without restarting.", style = MaterialTheme.typography.bodySmall, color = Color(0xFFADB4BD), textAlign = TextAlign.Center)
+            Button(onClick = retry, modifier = Modifier.fillMaxWidth().padding(top = 12.dp), shape = RoundedCornerShape(14.dp)) { Text("Reconnect") }
+            TextButton(onClick = onAbort) { Text("Stop capture", color = Color(0xFFB9C0C9)) }
         }
     }
 }
 
 @Composable
-private fun BoxScope.ChallengeResultOverlay(
-    result: ChallengeValidationResult,
-    retryChallenge: () -> Unit,
-    onAbort: () -> Unit,
-) {
+private fun BoxScope.ChallengeResultOverlay(result: ChallengeValidationResult, retryChallenge: () -> Unit, onAbort: () -> Unit) {
     val passed = result.result == "PASS"
-    val title = when {
-        passed -> "Movement verified"
-        result.result == "FAIL" -> "Movement not verified"
-        else -> "Movement was inconclusive"
-    }
-    val detail = when {
-        passed -> "Nice. The next movement will appear automatically while recording continues."
-        result.retryAllowed -> "Your recording is safe. Retry this step with a fresh movement challenge."
-        else -> "This step cannot be retried. Stop the capture and restart verification from the inspection."
-    }
-
-    GlassPanel(
-        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp),
-        alpha = 0.82f,
-        borderColor = if (passed) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else MaterialTheme.colorScheme.error.copy(alpha = 0.4f),
-    ) {
-        Column(
-            Modifier.fillMaxWidth().padding(18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleLarge,
-                color = if (passed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                textAlign = TextAlign.Center,
-            )
-            Text(detail, color = Color.White.copy(alpha = 0.76f), textAlign = TextAlign.Center, modifier = Modifier.padding(8.dp))
-            if (!passed && result.retryAllowed) {
-                Button(onClick = retryChallenge, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("Retry challenge") }
-            }
-            TextButton(onClick = onAbort) { Text("Stop capture", color = Color.White.copy(alpha = 0.72f)) }
+    val title = when { passed -> "Movement verified"; result.result == "FAIL" -> "Movement not verified"; else -> "Movement inconclusive" }
+    val detail = when { passed -> "The next movement will appear automatically while recording continues."; result.retryAllowed -> "Recording is safe. Retry this movement with a fresh challenge."; else -> "This step cannot be retried. Stop and restart verification from the inspection." }
+    IndustrialOverlay(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(10.dp), borderColor = if (passed) MaterialTheme.colorScheme.primary.copy(alpha = .6f) else MaterialTheme.colorScheme.error.copy(alpha = .65f)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(title, style = MaterialTheme.typography.titleLarge, color = if (passed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+            Text(detail, color = Color(0xFFC4CAD1), textAlign = TextAlign.Center, modifier = Modifier.padding(7.dp))
+            if (!passed && result.retryAllowed) Button(onClick = retryChallenge, modifier = Modifier.fillMaxWidth().padding(top = 5.dp), shape = RoundedCornerShape(14.dp)) { Text("Retry challenge") }
+            TextButton(onClick = onAbort) { Text("Stop capture", color = Color(0xFFB9C0C9)) }
         }
     }
 }
 
 @Composable
-private fun BoxScope.CaptureFinishingOverlay(
-    state: VerificationUiState.CaptureFinishing,
-    onAbort: () -> Unit,
-) {
+private fun BoxScope.CaptureFinishingOverlay(state: VerificationUiState.CaptureFinishing, onAbort: () -> Unit) {
     val requiredMs = state.prepared.session.requiredCaptureDurationSeconds * 1_000f
     val progress = (state.elapsedMs / requiredMs).coerceIn(0f, 1f)
-    GlassPanel(
-        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp),
-        alpha = 0.82f,
-    ) {
-        Column(
-            Modifier.fillMaxWidth().padding(18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+    IndustrialOverlay(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(10.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Text("Movement checks complete", style = MaterialTheme.typography.titleLarge, color = Color.White, textAlign = TextAlign.Center)
-            if (state.remainingMs > 0L) {
-                Text(
-                    "Keep the site steady in frame · ${secondsLabel(state.remainingMs)} minimum recording remaining",
-                    textAlign = TextAlign.Center,
-                    color = Color.White.copy(alpha = 0.72f),
-                )
-            } else {
-                Text("Minimum recording reached. Sealing the evidence package…", color = Color.White.copy(alpha = 0.72f), textAlign = TextAlign.Center)
-            }
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = Color.White.copy(alpha = 0.15f),
-            )
-            TextButton(onClick = onAbort) { Text("Stop capture", color = Color.White.copy(alpha = 0.72f)) }
+            Text(if (state.remainingMs > 0L) "Keep the site steady · ${secondsLabel(state.remainingMs)} minimum recording remaining" else "Minimum recording reached. Sealing evidence…", textAlign = TextAlign.Center, color = Color(0xFFB9C0C9))
+            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary, trackColor = Color(0xFF2D323A))
+            TextButton(onClick = onAbort) { Text("Stop capture", color = Color(0xFFB9C0C9)) }
         }
     }
 }
 
-private fun isLiveState(state: VerificationUiState): Boolean = when (state) {
+private fun isLiveState(state: VerificationUiState) = when (state) {
     is VerificationUiState.StartingCapture,
     is VerificationUiState.ChallengeLoading,
     is VerificationUiState.ChallengeActive,
     is VerificationUiState.ChallengeChecking,
     is VerificationUiState.ChallengeNetworkWait,
     is VerificationUiState.ChallengeResultState,
-    is VerificationUiState.CaptureFinishing,
-    -> true
+    is VerificationUiState.CaptureFinishing -> true
     else -> false
 }
 
 @Composable
-private fun CameraPreview(
-    lifecycleOwner: LifecycleOwner,
-    bindCamera: (PreviewView, LifecycleOwner) -> Unit,
-    modifier: Modifier,
-) {
+private fun CameraPreview(lifecycleOwner: LifecycleOwner, bindCamera: (PreviewView, LifecycleOwner) -> Unit, modifier: Modifier) {
     AndroidView(
         modifier = modifier,
-        factory = { context ->
-            PreviewView(context).apply {
-                implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                scaleType = PreviewView.ScaleType.FILL_CENTER
-            }.also { bindCamera(it, lifecycleOwner) }
-        },
+        factory = { context -> PreviewView(context).apply { implementationMode = PreviewView.ImplementationMode.COMPATIBLE; scaleType = PreviewView.ScaleType.FILL_CENTER }.also { bindCamera(it, lifecycleOwner) } },
     )
 }
 
 @Composable
 private fun CaptureResult(state: VerificationUiState.Captured, retry: (String) -> Unit, onBack: () -> Unit) {
-    Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            shadowElevation = 8.dp,
-        ) {
-            Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Box(Modifier.fillMaxSize().padding(18.dp), contentAlignment = Alignment.Center) {
+        Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shadowElevation = 6.dp) {
+            Column(Modifier.fillMaxWidth().padding(21.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
                 Text("Evidence saved", style = MaterialTheme.typography.headlineMedium)
                 Text(state.message, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (state.uploadStatus == "UPLOADING" && state.progressPercent != null) {
-                    LinearProgressIndicator(
-                        progress = { (state.progressPercent / 100f).coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Text(
-                        "${state.progressPercent}%${state.networkLabel?.let { " · $it" }.orEmpty()}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    LinearProgressIndicator(progress = { (state.progressPercent / 100f).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                    Text("${state.progressPercent}%${state.networkLabel?.let { " · $it" }.orEmpty()}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
                 if (state.uploadStatus == "FAILED") {
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.errorContainer,
-                    ) {
-                        Text(
-                            "Upload failed, but the evidence remains queued safely on this device.",
-                            modifier = Modifier.padding(12.dp),
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                        )
-                    }
-                    Button(onClick = { retry(state.sessionId) }, modifier = Modifier.fillMaxWidth()) { Text("Retry upload") }
+                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.errorContainer) { Text("Upload failed, but evidence remains safely queued on this device.", Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onErrorContainer) }
+                    Button(onClick = { retry(state.sessionId) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Text("Retry upload") }
                 }
-                if (state.uploadStatus == "UPLOADED") {
-                    Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Done") }
-                }
+                if (state.uploadStatus == "UPLOADED") Button(onClick = onBack, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Text("Done") }
             }
         }
     }
@@ -637,31 +377,14 @@ private fun CaptureResult(state: VerificationUiState.Captured, retry: (String) -
 @Composable
 private fun ErrorState(message: String, canRetry: Boolean, retry: () -> Unit, onBack: () -> Unit) {
     val friendly = friendlyError(message)
-    Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f)),
-            shadowElevation = 8.dp,
-        ) {
-            Column(
-                Modifier.fillMaxWidth().padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Surface(
-                    modifier = Modifier.size(54.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.errorContainer,
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text("!", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold)
-                    }
-                }
+    Box(Modifier.fillMaxSize().padding(18.dp), contentAlignment = Alignment.Center) {
+        Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = .28f)), shadowElevation = 6.dp) {
+            Column(Modifier.fillMaxWidth().padding(21.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Surface(Modifier.size(50.dp), shape = CircleShape, color = MaterialTheme.colorScheme.errorContainer) { Box(contentAlignment = Alignment.Center) { Text("!", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold) } }
                 Text(friendly.first, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
                 Text(friendly.second, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-                Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-                if (canRetry) Button(onClick = retry, modifier = Modifier.fillMaxWidth()) { Text("Try again") }
+                Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) { Text(message, Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center) }
+                if (canRetry) Button(onClick = retry, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Text("Try again") }
                 TextButton(onClick = onBack) { Text("Back to inspection") }
             }
         }
@@ -671,55 +394,43 @@ private fun ErrorState(message: String, canRetry: Boolean, retry: () -> Unit, on
 private fun friendlyError(message: String): Pair<String, String> {
     val normalized = message.lowercase()
     return when {
-        "permission" in normalized || "camera" in normalized && "denied" in normalized ->
-            "Camera access is needed" to "Allow camera and location access, then retry verification."
-        "location" in normalized || "gps" in normalized ->
-            "Location could not be confirmed" to "Move to an open area, enable location services and try again."
-        "sensor" in normalized || "gyro" in normalized || "accelerometer" in normalized ->
-            "Motion sensing is unavailable" to "Keep the phone steady and retry. If this continues, this device may not support the required challenge."
-        "network" in normalized || "connection" in normalized || "timeout" in normalized ->
-            "Connection unavailable" to "Check your connection. Captured evidence is retained whenever the workflow can safely retry."
-        else -> "Verification could not continue" to "Nothing has been submitted incorrectly. Retry the step or return to the inspection."
+        "permission" in normalized || "camera" in normalized && "denied" in normalized -> "Camera access is needed" to "Allow camera and location access, then retry."
+        "location" in normalized || "gps" in normalized -> "Location could not be confirmed" to "Enable location services, move to an open area and try again."
+        "sensor" in normalized || "gyro" in normalized || "accelerometer" in normalized -> "Motion sensing is unavailable" to "Keep the phone steady and retry. This device may not support the required challenge if the error continues."
+        "network" in normalized || "connection" in normalized || "timeout" in normalized -> "Connection unavailable" to "Check the connection. Evidence is retained whenever the workflow can safely retry."
+        else -> "Verification could not continue" to "Nothing was submitted incorrectly. Retry or return to the inspection."
     }
 }
 
 @Composable
 private fun Loading(message: String) {
-    Column(
-        Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         CircularProgressIndicator()
-        Text(message, modifier = Modifier.padding(20.dp), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(message, Modifier.padding(18.dp), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
 private fun StatusRow(label: String, value: String) {
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 3.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(label, color = Color.White.copy(alpha = 0.66f))
-        Text(value, color = Color.White, fontWeight = FontWeight.Medium)
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = Color(0xFF9EA6B0), style = MaterialTheme.typography.bodySmall)
+        Text(value, color = Color.White, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
     }
 }
 
 @Composable
-private fun GlassPanel(
+private fun IndustrialOverlay(
     modifier: Modifier,
-    alpha: Float,
-    radius: Int = 26,
-    borderColor: Color = Color.White.copy(alpha = 0.14f),
+    radius: Int = 22,
+    borderColor: Color = OverlayLine,
     content: @Composable () -> Unit,
 ) {
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(radius.dp),
-        color = Color(0xFF101114).copy(alpha = alpha),
+        color = OverlaySurface.copy(alpha = .94f),
         border = BorderStroke(1.dp, borderColor),
-        shadowElevation = 8.dp,
+        shadowElevation = 7.dp,
         content = content,
     )
 }
