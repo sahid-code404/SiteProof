@@ -101,6 +101,9 @@ def claim_processing_job(
     """
     now = utc_now()
     _recover_expired_leases(db, now)
+    # SessionLocal has autoflush disabled. Persist recovered RUNNING -> RETRY transitions inside
+    # this transaction so the same claim call can immediately lease the recovered job.
+    db.flush()
     job = db.scalar(
         select(VerificationProcessingJob)
         .where(
