@@ -4,10 +4,6 @@ on:
   push:
     branches:
       - main
-      - phase5-visual-motion
-      - phase9-advanced-security
-      - phase10-environment-anomaly
-      - phase11-final-polish
     paths:
       - 'android/**'
       - '.github/workflows/android-dev-ota.yml'
@@ -38,33 +34,28 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Resolve update version and API
+      - name: Resolve monotonic update version
         id: version
         shell: bash
         run: |
-          VERSION_CODE=$((5000 + GITHUB_RUN_NUMBER))
-          VERSION_NAME="0.5.${GITHUB_RUN_NUMBER}"
-          API_BASE_URL="${{ vars.SITEPROOF_DEV_API_BASE_URL }}"
-          if [ -z "$API_BASE_URL" ]; then
-            echo "SITEPROOF_DEV_API_BASE_URL repository variable is required for OTA builds." >&2
-            exit 1
+          RUN_CODE=$((5000 + GITHUB_RUN_NUMBER))
+          CURRENT_CODE="$(curl -fsSL \
+            "https://github.com/sahid-code404/SiteProof/releases/download/dev-latest/siteproof-update.json?run=${GITHUB_RUN_ID}" \
+            2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["versionCode"])' \
+            2>/dev/null || true)"
+          if [[ "$CURRENT_CODE" =~ ^[0-9]+$ ]] && [ "$CURRENT_CODE" -ge "$RUN_CODE" ]; then
+            VERSION_CODE=$((CURRENT_CODE + 1))
+          else
+            VERSION_CODE=$RUN_CODE
           fi
-          case "$API_BASE_URL" in
-            http://*|https://*) ;;
-            *) echo "SITEPROOF_DEV_API_BASE_URL must be an absolute http(s) URL." >&2; exit 1 ;;
-          esac
-          case "$API_BASE_URL" in
-            */) ;;
-            *) API_BASE_URL="${API_BASE_URL}/" ;;
-          esac
+          VERSION_NAME="0.5.${GITHUB_RUN_NUMBER}"
           echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
-          echo "api=$API_BASE_URL" >> "$GITHUB_OUTPUT"
+          echo "Publishing OTA versionCode=$VERSION_CODE versionName=$VERSION_NAME"
 
       - name: Test and build stable-signed debug APK
         run: |
           gradle :app:testDebugUnitTest :app:assembleDebug --stacktrace \
-            -PSITEPROOF_API_BASE_URL="${{ steps.version.outputs.api }}" \
             -PSITEPROOF_VERSION_CODE="${{ steps.version.outputs.code }}" \
             -PSITEPROOF_VERSION_NAME="${{ steps.version.outputs.name }}"
 
@@ -81,7 +72,7 @@ jobs:
             "versionName": "${{ steps.version.outputs.name }}",
             "apkUrl": "https://github.com/sahid-code404/SiteProof/releases/download/dev-latest/SiteProof-debug.apk",
             "sha256": "$SHA256",
-            "notes": "Authoritative capture duration, conservative GPS accuracy, encoded-time countdown, upload progress and storage safeguards."
+            "notes": "Automatic local backend discovery and reliable challenge voice guidance."
           }
           JSON
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
@@ -101,7 +92,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          NOTES="OTA build for the SiteProof development package. SHA-256: ${{ steps.package.outputs.sha256 }}"
+          NOTES="Automatic SiteProof dev OTA. SHA-256: ${{ steps.package.outputs.sha256 }}"
           if gh release view dev-latest >/dev/null 2>&1; then
             git tag -f dev-latest "$GITHUB_SHA"
             git push origin refs/tags/dev-latest --force

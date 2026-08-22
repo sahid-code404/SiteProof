@@ -5,8 +5,6 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
-val siteProofApiBaseUrl = providers.gradleProperty("SITEPROOF_API_BASE_URL")
-    .orElse("http://10.0.2.2:8000/api/v1/")
 val siteProofVersionCode = providers.gradleProperty("SITEPROOF_VERSION_CODE")
     .orElse("5")
     .map(String::toInt)
@@ -36,7 +34,6 @@ android {
         targetSdk = 35
         versionCode = siteProofVersionCode.get()
         versionName = siteProofVersionName.get()
-        buildConfigField("String", "SITEPROOF_API_BASE_URL", "\"${siteProofApiBaseUrl.get()}\"")
         buildConfigField(
             "String",
             "SITEPROOF_UPDATE_MANIFEST_URL",

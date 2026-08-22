@@ -32,6 +32,7 @@ from app.models.inspection import (
 )
 from app.models.inspector import Inspector
 from app.models.organization import Organization
+from app.models.processing_job import VerificationProcessingJob
 from app.models.receipt import (
     EvidenceManifest,
     ReceiptLifecycleStatus,
@@ -109,6 +110,7 @@ __all__ = [
     "UserRole",
     "VerificationChallenge",
     "VerificationPolicy",
+    "VerificationProcessingJob",
     "VerificationProcessingStatus",
     "VerificationResult",
     "VerificationSession",

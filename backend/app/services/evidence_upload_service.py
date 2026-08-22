@@ -16,6 +16,7 @@ from app.schemas.session import EvidenceCompleteRequest, EvidenceFileResponse, V
 from app.services.audit_service import record_audit
 from app.services.evidence_common import REQUIRED_EVIDENCE, evidence_response, size_limit
 from app.services.manifest_service import validate_uploaded_evidence
+from app.services.processing_queue import enqueue_processing_job
 from app.services.session_service import owned_session, session_response, utc_now
 from app.services.storage_service import StorageService, get_storage_service
 
@@ -138,11 +139,12 @@ def complete_evidence_upload(
     storage: StorageService | None = None,
 ) -> VerificationSessionResponse:
     session = owned_session(db, current_user, session_id)
-    # Phase 5 may move an already-uploaded session into PROCESSING immediately. Preserve
-    # Phase 3's idempotent completion receipt so a delayed/retried Android request does not
-    # become an invalid state transition merely because background analysis has started.
+    # Keep completion idempotent, and repair a missing durable job if an older server completed
+    # the upload before the queue existed. The job insert/repair is committed before returning.
     if session.status in {VerificationSessionStatus.UPLOADED, VerificationSessionStatus.PROCESSING}:
         if session.manifest_sha256 == payload.manifest_sha256:
+            enqueue_processing_job(db, session.id, commit=False)
+            db.commit()
             return session_response(db, session)
         raise SiteProofError(409, "UPLOAD_ALREADY_COMPLETED", "Evidence upload is already complete.")
     if session.status not in {VerificationSessionStatus.UPLOADING, VerificationSessionStatus.UPLOAD_FAILED}:
@@ -182,6 +184,9 @@ def complete_evidence_upload(
         action="EVIDENCE_UPLOAD_COMPLETED",
         metadata={"manifestSha256": payload.manifest_sha256},
     )
+    # Critical durability invariant: the UPLOADED transition and queue row are one DB commit.
+    # A backend crash after this commit cannot lose verification processing work.
+    enqueue_processing_job(db, session.id, commit=False)
     db.commit()
     db.refresh(session)
     return session_response(db, session)
