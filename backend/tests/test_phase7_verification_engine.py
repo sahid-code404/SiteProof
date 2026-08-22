@@ -52,8 +52,19 @@ def test_default_policy_is_valid_and_totals_100():
     policy = default_policy_definition()
     validate_policy(policy)
     assert sum(policy.weights.values()) == pytest.approx(100.0)
+    assert policy.version == "1.1"
     assert policy.verified_threshold == 85.0
     assert policy.review_threshold == 65.0
+    assert policy.weights[VerificationSignalType.CHALLENGE_COMPLETION] == 30.0
+    assert policy.weights[VerificationSignalType.VISUAL_MOTION] == 25.0
+    assert policy.weights[VerificationSignalType.VISUAL_INERTIAL_CONSISTENCY] == 10.0
+    assert policy.required_signals == frozenset(
+        {
+            VerificationSignalType.LOCATION,
+            VerificationSignalType.CHALLENGE_COMPLETION,
+            VerificationSignalType.VISUAL_MOTION,
+        }
+    )
 
 
 def test_invalid_policy_threshold_order_is_rejected():
@@ -89,6 +100,30 @@ def test_missing_required_signal_is_inconclusive_not_zero_scored_fraud():
     ]
     decision = resolve_decision(signals, policy)
     assert decision.verdict == VerificationVerdict.INCONCLUSIVE
+
+
+def test_inconclusive_fusion_is_supporting_and_does_not_block_genuine_capture():
+    signals = [
+        replace(
+            signal,
+            status=VerificationSignalStatus.INCONCLUSIVE,
+            score=0.83,
+            confidence=0.75,
+            metrics={
+                "consistencyStatus": "INCONCLUSIVE",
+                "mismatchReasons": [],
+                "strongContradictionCount": 0,
+            },
+        )
+        if signal.type == VerificationSignalType.VISUAL_INERTIAL_CONSISTENCY
+        else signal
+        for signal in _all_good()
+    ]
+    decision = resolve_decision(signals, default_policy_definition())
+    assert decision.score > 90
+    assert decision.confidence > 0.80
+    assert decision.verdict == VerificationVerdict.VERIFIED
+    assert decision.hard_rules == []
 
 
 def test_optional_unavailable_signal_renormalizes_available_weight():
@@ -189,7 +224,7 @@ def test_phase6_inputs_flow_into_persisted_verification_api_and_review(client, d
     assert reviewer.status_code == 200, reviewer.text
     body = reviewer.json()
     assert body["status"] == "COMPLETED"
-    assert body["policy"]["version"] == "1.0"
+    assert body["policy"]["version"] == "1.1"
     assert body["policy"]["engineVersion"] == "verification-engine-v1.1"
     assert len(body["signals"]) == 7
 
