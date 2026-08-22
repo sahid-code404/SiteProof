@@ -64,13 +64,17 @@ def enqueue_processing_job(
 
 
 def _recover_expired_leases(db: Session, now: datetime) -> None:
+    # Lock expired rows before changing them so two PostgreSQL workers cannot both recover the
+    # same dead lease. SKIP LOCKED also keeps a healthy worker claim from blocking the queue.
     expired = list(
         db.scalars(
-            select(VerificationProcessingJob).where(
+            select(VerificationProcessingJob)
+            .where(
                 VerificationProcessingJob.status == "RUNNING",
                 VerificationProcessingJob.lease_expires_at.is_not(None),
                 VerificationProcessingJob.lease_expires_at <= now,
             )
+            .with_for_update(skip_locked=True)
         ).all()
     )
     for job in expired:
@@ -125,35 +129,55 @@ def claim_processing_job(
     return job
 
 
+def _active_attempt(
+    db: Session,
+    job_id: uuid.UUID,
+    attempt: int,
+) -> VerificationProcessingJob | None:
+    job = db.get(VerificationProcessingJob, job_id)
+    if job is None or job.status != "RUNNING" or job.attempts != attempt:
+        return None
+    return job
+
+
 def heartbeat_processing_job(
     db: Session,
     job_id: uuid.UUID,
+    attempt: int,
     *,
     lease_seconds: int = DEFAULT_LEASE_SECONDS,
 ) -> bool:
-    job = db.get(VerificationProcessingJob, job_id)
-    if job is None or job.status != "RUNNING":
+    # `attempt` is a fencing token. A stale worker from an expired lease cannot extend a newer
+    # worker's lease or later mark its replacement attempt complete.
+    job = _active_attempt(db, job_id, attempt)
+    if job is None:
         return False
     job.lease_expires_at = utc_now() + timedelta(seconds=max(30, lease_seconds))
     db.commit()
     return True
 
 
-def mark_processing_job_succeeded(db: Session, job_id: uuid.UUID) -> None:
-    job = db.get(VerificationProcessingJob, job_id)
+def mark_processing_job_succeeded(db: Session, job_id: uuid.UUID, attempt: int) -> bool:
+    job = _active_attempt(db, job_id, attempt)
     if job is None:
-        return
+        return False
     job.status = "COMPLETED"
     job.next_attempt_at = None
     job.lease_expires_at = None
     job.last_error = None
     db.commit()
+    return True
 
 
-def mark_processing_job_failed(db: Session, job_id: uuid.UUID, error: BaseException) -> None:
-    job = db.get(VerificationProcessingJob, job_id)
+def mark_processing_job_failed(
+    db: Session,
+    job_id: uuid.UUID,
+    attempt: int,
+    error: BaseException,
+) -> bool:
+    job = _active_attempt(db, job_id, attempt)
     if job is None:
-        return
+        return False
     job.last_error = (str(error) or error.__class__.__name__)[:MAX_ERROR_LENGTH]
     job.lease_expires_at = None
     if job.attempts >= job.max_attempts:
@@ -165,3 +189,4 @@ def mark_processing_job_failed(db: Session, job_id: uuid.UUID, error: BaseExcept
         job.status = "RETRY"
         job.next_attempt_at = utc_now() + timedelta(seconds=delay_seconds)
     db.commit()
+    return True
