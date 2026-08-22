@@ -46,9 +46,8 @@ jobs:
           VERSION_NAME="0.5.${GITHUB_RUN_NUMBER}"
           API_BASE_URL="${{ vars.SITEPROOF_DEV_API_BASE_URL }}"
           if [ -z "$API_BASE_URL" ]; then
-            # Explicit one-time local development OTA target requested for the current test device.
-            API_BASE_URL="http://192.168.1.102:8000/api/v1/"
-            echo "::notice::SITEPROOF_DEV_API_BASE_URL is unset; using the explicit local dev target $API_BASE_URL for this OTA build."
+            echo "SITEPROOF_DEV_API_BASE_URL repository variable is required for OTA builds." >&2
+            exit 1
           fi
           case "$API_BASE_URL" in
             http://*|https://*) ;;
@@ -82,7 +81,7 @@ jobs:
             "versionName": "${{ steps.version.outputs.name }}",
             "apkUrl": "https://github.com/sahid-code404/SiteProof/releases/download/dev-latest/SiteProof-debug.apk",
             "sha256": "$SHA256",
-            "notes": "Challenge voice guidance fix plus authoritative duration, GPS uncertainty, encoded-time countdown, upload progress and storage safeguards."
+            "notes": "Authoritative capture duration, conservative GPS accuracy, encoded-time countdown, upload progress and storage safeguards."
           }
           JSON
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
