@@ -79,14 +79,17 @@ fun VerificationScreen(
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         val cameraGranted = grants[Manifest.permission.CAMERA] == true ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        val microphoneGranted = grants[Manifest.permission.RECORD_AUDIO] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         val locationGranted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (cameraGranted && locationGranted) viewModel.permissionsGranted()
+        if (cameraGranted && microphoneGranted && locationGranted) viewModel.permissionsGranted()
     }
 
     fun requestPermissions() = launcher.launch(
         arrayOf(
             Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO,
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
         ),
@@ -253,13 +256,15 @@ private fun PermissionIntro(onBack: () -> Unit, onContinue: () -> Unit) {
     ) {
         Text("Verification", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "SiteProof needs camera and location access for a live site check.",
+            "SiteProof needs camera, microphone and location access for a live site check.",
             modifier = Modifier.padding(top = 8.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Spacer(Modifier.height(24.dp))
         PermissionLine("Camera", "Records the inspection while you complete the movement checks.")
+        Spacer(Modifier.height(14.dp))
+        PermissionLine("Microphone", "Records environmental audio with the verification video.")
         Spacer(Modifier.height(14.dp))
         PermissionLine("Location", "Confirms the capture starts near the assigned site.")
         Spacer(Modifier.height(14.dp))
