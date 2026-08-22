@@ -9,6 +9,7 @@ from app.services.advanced_signals_service import analyze_advanced_signals
 from app.services.fusion.service import analyze_session_fusion
 from app.services.receipt_service import issue_automated_receipt
 from app.services.receipt_signing import signing_enabled
+from app.services.verification.security_gate import SECURITY_ENGINE_VERSION
 from app.services.verification.service import calculate_verification
 from app.services.visual_analysis_service import analyze_session_visual_motion
 
@@ -27,10 +28,15 @@ def run_verification_pipeline(session_id: uuid.UUID) -> None:
         analyze_advanced_security(db, session_id, force=True)
         analyze_advanced_signals(db, session_id, force=True)
         result = calculate_verification(db, session_id, force=True)
-        if (
-            result.processing_status == VerificationProcessingStatus.COMPLETED
-            and signing_enabled()
-        ):
+        if result.engine_version != SECURITY_ENGINE_VERSION:
+            raise RuntimeError(
+                "Security analysis did not become authoritative; refusing to finalize a legacy verdict."
+            )
+        if result.processing_status != VerificationProcessingStatus.COMPLETED:
+            raise RuntimeError(
+                f"Verification pipeline did not reach a terminal result: {result.processing_status.value}."
+            )
+        if signing_enabled():
             issue_automated_receipt(db, result.id)
     except Exception:
         db.rollback()
