@@ -18,8 +18,8 @@ import okhttp3.Request
 import okhttp3.Response
 
 internal const val SITEPROOF_DISCOVERY_HOST = "siteproof.invalid"
-private const val SITEPROOF_BACKEND_PORT = 8000
-private const val DISCOVERY_PREFS = "siteproof_backend_discovery"
+private const val SITEPROOF_BACKEND_PORT = 8010
+private const val DISCOVERY_PREFS = "siteproof_backend_discovery_redesign_8010"
 private const val DISCOVERY_PREF_URL = "base_url"
 private const val MAX_DISCOVERY_CANDIDATES = 1022
 private const val DISCOVERY_THREADS = 48
@@ -32,14 +32,16 @@ private data class LocalNetworkIpv4(
 )
 
 /**
- * Finds the SiteProof development backend on the phone's current local network.
+ * Finds the redesign SiteProof development backend on the phone's current local network.
  *
- * The APK deliberately contains no machine IP address. A previously discovered endpoint is
- * validated first. Discovery then uses Android's actual IPv4 prefix instead of assuming /24.
- * The default gateway is tried first, normal /22-/23-/24 style LANs are scanned completely, and
- * unusually large subnets use a bounded set that prioritizes the phone's local /24 plus addresses
- * spread across the advertised subnet. The result is cached and automatically rediscovered after
- * a network change or connection failure.
+ * This branch deliberately contains no machine IP address. It discovers only the isolated
+ * redesign backend on host port 8010, so it cannot silently fall back to the normal SiteProof
+ * backend on port 8000. A previously discovered redesign endpoint is validated first.
+ * Discovery uses Android's actual IPv4 prefix instead of assuming /24. The default gateway is
+ * tried first, normal /22-/23-/24 style LANs are scanned completely, and unusually large subnets
+ * use a bounded set that prioritizes the phone's local /24 plus addresses spread across the
+ * advertised subnet. The result is cached and automatically rediscovered after a network change
+ * or connection failure.
  */
 internal class BackendEndpointResolver(context: Context) {
     private val appContext = context.applicationContext
@@ -60,24 +62,24 @@ internal class BackendEndpointResolver(context: Context) {
 
     fun resolve(): HttpUrl {
         val localNetwork = localNetworkIpv4()
-            ?: throw IOException("Connect this phone to the same local network as the SiteProof server.")
+            ?: throw IOException("Connect this phone to the same local network as the SiteProof redesign server.")
         val networkKey = "${localNetwork.address.hostAddress}/${localNetwork.prefixLength}"
 
-        resolved?.takeIf { resolvedNetwork == networkKey }?.let { return it }
+        resolved?.takeIf { resolvedNetwork == networkKey && it.port == SITEPROOF_BACKEND_PORT }?.let { return it }
 
         synchronized(this) {
-            resolved?.takeIf { resolvedNetwork == networkKey }?.let { return it }
+            resolved?.takeIf { resolvedNetwork == networkKey && it.port == SITEPROOF_BACKEND_PORT }?.let { return it }
 
             val persisted = preferences.getString(DISCOVERY_PREF_URL, null)?.toHttpUrlOrNull()
-            if (persisted != null && isHealthy(persisted)) {
+            if (persisted != null && persisted.port == SITEPROOF_BACKEND_PORT && isHealthy(persisted)) {
                 remember(persisted, networkKey)
                 return persisted
             }
 
             val discovered = discoverOnLocalSubnet(localNetwork)
                 ?: throw IOException(
-                    "Could not find the SiteProof server on this local network. " +
-                        "Make sure the backend is running and the phone is on the same network.",
+                    "Could not find the SiteProof redesign server on port $SITEPROOF_BACKEND_PORT. " +
+                        "Make sure the redesign backend is running and the phone is on the same local network.",
                 )
             remember(discovered, networkKey)
             return discovered
@@ -187,8 +189,6 @@ internal class BackendEndpointResolver(context: Context) {
                 candidate += 1L
             }
         } else {
-            // First cover the phone's immediate /24 because home, hotspot and lab servers are most
-            // commonly placed there even when DHCP advertises a wider subnet.
             val local24Network = own and 0xffffff00L
             val local24Broadcast = local24Network or 0xffL
             var candidate = maxOf(networkAddress + 1L, local24Network + 1L)
@@ -198,8 +198,6 @@ internal class BackendEndpointResolver(context: Context) {
                 candidate += 1L
             }
 
-            // Spend the remaining bounded budget evenly across the real subnet rather than silently
-            // assuming that every LAN is /24.
             val remaining = MAX_DISCOVERY_CANDIDATES - candidates.size
             if (remaining > 0 && usableHosts > 0) {
                 val stride = maxOf(1L, usableHosts / remaining.toLong())
@@ -231,6 +229,7 @@ internal class BackendEndpointResolver(context: Context) {
     ).joinToString(".")
 
     private fun isHealthy(endpoint: HttpUrl): Boolean {
+        if (endpoint.port != SITEPROOF_BACKEND_PORT) return false
         val healthUrl = endpoint.newBuilder()
             .encodedPath("/health")
             .query(null)
