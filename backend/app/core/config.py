@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     vision_continuity_weight: float = 0.10
 
     # Phase 6 deterministic visual-inertial consistency.
-    fusion_analysis_version: str = "fusion-v1.1"
+    fusion_analysis_version: str = "fusion-v1.0"
     fusion_resample_hz: float = 20.0
     fusion_max_alignment_lag_ms: int = 500
     fusion_strong_angle_error_deg: float = 8.0
