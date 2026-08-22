@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.processing_job import VerificationProcessingJob
@@ -18,6 +19,19 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _reuse_existing_job(
+    existing: VerificationProcessingJob,
+) -> VerificationProcessingJob:
+    # A terminal success is immutable. A manually repaired failed job can be re-queued only
+    # when it still has retry budget; normal transient failures are already RETRY jobs.
+    if existing.status == "FAILED" and existing.attempts < existing.max_attempts:
+        existing.status = "RETRY"
+        existing.next_attempt_at = utc_now()
+        existing.lease_expires_at = None
+        existing.last_error = None
+    return existing
+
+
 def enqueue_processing_job(
     db: Session,
     session_id: uuid.UUID,
@@ -25,23 +39,22 @@ def enqueue_processing_job(
     pipeline_version: str = PIPELINE_VERSION,
     commit: bool = False,
 ) -> VerificationProcessingJob:
-    """Create one durable job per session/pipeline without duplicating work."""
-    existing = db.scalar(
-        select(VerificationProcessingJob).where(
-            VerificationProcessingJob.session_id == session_id,
-            VerificationProcessingJob.pipeline_version == pipeline_version,
-        )
+    """Create one durable job per session/pipeline without duplicating work.
+
+    The database unique constraint is the final arbiter. A savepoint handles two API requests
+    racing between the initial SELECT and INSERT without rolling back the caller's upload
+    completion transaction.
+    """
+    query = select(VerificationProcessingJob).where(
+        VerificationProcessingJob.session_id == session_id,
+        VerificationProcessingJob.pipeline_version == pipeline_version,
     )
+    existing = db.scalar(query)
     if existing is not None:
-        # A terminal success is immutable. A manually repaired failed job can be re-queued only
-        # when it still has retry budget; normal transient failures are already RETRY jobs.
-        if existing.status == "FAILED" and existing.attempts < existing.max_attempts:
-            existing.status = "RETRY"
-            existing.next_attempt_at = utc_now()
-            existing.lease_expires_at = None
-            existing.last_error = None
+        existing = _reuse_existing_job(existing)
         if commit:
             db.commit()
+            db.refresh(existing)
         else:
             db.flush()
         return existing
@@ -54,12 +67,23 @@ def enqueue_processing_job(
         max_attempts=DEFAULT_MAX_ATTEMPTS,
         next_attempt_at=utc_now(),
     )
-    db.add(job)
+    try:
+        # begin_nested() creates a SAVEPOINT. If another transaction wins the unique insert,
+        # only this insert is rolled back; the surrounding evidence-completion transaction stays
+        # valid and can reuse the committed winner.
+        with db.begin_nested():
+            db.add(job)
+            db.flush()
+    except IntegrityError:
+        existing = db.scalar(query)
+        if existing is None:
+            raise
+        job = _reuse_existing_job(existing)
+        db.flush()
+
     if commit:
         db.commit()
         db.refresh(job)
-    else:
-        db.flush()
     return job
 
 
