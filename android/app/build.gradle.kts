@@ -11,7 +11,7 @@ val siteProofVersionCode = providers.gradleProperty("SITEPROOF_VERSION_CODE")
 val siteProofVersionName = providers.gradleProperty("SITEPROOF_VERSION_NAME")
     .orElse("0.5.0")
 val siteProofUpdateManifestUrl = providers.gradleProperty("SITEPROOF_UPDATE_MANIFEST_URL")
-    .orElse("https://github.com/sahid-code404/SiteProof/releases/download/dev-latest/siteproof-update.json")
+    .orElse("https://github.com/sahid-code404/SiteProof/releases/download/inspector-latest/siteproof-update.json")
 
 android {
     namespace = "com.siteproof.app"
