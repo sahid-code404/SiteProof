@@ -4,7 +4,6 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
-import com.siteproof.app.BuildConfig
 import com.siteproof.app.verification.model.AbortRequest
 import com.siteproof.app.verification.model.CaptureCompleteRequest
 import com.siteproof.app.verification.model.ChallengeIssue
@@ -42,6 +41,8 @@ import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Url
+
+private const val DISCOVERY_BASE_URL = "http://$SITEPROOF_DISCOVERY_HOST/api/v1/"
 
 interface SiteProofApi {
     @POST("auth/login")
@@ -196,8 +197,11 @@ class TokenStore(context: Context) : SessionStore {
 fun createApi(context: Context, tokenStore: SessionStore): SiteProofApi {
     val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
     val client = OkHttpClient.Builder()
+        // Resolve the local development backend at request time. OTA APKs are therefore portable
+        // across Wi-Fi networks and never contain a developer machine IP address.
+        .addInterceptor(BackendEndpointInterceptor(context))
         // CONNECTED WorkManager jobs already allow Wi-Fi and cellular. These larger budgets
-        // keep login, challenge and evidence requests usable on slower 3G/4G links too.
+        // keep login, challenge and evidence requests usable on slower links once an endpoint is reachable.
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
         .writeTimeout(120, TimeUnit.SECONDS)
@@ -213,7 +217,7 @@ fun createApi(context: Context, tokenStore: SessionStore): SiteProofApi {
         }
         .build()
     return Retrofit.Builder()
-        .baseUrl(BuildConfig.SITEPROOF_API_BASE_URL)
+        .baseUrl(DISCOVERY_BASE_URL)
         .client(client)
         .addConverterFactory(MoshiConverterFactory.create(moshi))
         .build()
