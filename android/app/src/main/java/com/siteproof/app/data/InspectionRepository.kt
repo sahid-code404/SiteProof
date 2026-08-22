@@ -23,7 +23,17 @@ class InspectionRepository(
     }
 
     suspend fun login(email: String, password: String): AuthUser {
-        val response = api.login(LoginRequest(email.trim(), password))
+        val response = try {
+            api.login(LoginRequest(email.trim(), password))
+        } catch (error: HttpException) {
+            when (error.code()) {
+                401 -> throw IllegalArgumentException("Invalid email or password.")
+                404 -> throw IllegalStateException(
+                    "SiteProof login API was not found on this server (HTTP 404). Open Server settings and run Test & save server.",
+                )
+                else -> throw error
+            }
+        }
         require(response.user.role == "INSPECTOR") { "This Android app is for inspector accounts." }
         cache.clear()
         tokenStore.accessToken = response.accessToken
