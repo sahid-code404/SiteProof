@@ -9,12 +9,10 @@ from app.models.trust import VerificationPolicy, VerificationSignalType
 from app.services.verification.domain import PolicyDefinition
 
 DEFAULT_POLICY_NAME = "Infrastructure Field Verification"
-# v1.2 reflects what a human field capture can reliably prove. Randomized challenge success
-# is the primary liveness signal; visible camera evidence and physical location carry most of
-# the remaining score. Fine-grained gyro/fusion agreement remains valuable anti-spoofing
-# evidence through hard rules, but ordinary angle/timing differences are intentionally only a
-# small numeric influence.
-DEFAULT_POLICY_VERSION = "1.2"
+# v1.3 keeps the human-tolerant evidence weighting from v1.2 but raises automatic approval
+# to a stricter 90/100 score. Captures below 90 remain reviewable instead of being auto-approved,
+# while the 70% minimum confidence and all hard-rule anti-spoofing protections stay unchanged.
+DEFAULT_POLICY_VERSION = "1.3"
 DEFAULT_WEIGHTS = {
     VerificationSignalType.LOCATION: 20.0,
     VerificationSignalType.SESSION_TIME: 3.0,
@@ -27,7 +25,7 @@ DEFAULT_WEIGHTS = {
 # Only signals fundamental to a normal field proof are mandatory. Sensor quality, precise
 # timing, scene continuity and visual-inertial fusion remain recorded/scored and can still
 # constrain the verdict through hard rules. Inconclusive supporting measurements alone do not
-# invalidate an otherwise strong 3/3 genuine human capture.
+# invalidate an otherwise strong genuine human capture.
 DEFAULT_REQUIRED = frozenset(
     {
         VerificationSignalType.LOCATION,
@@ -69,7 +67,7 @@ def default_policy_definition() -> PolicyDefinition:
     definition = PolicyDefinition(
         name=DEFAULT_POLICY_NAME,
         version=DEFAULT_POLICY_VERSION,
-        verified_threshold=85.0,
+        verified_threshold=90.0,
         review_threshold=65.0,
         minimum_required_confidence=0.70,
         weights=dict(DEFAULT_WEIGHTS),
