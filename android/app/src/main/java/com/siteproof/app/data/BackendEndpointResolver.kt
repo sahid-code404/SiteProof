@@ -3,6 +3,7 @@ package com.siteproof.app.data
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import com.siteproof.app.BuildConfig
 import java.io.IOException
 import java.net.Inet4Address
 import java.util.concurrent.Callable
@@ -25,6 +26,7 @@ private const val MAX_DISCOVERY_CANDIDATES = 1022
 private const val DISCOVERY_THREADS = 48
 private const val DISCOVERY_DEADLINE_SECONDS = 7L
 private const val ADB_REVERSE_NETWORK_KEY = "adb-reverse"
+private const val PRECONFIGURED_NETWORK_KEY = "preconfigured"
 
 private data class LocalNetworkIpv4(
     val address: Inet4Address,
@@ -35,27 +37,30 @@ private data class LocalNetworkIpv4(
 /**
  * Finds the redesign SiteProof development backend.
  *
- * Resolution order is intentionally development-friendly and contains no machine IP address:
- * 1. Try 127.0.0.1:8010 so a physical device can use `adb reverse tcp:8010 tcp:8010`.
- *    This works even on campus/enterprise Wi-Fi that isolates clients from each other.
- * 2. Fall back to LAN discovery of the isolated redesign backend on host port 8010.
+ * Resolution order:
+ * 1. 127.0.0.1:8010 for `adb reverse tcp:8010 tcp:8010`.
+ * 2. Debug-build preconfigured backend URL, currently the active Fedora redesign backend.
+ * 3. Last known healthy endpoint.
+ * 4. Automatic LAN discovery on port 8010.
  *
- * LAN discovery uses Android's actual IPv4 prefix instead of assuming /24. The default gateway
- * is tried first, normal /22-/23-/24 style LANs are scanned completely, and unusually large
- * subnets use a bounded set that prioritizes the phone's local /24 plus addresses spread across
- * the advertised subnet. A validated endpoint is cached and rediscovered after failures.
+ * The preconfigured address is only a debug convenience. If it changes or is blocked by the
+ * network, the resolver continues automatically instead of failing on that address.
  */
 internal class BackendEndpointResolver(context: Context) {
     private val appContext = context.applicationContext
     private val connectivity = appContext.getSystemService(ConnectivityManager::class.java)
     private val preferences = appContext.getSharedPreferences(DISCOVERY_PREFS, Context.MODE_PRIVATE)
     private val probeClient = OkHttpClient.Builder()
-        .connectTimeout(250, TimeUnit.MILLISECONDS)
-        .readTimeout(450, TimeUnit.MILLISECONDS)
-        .callTimeout(650, TimeUnit.MILLISECONDS)
+        .connectTimeout(300, TimeUnit.MILLISECONDS)
+        .readTimeout(600, TimeUnit.MILLISECONDS)
+        .callTimeout(800, TimeUnit.MILLISECONDS)
         .retryOnConnectionFailure(false)
         .build()
     private val adbReverseEndpoint = "http://127.0.0.1:$SITEPROOF_BACKEND_PORT/api/v1/".toHttpUrl()
+    private val preconfiguredEndpoint = BuildConfig.SITEPROOF_DEV_BACKEND_URL
+        .trim()
+        .takeIf(String::isNotEmpty)
+        ?.toHttpUrlOrNull()
 
     @Volatile
     private var resolved: HttpUrl? = null
@@ -65,19 +70,27 @@ internal class BackendEndpointResolver(context: Context) {
 
     fun resolve(): HttpUrl {
         synchronized(this) {
-            // ADB reverse is the fastest and most reliable development path on networks with
-            // AP/client isolation. Probe it first on every resolution attempt; if no reverse
-            // mapping exists the short timeout makes this inexpensive.
+            // Works even when the Wi-Fi isolates clients, as long as USB debugging is connected
+            // and `adb reverse tcp:8010 tcp:8010` is active.
             if (isHealthy(adbReverseEndpoint)) {
                 remember(adbReverseEndpoint, ADB_REVERSE_NETWORK_KEY)
                 return adbReverseEndpoint
             }
 
+            // Fast path for the current development machine. Never trust it blindly: the health
+            // check must succeed, otherwise continue to cached/LAN discovery.
+            preconfiguredEndpoint
+                ?.takeIf { it.port == SITEPROOF_BACKEND_PORT && isHealthy(it) }
+                ?.let {
+                    remember(it, PRECONFIGURED_NETWORK_KEY)
+                    return it
+                }
+
             val localNetwork = localNetworkIpv4()
                 ?: throw IOException(
                     "Could not reach the SiteProof redesign server on port $SITEPROOF_BACKEND_PORT. " +
-                        "Connect to the same local network, or connect USB debugging and run " +
-                        "`adb reverse tcp:$SITEPROOF_BACKEND_PORT tcp:$SITEPROOF_BACKEND_PORT`.",
+                        "Use USB debugging with `adb reverse tcp:$SITEPROOF_BACKEND_PORT tcp:$SITEPROOF_BACKEND_PORT`, " +
+                        "or connect to a local network that allows device-to-device traffic.",
                 )
             val networkKey = "${localNetwork.address.hostAddress}/${localNetwork.prefixLength}"
 
@@ -96,9 +109,8 @@ internal class BackendEndpointResolver(context: Context) {
             val discovered = discoverOnLocalSubnet(localNetwork)
                 ?: throw IOException(
                     "Could not find the SiteProof redesign server on port $SITEPROOF_BACKEND_PORT. " +
-                        "This Wi-Fi may block device-to-device traffic. Connect USB debugging and run " +
-                        "`adb reverse tcp:$SITEPROOF_BACKEND_PORT tcp:$SITEPROOF_BACKEND_PORT`, " +
-                        "or use a local network that allows client communication.",
+                        "This Wi-Fi may block device-to-device traffic. Keep USB connected and run " +
+                        "`adb reverse tcp:$SITEPROOF_BACKEND_PORT tcp:$SITEPROOF_BACKEND_PORT`.",
                 )
             remember(discovered, networkKey)
             return discovered
