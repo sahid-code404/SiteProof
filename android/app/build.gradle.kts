@@ -6,10 +6,10 @@ plugins {
 }
 
 val siteProofVersionCode = providers.gradleProperty("SITEPROOF_VERSION_CODE")
-    .orElse("6")
+    .orElse("7")
     .map(String::toInt)
 val siteProofVersionName = providers.gradleProperty("SITEPROOF_VERSION_NAME")
-    .orElse("0.6.0")
+    .orElse("0.7.0")
 val siteProofUpdateManifestUrl = providers.gradleProperty("SITEPROOF_UPDATE_MANIFEST_URL")
     .orElse("https://github.com/sahid-code404/SiteProof/releases/download/dev-latest/siteproof-update.json")
 
@@ -52,8 +52,8 @@ android {
             // share the stable development certificate and can update in place.
             applicationIdSuffix = ".dev"
             signingConfig = signingConfigs.getByName("devDebug")
-            // Current Fedora redesign backend. The resolver still prefers adb reverse first and
-            // automatically falls back to normal LAN discovery if this address is unreachable.
+            // Current Fedora redesign backend. The runtime still attempts the ADB reverse tunnel
+            // directly first and then falls back to this address and LAN discovery.
             buildConfigField(
                 "String",
                 "SITEPROOF_DEV_BACKEND_URL",
