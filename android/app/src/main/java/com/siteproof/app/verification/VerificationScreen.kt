@@ -2,7 +2,10 @@ package com.siteproof.app.verification
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -41,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -50,6 +54,19 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.siteproof.app.verification.model.ChallengeValidationResult
 import kotlin.math.ceil
 import kotlin.math.roundToInt
+
+private val RequiredVerificationPermissions = listOf(
+    Manifest.permission.CAMERA,
+    Manifest.permission.RECORD_AUDIO,
+    Manifest.permission.ACCESS_FINE_LOCATION,
+)
+
+private fun permissionLabel(permission: String): String = when (permission) {
+    Manifest.permission.CAMERA -> "Camera"
+    Manifest.permission.RECORD_AUDIO -> "Microphone"
+    Manifest.permission.ACCESS_FINE_LOCATION -> "Precise location"
+    else -> "Required permission"
+}
 
 @Composable
 fun VerificationScreen(
@@ -61,6 +78,8 @@ fun VerificationScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val activity = context as? Activity
     var showAbortDialog by remember { mutableStateOf(false) }
+    var permissionMessage by remember { mutableStateOf<String?>(null) }
+    var permissionRequiresSettings by remember { mutableStateOf(false) }
     val live = isLiveState(state)
 
     DisposableEffect(activity) {
@@ -77,23 +96,48 @@ fun VerificationScreen(
     }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
-        val cameraGranted = grants[Manifest.permission.CAMERA] == true ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-        val microphoneGranted = grants[Manifest.permission.RECORD_AUDIO] == true ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        val locationGranted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (cameraGranted && microphoneGranted && locationGranted) viewModel.permissionsGranted()
+        val missing = RequiredVerificationPermissions.filter { permission ->
+            grants[permission] != true &&
+                ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (missing.isEmpty()) {
+            permissionMessage = null
+            permissionRequiresSettings = false
+            viewModel.permissionsGranted()
+        } else {
+            val names = missing.map(::permissionLabel).joinToString()
+            val blocked = activity != null && missing.any { permission ->
+                !ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
+            }
+            permissionRequiresSettings = blocked
+            permissionMessage = if (blocked) {
+                "$names access is disabled for SiteProof. Open App settings, allow the required permissions, then return and check again."
+            } else {
+                "SiteProof still needs: $names. Allow the requested permissions to start verification."
+            }
+        }
     }
 
-    fun requestPermissions() = launcher.launch(
-        arrayOf(
-            Manifest.permission.CAMERA,
-            Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-        ),
-    )
+    fun requestPermissions() {
+        permissionMessage = null
+        launcher.launch(
+            arrayOf(
+                Manifest.permission.CAMERA,
+                Manifest.permission.RECORD_AUDIO,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+            ),
+        )
+    }
+
+    fun openAppSettings() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    }
 
     BackHandler(enabled = state is VerificationUiState.Ready) { viewModel.cancelPrepared(onBack) }
     BackHandler(enabled = live) { showAbortDialog = true }
@@ -133,7 +177,13 @@ fun VerificationScreen(
                 }
             } else {
                 when (current) {
-                    VerificationUiState.PermissionIntro -> PermissionIntro(onBack, ::requestPermissions)
+                    VerificationUiState.PermissionIntro -> PermissionIntro(
+                        onBack = onBack,
+                        onContinue = ::requestPermissions,
+                        permissionMessage = permissionMessage,
+                        requiresSettings = permissionRequiresSettings,
+                        onOpenSettings = ::openAppSettings,
+                    )
                     VerificationUiState.Preparing -> Loading("Preparing verification…")
                     is VerificationUiState.Captured -> CaptureResult(current, viewModel::retryUpload, onBack)
                     is VerificationUiState.Error -> ErrorState(
@@ -249,7 +299,13 @@ private fun PersistentCameraHost(
 }
 
 @Composable
-private fun PermissionIntro(onBack: () -> Unit, onContinue: () -> Unit) {
+private fun PermissionIntro(
+    onBack: () -> Unit,
+    onContinue: () -> Unit,
+    permissionMessage: String?,
+    requiresSettings: Boolean,
+    onOpenSettings: () -> Unit,
+) {
     Column(
         modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 32.dp),
         verticalArrangement = Arrangement.Center,
@@ -270,8 +326,28 @@ private fun PermissionIntro(onBack: () -> Unit, onContinue: () -> Unit) {
         Spacer(Modifier.height(14.dp))
         PermissionLine("Motion sensors", "Measures the requested phone movement.")
 
+        if (!permissionMessage.isNullOrBlank()) {
+            Text(
+                permissionMessage,
+                modifier = Modifier.padding(top = 20.dp),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+
         Spacer(Modifier.height(28.dp))
-        Button(onClick = onContinue, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Continue") }
+        if (requiresSettings) {
+            Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth().height(50.dp)) {
+                Text("Open app settings")
+            }
+            TextButton(onClick = onContinue, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Text("Check permissions again")
+            }
+        } else {
+            Button(onClick = onContinue, modifier = Modifier.fillMaxWidth().height(50.dp)) {
+                Text(if (permissionMessage == null) "Continue" else "Retry permissions")
+            }
+        }
         TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Back") }
     }
 }
