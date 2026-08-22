@@ -21,14 +21,25 @@ internal const val SITEPROOF_DISCOVERY_HOST = "siteproof.invalid"
 private const val SITEPROOF_BACKEND_PORT = 8000
 private const val DISCOVERY_PREFS = "siteproof_backend_discovery"
 private const val DISCOVERY_PREF_URL = "base_url"
+private const val MAX_DISCOVERY_CANDIDATES = 1022
+private const val DISCOVERY_THREADS = 48
+private const val DISCOVERY_DEADLINE_SECONDS = 7L
+
+private data class LocalNetworkIpv4(
+    val address: Inet4Address,
+    val prefixLength: Int,
+    val gateway: Inet4Address?,
+)
 
 /**
  * Finds the SiteProof development backend on the phone's current local network.
  *
  * The APK deliberately contains no machine IP address. A previously discovered endpoint is
- * validated first, then the phone's current IPv4 /24 is probed in parallel for the SiteProof
- * /health signature. The result is cached and automatically rediscovered after a network change
- * or connection failure.
+ * validated first. Discovery then uses Android's actual IPv4 prefix instead of assuming /24.
+ * The default gateway is tried first, normal /22-/23-/24 style LANs are scanned completely, and
+ * unusually large subnets use a bounded set that prioritizes the phone's local /24 plus addresses
+ * spread across the advertised subnet. The result is cached and automatically rediscovered after
+ * a network change or connection failure.
  */
 internal class BackendEndpointResolver(context: Context) {
     private val appContext = context.applicationContext
@@ -48,9 +59,9 @@ internal class BackendEndpointResolver(context: Context) {
     private var resolvedNetwork: String? = null
 
     fun resolve(): HttpUrl {
-        val localAddress = localWifiIpv4()
+        val localNetwork = localNetworkIpv4()
             ?: throw IOException("Connect this phone to the same local network as the SiteProof server.")
-        val networkKey = localAddress.hostAddress.orEmpty()
+        val networkKey = "${localNetwork.address.hostAddress}/${localNetwork.prefixLength}"
 
         resolved?.takeIf { resolvedNetwork == networkKey }?.let { return it }
 
@@ -63,9 +74,9 @@ internal class BackendEndpointResolver(context: Context) {
                 return persisted
             }
 
-            val discovered = discoverOnLocalSubnet(localAddress)
+            val discovered = discoverOnLocalSubnet(localNetwork)
                 ?: throw IOException(
-                    "Could not find the SiteProof server on this Wi-Fi network. " +
+                    "Could not find the SiteProof server on this local network. " +
                         "Make sure the backend is running and the phone is on the same network.",
                 )
             remember(discovered, networkKey)
@@ -92,47 +103,50 @@ internal class BackendEndpointResolver(context: Context) {
         preferences.edit().putString(DISCOVERY_PREF_URL, endpoint.toString()).apply()
     }
 
-    private fun localWifiIpv4(): Inet4Address? {
-        val networks = connectivity.allNetworks
-        for (network in networks) {
+    private fun localNetworkIpv4(): LocalNetworkIpv4? {
+        for (network in connectivity.allNetworks) {
             val capabilities = connectivity.getNetworkCapabilities(network) ?: continue
             val localTransport = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
                 capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
             if (!localTransport) continue
 
-            val address = connectivity.getLinkProperties(network)
-                ?.linkAddresses
-                ?.asSequence()
-                ?.map { it.address }
-                ?.filterIsInstance<Inet4Address>()
-                ?.firstOrNull { !it.isLoopbackAddress && !it.isLinkLocalAddress }
-            if (address != null) return address
+            val linkProperties = connectivity.getLinkProperties(network) ?: continue
+            val linkAddress = linkProperties.linkAddresses.firstOrNull { candidate ->
+                val address = candidate.address
+                address is Inet4Address && !address.isLoopbackAddress && !address.isLinkLocalAddress
+            } ?: continue
+            val address = linkAddress.address as Inet4Address
+            val gateway = linkProperties.routes
+                .asSequence()
+                .mapNotNull { route -> route.gateway as? Inet4Address }
+                .firstOrNull { !it.isLoopbackAddress && !it.isLinkLocalAddress }
+
+            return LocalNetworkIpv4(
+                address = address,
+                prefixLength = linkAddress.prefixLength.coerceIn(0, 32),
+                gateway = gateway,
+            )
         }
         return null
     }
 
-    private fun discoverOnLocalSubnet(localAddress: Inet4Address): HttpUrl? {
-        val octets = localAddress.address.map { it.toInt() and 0xff }
-        if (octets.size != 4) return null
-        val prefix = "${octets[0]}.${octets[1]}.${octets[2]}"
-        val ownHost = octets[3]
+    private fun discoverOnLocalSubnet(localNetwork: LocalNetworkIpv4): HttpUrl? {
+        val candidates = discoveryCandidates(localNetwork)
+        if (candidates.isEmpty()) return null
 
-        // Keep discovery bounded and fast. Home/lab Wi-Fi deployments almost always place the
-        // phone and development host in the same /24 even when the upstream network is broader.
-        val hosts = (1..254).filter { it != ownHost }
-        val executor = Executors.newFixedThreadPool(32)
+        val executor = Executors.newFixedThreadPool(minOf(DISCOVERY_THREADS, candidates.size))
         val completion = ExecutorCompletionService<HttpUrl?>(executor)
 
         return try {
-            hosts.forEach { host ->
+            candidates.forEach { host ->
                 completion.submit(Callable {
-                    val endpoint = "http://$prefix.$host:$SITEPROOF_BACKEND_PORT/api/v1/".toHttpUrl()
+                    val endpoint = "http://$host:$SITEPROOF_BACKEND_PORT/api/v1/".toHttpUrl()
                     if (isHealthy(endpoint)) endpoint else null
                 })
             }
 
-            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
-            repeat(hosts.size) {
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(DISCOVERY_DEADLINE_SECONDS)
+            repeat(candidates.size) {
                 val remaining = deadline - System.nanoTime()
                 if (remaining <= 0L) return@repeat
                 val result = completion.poll(remaining, TimeUnit.NANOSECONDS) ?: return@repeat
@@ -147,6 +161,74 @@ internal class BackendEndpointResolver(context: Context) {
             executor.shutdownNow()
         }
     }
+
+    private fun discoveryCandidates(localNetwork: LocalNetworkIpv4): List<String> {
+        val own = ipv4ToLong(localNetwork.address)
+        val prefixLength = localNetwork.prefixLength
+        val mask = when (prefixLength) {
+            0 -> 0L
+            else -> (0xffffffffL shl (32 - prefixLength)) and 0xffffffffL
+        }
+        val networkAddress = own and mask
+        val broadcastAddress = networkAddress or (mask.inv() and 0xffffffffL)
+        val usableHosts = (broadcastAddress - networkAddress - 1L).coerceAtLeast(0L)
+        val candidates = linkedSetOf<Long>()
+
+        localNetwork.gateway?.let(::ipv4ToLong)?.let { gateway ->
+            if (gateway != own && gateway in (networkAddress + 1L) until broadcastAddress) {
+                candidates += gateway
+            }
+        }
+
+        if (usableHosts <= MAX_DISCOVERY_CANDIDATES) {
+            var candidate = networkAddress + 1L
+            while (candidate < broadcastAddress) {
+                if (candidate != own) candidates += candidate
+                candidate += 1L
+            }
+        } else {
+            // First cover the phone's immediate /24 because home, hotspot and lab servers are most
+            // commonly placed there even when DHCP advertises a wider subnet.
+            val local24Network = own and 0xffffff00L
+            val local24Broadcast = local24Network or 0xffL
+            var candidate = maxOf(networkAddress + 1L, local24Network + 1L)
+            val local24End = minOf(broadcastAddress, local24Broadcast)
+            while (candidate < local24End && candidates.size < MAX_DISCOVERY_CANDIDATES) {
+                if (candidate != own) candidates += candidate
+                candidate += 1L
+            }
+
+            // Spend the remaining bounded budget evenly across the real subnet rather than silently
+            // assuming that every LAN is /24.
+            val remaining = MAX_DISCOVERY_CANDIDATES - candidates.size
+            if (remaining > 0 && usableHosts > 0) {
+                val stride = maxOf(1L, usableHosts / remaining.toLong())
+                candidate = networkAddress + 1L
+                while (candidate < broadcastAddress && candidates.size < MAX_DISCOVERY_CANDIDATES) {
+                    if (candidate != own) candidates += candidate
+                    candidate += stride
+                }
+            }
+        }
+
+        return candidates
+            .asSequence()
+            .filter { it != own }
+            .take(MAX_DISCOVERY_CANDIDATES)
+            .map(::longToIpv4)
+            .toList()
+    }
+
+    private fun ipv4ToLong(address: Inet4Address): Long = address.address.fold(0L) { value, octet ->
+        (value shl 8) or (octet.toInt() and 0xff).toLong()
+    }
+
+    private fun longToIpv4(value: Long): String = listOf(
+        (value shr 24) and 0xff,
+        (value shr 16) and 0xff,
+        (value shr 8) and 0xff,
+        value and 0xff,
+    ).joinToString(".")
 
     private fun isHealthy(endpoint: HttpUrl): Boolean {
         val healthUrl = endpoint.newBuilder()
