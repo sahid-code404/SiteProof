@@ -52,12 +52,14 @@ def test_default_policy_is_valid_and_totals_100():
     policy = default_policy_definition()
     validate_policy(policy)
     assert sum(policy.weights.values()) == pytest.approx(100.0)
-    assert policy.version == "1.1"
+    assert policy.version == "1.2"
     assert policy.verified_threshold == 85.0
     assert policy.review_threshold == 65.0
-    assert policy.weights[VerificationSignalType.CHALLENGE_COMPLETION] == 30.0
-    assert policy.weights[VerificationSignalType.VISUAL_MOTION] == 25.0
-    assert policy.weights[VerificationSignalType.VISUAL_INERTIAL_CONSISTENCY] == 10.0
+    assert policy.weights[VerificationSignalType.CHALLENGE_COMPLETION] == 45.0
+    assert policy.weights[VerificationSignalType.LOCATION] == 20.0
+    assert policy.weights[VerificationSignalType.VISUAL_MOTION] == 20.0
+    assert policy.weights[VerificationSignalType.VISUAL_INERTIAL_CONSISTENCY] == 1.0
+    assert policy.weights[VerificationSignalType.SENSOR_QUALITY] == 1.0
     assert policy.required_signals == frozenset(
         {
             VerificationSignalType.LOCATION,
@@ -122,6 +124,68 @@ def test_inconclusive_fusion_is_supporting_and_does_not_block_genuine_capture():
     decision = resolve_decision(signals, default_policy_definition())
     assert decision.score > 90
     assert decision.confidence > 0.80
+    assert decision.verdict == VerificationVerdict.VERIFIED
+    assert decision.hard_rules == []
+
+
+def test_human_tolerant_policy_verifies_three_pass_capture_with_supporting_uncertainty():
+    """Calibration regression from genuine handheld captures: good core evidence wins.
+
+    Fine-grained sensor/fusion uncertainty may lower confidence, but 3/3 successful
+    randomized challenges, strong location, continuous video and usable visual motion
+    remain sufficient for automatic verification when no hard contradiction exists.
+    """
+    replacements = {
+        VerificationSignalType.CHALLENGE_COMPLETION: dict(
+            score=0.813,
+            confidence=0.581,
+            status=VerificationSignalStatus.PASS,
+            metrics={"passed": 3, "failed": 0, "inconclusive": 0},
+        ),
+        VerificationSignalType.LOCATION: dict(
+            score=0.971,
+            confidence=0.94,
+            status=VerificationSignalStatus.PASS,
+        ),
+        VerificationSignalType.SCENE_CONTINUITY: dict(
+            score=1.0,
+            confidence=0.879,
+            status=VerificationSignalStatus.PASS,
+            metrics={"majorDiscontinuity": False},
+        ),
+        VerificationSignalType.SENSOR_QUALITY: dict(
+            score=0.581,
+            confidence=0.685,
+            status=VerificationSignalStatus.PARTIAL,
+        ),
+        VerificationSignalType.SESSION_TIME: dict(
+            score=1.0,
+            confidence=0.90,
+            status=VerificationSignalStatus.PASS,
+        ),
+        VerificationSignalType.VISUAL_INERTIAL_CONSISTENCY: dict(
+            score=0.665,
+            confidence=0.718,
+            status=VerificationSignalStatus.INCONCLUSIVE,
+            metrics={
+                "consistencyStatus": "INCONCLUSIVE",
+                "mismatchReasons": ["MAGNITUDE_MISMATCH", "TEMPORAL_MISMATCH"],
+                "strongContradictionCount": 0,
+            },
+        ),
+        VerificationSignalType.VISUAL_MOTION: dict(
+            score=0.741,
+            confidence=0.879,
+            status=VerificationSignalStatus.PARTIAL,
+        ),
+    }
+    signals = [
+        replace(signal, **replacements.get(signal.type, {}))
+        for signal in _all_good()
+    ]
+    decision = resolve_decision(signals, default_policy_definition())
+    assert decision.score >= 85.0
+    assert decision.confidence >= 0.70
     assert decision.verdict == VerificationVerdict.VERIFIED
     assert decision.hard_rules == []
 
@@ -224,7 +288,7 @@ def test_phase6_inputs_flow_into_persisted_verification_api_and_review(client, d
     assert reviewer.status_code == 200, reviewer.text
     body = reviewer.json()
     assert body["status"] == "COMPLETED"
-    assert body["policy"]["version"] == "1.1"
+    assert body["policy"]["version"] == "1.2"
     assert body["policy"]["engineVersion"] == "verification-engine-v1.1"
     assert len(body["signals"]) == 7
 
