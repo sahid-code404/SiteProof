@@ -6,6 +6,7 @@ import 'leaflet/dist/leaflet.css'
 import App from './App'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import './industrial.css'
+import './workspace-pages.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {
