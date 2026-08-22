@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,11 +45,13 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.siteproof.app.R
 import com.siteproof.app.data.BackendEndpointSettings
+import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
     val appContext = LocalContext.current.applicationContext
     val backendSettings = remember(appContext) { BackendEndpointSettings(appContext) }
+    val scope = rememberCoroutineScope()
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -56,6 +59,7 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
     var backendEndpoint by remember { mutableStateOf(backendSettings.configuredEndpoint().orEmpty()) }
     var backendStatus by remember { mutableStateOf<String?>(null) }
     var backendError by remember { mutableStateOf<String?>(null) }
+    var backendCheckInProgress by remember { mutableStateOf(false) }
     val loading = state is AuthState.Loading
 
     Box(
@@ -99,7 +103,7 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
                     value = email,
                     onValueChange = { email = it },
                     label = { Text("Email") },
-                    enabled = !loading,
+                    enabled = !loading && !backendCheckInProgress,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     modifier = Modifier.fillMaxWidth(),
@@ -113,11 +117,11 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     trailingIcon = {
-                        IconButton(onClick = { passwordVisible = !passwordVisible }, enabled = !loading) {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }, enabled = !loading && !backendCheckInProgress) {
                             Icon(imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility, contentDescription = if (passwordVisible) "Hide password" else "Show password")
                         }
                     },
-                    enabled = !loading,
+                    enabled = !loading && !backendCheckInProgress,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
@@ -129,7 +133,7 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
                         backendStatus = null
                         backendError = null
                     },
-                    enabled = !loading,
+                    enabled = !loading && !backendCheckInProgress,
                     modifier = Modifier.align(Alignment.End),
                 ) {
                     Text(if (serverSettingsOpen) "Hide server settings" else "Server settings")
@@ -148,7 +152,7 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
                         ) {
                             Text("Backend connection", style = MaterialTheme.typography.titleSmall)
                             Text(
-                                "Automatic discovery is used by default. If discovery reaches the wrong server, enter the backend IP or URL here.",
+                                "Automatic discovery is used by default. If login returns HTTP 404, enter the backend IP or URL here and test it before signing in.",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall,
                             )
@@ -163,26 +167,39 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
                                 label = { Text("Backend IP or URL") },
                                 placeholder = { Text("192.168.1.102:8000") },
                                 singleLine = true,
-                                enabled = !loading,
+                                enabled = !loading && !backendCheckInProgress,
                                 shape = RoundedCornerShape(14.dp),
                             )
                             Button(
                                 onClick = {
-                                    val result = runCatching { backendSettings.configure(backendEndpoint) }
-                                    result.onSuccess { normalized ->
-                                        backendEndpoint = normalized
-                                        backendError = null
-                                        backendStatus = "Backend saved. Sign in again to use this server."
-                                    }.onFailure { error ->
-                                        backendStatus = null
-                                        backendError = error.message ?: "Could not save the backend address."
+                                    backendCheckInProgress = true
+                                    backendStatus = null
+                                    backendError = null
+                                    scope.launch {
+                                        runCatching { backendSettings.configureAndValidate(backendEndpoint) }
+                                            .onSuccess { normalized ->
+                                                backendEndpoint = normalized
+                                                backendStatus = "Connected to the current SiteProof backend. You can sign in now."
+                                            }
+                                            .onFailure { error ->
+                                                backendError = error.message ?: "Could not validate the backend address."
+                                            }
+                                        backendCheckInProgress = false
                                     }
                                 },
-                                enabled = !loading && backendEndpoint.isNotBlank(),
+                                enabled = !loading && !backendCheckInProgress && backendEndpoint.isNotBlank(),
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(14.dp),
                             ) {
-                                Text("Save server")
+                                if (backendCheckInProgress) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                    )
+                                } else {
+                                    Text("Test & save server")
+                                }
                             }
                             TextButton(
                                 onClick = {
@@ -191,7 +208,7 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
                                     backendError = null
                                     backendStatus = "Automatic local discovery enabled."
                                 },
-                                enabled = !loading,
+                                enabled = !loading && !backendCheckInProgress,
                                 modifier = Modifier.align(Alignment.CenterHorizontally),
                             ) {
                                 Text("Use automatic discovery")
@@ -214,7 +231,7 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
                 Spacer(Modifier.height(20.dp))
                 Button(
                     onClick = { onLogin(email.trim(), password) },
-                    enabled = !loading && email.isNotBlank() && password.isNotBlank(),
+                    enabled = !loading && !backendCheckInProgress && email.isNotBlank() && password.isNotBlank(),
                     modifier = Modifier.fillMaxWidth().height(54.dp),
                     shape = RoundedCornerShape(16.dp),
                 ) {
