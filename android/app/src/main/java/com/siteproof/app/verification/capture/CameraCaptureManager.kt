@@ -1,6 +1,8 @@
 package com.siteproof.app.verification.capture
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.SystemClock
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
@@ -82,6 +84,12 @@ class CameraCaptureManager(private val context: Context) {
     suspend fun startRecording(outputFile: File): Long {
         check(recording == null) { "A recording is already active." }
         val capture = checkNotNull(videoCapture) { "Camera preview is not ready." }
+        check(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED,
+        ) {
+            "Microphone permission is required to record verification audio. Allow microphone access and retry."
+        }
         outputFile.parentFile?.mkdirs()
         val result = CompletableDeferred<RecordingResult>()
         val started = CompletableDeferred<Long>()
@@ -90,8 +98,12 @@ class CameraCaptureManager(private val context: Context) {
         startNs = 0L
         encodedDurationNs = 0L
         encodedBytes = 0L
-        recording = capture.output
+
+        val pendingRecording = capture.output
             .prepareRecording(context, FileOutputOptions.Builder(outputFile).build())
+            .withAudioEnabled()
+
+        recording = pendingRecording
             .start(ContextCompat.getMainExecutor(context)) { event ->
                 when (event) {
                     is VideoRecordEvent.Start -> {
