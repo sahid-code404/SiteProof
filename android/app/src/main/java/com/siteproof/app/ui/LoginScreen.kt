@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,18 +36,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.siteproof.app.R
+import com.siteproof.app.data.BackendEndpointSettings
 
 @Composable
 fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
+    val appContext = LocalContext.current.applicationContext
+    val backendSettings = remember(appContext) { BackendEndpointSettings(appContext) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var serverSettingsOpen by remember { mutableStateOf(false) }
+    var backendEndpoint by remember { mutableStateOf(backendSettings.configuredEndpoint().orEmpty()) }
+    var backendStatus by remember { mutableStateOf<String?>(null) }
+    var backendError by remember { mutableStateOf<String?>(null) }
     val loading = state is AuthState.Loading
 
     Box(
@@ -113,6 +122,90 @@ fun LoginScreen(state: AuthState, onLogin: (String, String) -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                 )
+
+                TextButton(
+                    onClick = {
+                        serverSettingsOpen = !serverSettingsOpen
+                        backendStatus = null
+                        backendError = null
+                    },
+                    enabled = !loading,
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text(if (serverSettingsOpen) "Hide server settings" else "Server settings")
+                }
+
+                if (serverSettingsOpen) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(9.dp),
+                        ) {
+                            Text("Backend connection", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "Automatic discovery is used by default. If discovery reaches the wrong server, enter the backend IP or URL here.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            OutlinedTextField(
+                                value = backendEndpoint,
+                                onValueChange = {
+                                    backendEndpoint = it
+                                    backendStatus = null
+                                    backendError = null
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Backend IP or URL") },
+                                placeholder = { Text("192.168.1.102:8000") },
+                                singleLine = true,
+                                enabled = !loading,
+                                shape = RoundedCornerShape(14.dp),
+                            )
+                            Button(
+                                onClick = {
+                                    val result = runCatching { backendSettings.configure(backendEndpoint) }
+                                    result.onSuccess { normalized ->
+                                        backendEndpoint = normalized
+                                        backendError = null
+                                        backendStatus = "Backend saved. Sign in again to use this server."
+                                    }.onFailure { error ->
+                                        backendStatus = null
+                                        backendError = error.message ?: "Could not save the backend address."
+                                    }
+                                },
+                                enabled = !loading && backendEndpoint.isNotBlank(),
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                            ) {
+                                Text("Save server")
+                            }
+                            TextButton(
+                                onClick = {
+                                    backendSettings.useAutomaticDiscovery()
+                                    backendEndpoint = ""
+                                    backendError = null
+                                    backendStatus = "Automatic local discovery enabled."
+                                },
+                                enabled = !loading,
+                                modifier = Modifier.align(Alignment.CenterHorizontally),
+                            ) {
+                                Text("Use automatic discovery")
+                            }
+                            backendStatus?.let {
+                                Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                            }
+                            backendError?.let {
+                                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                }
 
                 if (state is AuthState.Error) {
                     Text(state.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 12.dp))
