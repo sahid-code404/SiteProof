@@ -1,9 +1,9 @@
-name: Android Dev OTA
+name: Android Inspector Branch OTA
 
 on:
   push:
     branches:
-      - main
+      - feature/android-inspector-management
     paths:
       - 'android/**'
       - '.github/workflows/android-dev-ota.yml'
@@ -13,11 +13,11 @@ permissions:
   contents: write
 
 concurrency:
-  group: siteproof-dev-ota
+  group: siteproof-inspector-ota
   cancel-in-progress: true
 
 jobs:
-  publish-dev-update:
+  publish-inspector-update:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -39,25 +39,33 @@ jobs:
         shell: bash
         run: |
           RUN_CODE=$((5000 + GITHUB_RUN_NUMBER))
-          CURRENT_CODE="$(curl -fsSL \
+          BRANCH_CODE="$(curl -fsSL \
+            "https://github.com/sahid-code404/SiteProof/releases/download/inspector-latest/siteproof-update.json?run=${GITHUB_RUN_ID}" \
+            2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["versionCode"])' \
+            2>/dev/null || true)"
+          MAIN_CODE="$(curl -fsSL \
             "https://github.com/sahid-code404/SiteProof/releases/download/dev-latest/siteproof-update.json?run=${GITHUB_RUN_ID}" \
             2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["versionCode"])' \
             2>/dev/null || true)"
-          if [[ "$CURRENT_CODE" =~ ^[0-9]+$ ]] && [ "$CURRENT_CODE" -ge "$RUN_CODE" ]; then
-            VERSION_CODE=$((CURRENT_CODE + 1))
-          else
-            VERSION_CODE=$RUN_CODE
-          fi
-          VERSION_NAME="0.5.${GITHUB_RUN_NUMBER}"
+
+          VERSION_CODE=$RUN_CODE
+          for CURRENT_CODE in "$BRANCH_CODE" "$MAIN_CODE"; do
+            if [[ "$CURRENT_CODE" =~ ^[0-9]+$ ]] && [ "$CURRENT_CODE" -ge "$VERSION_CODE" ]; then
+              VERSION_CODE=$((CURRENT_CODE + 1))
+            fi
+          done
+
+          VERSION_NAME="0.5.${GITHUB_RUN_NUMBER}-inspector"
           echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
-          echo "Publishing OTA versionCode=$VERSION_CODE versionName=$VERSION_NAME"
+          echo "Publishing inspector OTA versionCode=$VERSION_CODE versionName=$VERSION_NAME"
 
-      - name: Test and build stable-signed debug APK
+      - name: Test and build stable-signed branch APK
         run: |
           gradle :app:testDebugUnitTest :app:assembleDebug --stacktrace \
             -PSITEPROOF_VERSION_CODE="${{ steps.version.outputs.code }}" \
-            -PSITEPROOF_VERSION_NAME="${{ steps.version.outputs.name }}"
+            -PSITEPROOF_VERSION_NAME="${{ steps.version.outputs.name }}" \
+            -PSITEPROOF_UPDATE_MANIFEST_URL="https://github.com/sahid-code404/SiteProof/releases/download/inspector-latest/siteproof-update.json"
 
       - name: Prepare verified OTA package
         id: package
@@ -70,9 +78,9 @@ jobs:
           {
             "versionCode": ${{ steps.version.outputs.code }},
             "versionName": "${{ steps.version.outputs.name }}",
-            "apkUrl": "https://github.com/sahid-code404/SiteProof/releases/download/dev-latest/SiteProof-debug.apk",
+            "apkUrl": "https://github.com/sahid-code404/SiteProof/releases/download/inspector-latest/SiteProof-debug.apk",
             "sha256": "$SHA256",
-            "notes": "Automatic local backend discovery and reliable challenge voice guidance."
+            "notes": "Inspector branch build with runtime backend IP/URL configuration and automatic local discovery."
           }
           JSON
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
@@ -80,36 +88,36 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: siteproof-dev-ota-${{ steps.version.outputs.code }}
+          name: siteproof-inspector-ota-${{ steps.version.outputs.code }}
           path: |
             ota/SiteProof-debug.apk
             ota/siteproof-update.json
           retention-days: 30
 
-      - name: Publish stable dev-latest release without delete gap
+      - name: Publish inspector-latest release without touching main OTA
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          NOTES="Automatic SiteProof dev OTA. SHA-256: ${{ steps.package.outputs.sha256 }}"
-          if gh release view dev-latest >/dev/null 2>&1; then
-            git tag -f dev-latest "$GITHUB_SHA"
-            git push origin refs/tags/dev-latest --force
-            gh release upload dev-latest \
+          NOTES="SiteProof inspector branch OTA. SHA-256: ${{ steps.package.outputs.sha256 }}"
+          if gh release view inspector-latest >/dev/null 2>&1; then
+            git tag -f inspector-latest "$GITHUB_SHA"
+            git push origin refs/tags/inspector-latest --force
+            gh release upload inspector-latest \
               ota/SiteProof-debug.apk \
               ota/siteproof-update.json \
               --clobber
-            gh release edit dev-latest \
-              --title "SiteProof Update ${{ steps.version.outputs.name }}" \
+            gh release edit inspector-latest \
+              --title "SiteProof Inspector Update ${{ steps.version.outputs.name }}" \
               --prerelease \
               --notes "$NOTES"
           else
-            gh release create dev-latest \
+            gh release create inspector-latest \
               ota/SiteProof-debug.apk \
               ota/siteproof-update.json \
               --target "$GITHUB_SHA" \
-              --title "SiteProof Update ${{ steps.version.outputs.name }}" \
+              --title "SiteProof Inspector Update ${{ steps.version.outputs.name }}" \
               --prerelease \
               --notes "$NOTES"
           fi
