@@ -9,25 +9,25 @@ from app.models.trust import VerificationPolicy, VerificationSignalType
 from app.services.verification.domain import PolicyDefinition
 
 DEFAULT_POLICY_NAME = "Infrastructure Field Verification"
-# v1.1 deliberately favors evidence a human can reliably produce in the field:
-# completing randomized movement checks, visible camera motion, and being at the site.
-# Fine-grained sensor/fusion measurements remain useful supporting anti-spoofing evidence,
-# but ordinary human angle/timing variation must not make an otherwise genuine capture
-# automatically inconclusive.
-DEFAULT_POLICY_VERSION = "1.1"
+# v1.2 reflects what a human field capture can reliably prove. Randomized challenge success
+# is the primary liveness signal; visible camera evidence and physical location carry most of
+# the remaining score. Fine-grained gyro/fusion agreement remains valuable anti-spoofing
+# evidence through hard rules, but ordinary angle/timing differences are intentionally only a
+# small numeric influence.
+DEFAULT_POLICY_VERSION = "1.2"
 DEFAULT_WEIGHTS = {
-    VerificationSignalType.LOCATION: 15.0,
-    VerificationSignalType.SESSION_TIME: 5.0,
-    VerificationSignalType.CHALLENGE_COMPLETION: 30.0,
-    VerificationSignalType.SENSOR_QUALITY: 5.0,
-    VerificationSignalType.VISUAL_MOTION: 25.0,
+    VerificationSignalType.LOCATION: 20.0,
+    VerificationSignalType.SESSION_TIME: 3.0,
+    VerificationSignalType.CHALLENGE_COMPLETION: 45.0,
+    VerificationSignalType.SENSOR_QUALITY: 1.0,
+    VerificationSignalType.VISUAL_MOTION: 20.0,
     VerificationSignalType.SCENE_CONTINUITY: 10.0,
-    VerificationSignalType.VISUAL_INERTIAL_CONSISTENCY: 10.0,
+    VerificationSignalType.VISUAL_INERTIAL_CONSISTENCY: 1.0,
 }
-# Only signals that are fundamental to a normal field proof are mandatory. Sensor quality,
-# timing, scene continuity and visual-inertial fusion remain scored and can still constrain
-# the verdict through hard rules, but an inconclusive supporting measurement no longer turns
-# a 3/3 genuine human capture into an automatic INCONCLUSIVE result.
+# Only signals fundamental to a normal field proof are mandatory. Sensor quality, precise
+# timing, scene continuity and visual-inertial fusion remain recorded/scored and can still
+# constrain the verdict through hard rules. Inconclusive supporting measurements alone do not
+# invalidate an otherwise strong 3/3 genuine human capture.
 DEFAULT_REQUIRED = frozenset(
     {
         VerificationSignalType.LOCATION,
