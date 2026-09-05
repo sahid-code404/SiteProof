@@ -58,6 +58,9 @@ class VerificationResponse(APIModel):
     summary_reasons: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
+    # Admin/reviewer-only semantic evidence diagnostics. Inspector responses deliberately omit
+    # these adversarial details so the verification thresholds do not become a bypass guide.
+    autonomous: dict | None = None
     calculated_at: datetime | None = None
     latest_review: ReviewDecisionResponse | None = None
 
