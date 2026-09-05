@@ -16,6 +16,11 @@ import com.siteproof.app.verification.model.EvidenceFileResponse
 import com.siteproof.app.verification.model.EvidenceInitiateRequest
 import com.siteproof.app.verification.model.EvidenceInitiateResponse
 import com.siteproof.app.verification.model.EvidenceListResponse
+import com.siteproof.app.verification.model.SemanticChallengeCompleteRequest
+import com.siteproof.app.verification.model.SemanticChallengeCompleteResult
+import com.siteproof.app.verification.model.SemanticChallengeIssue
+import com.siteproof.app.verification.model.SemanticChallengeListResponse
+import com.siteproof.app.verification.model.SemanticChallengeStartRequest
 import com.siteproof.app.verification.model.SessionCreateRequest
 import com.siteproof.app.verification.model.SessionCreateResponse
 import com.siteproof.app.verification.model.StartCaptureRequest
@@ -99,6 +104,24 @@ interface SiteProofApi {
 
     @GET("sessions/{id}/challenges")
     suspend fun challenges(@Path("id") sessionId: String): ChallengeListResponse
+
+    @POST("sessions/{id}/semantic-challenges/next")
+    suspend fun nextSemanticChallenge(@Path("id") sessionId: String): SemanticChallengeIssue
+
+    @POST("semantic-challenges/{id}/start")
+    suspend fun startSemanticChallenge(
+        @Path("id") challengeId: String,
+        @Body request: SemanticChallengeStartRequest,
+    ): SemanticChallengeIssue
+
+    @POST("semantic-challenges/{id}/complete")
+    suspend fun completeSemanticChallenge(
+        @Path("id") challengeId: String,
+        @Body request: SemanticChallengeCompleteRequest,
+    ): SemanticChallengeCompleteResult
+
+    @GET("sessions/{id}/semantic-challenges")
+    suspend fun semanticChallenges(@Path("id") sessionId: String): SemanticChallengeListResponse
 
     @POST("sessions/{id}/capture-complete")
     suspend fun captureComplete(
