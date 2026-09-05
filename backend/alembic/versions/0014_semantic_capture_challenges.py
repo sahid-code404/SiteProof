@@ -21,6 +21,7 @@ def upgrade() -> None:
         sa.Column("inspection_id", sa.Uuid(), nullable=False),
         sa.Column("session_id", sa.Uuid(), nullable=False),
         sa.Column("sequence_number", sa.Integer(), nullable=False),
+        sa.Column("attempt_number", sa.Integer(), nullable=False, server_default="1"),
         sa.Column("challenge_type", sa.String(length=32), nullable=False),
         sa.Column("instruction", sa.String(length=1200), nullable=False),
         sa.Column("target_json", sa.JSON(), nullable=False),
@@ -44,7 +45,8 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "session_id",
             "sequence_number",
-            name="uq_semantic_challenge_session_sequence",
+            "attempt_number",
+            name="uq_semantic_challenge_session_sequence_attempt",
         ),
     )
     op.create_index(
