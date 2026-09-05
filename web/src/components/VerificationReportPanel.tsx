@@ -181,11 +181,30 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
             <div><span>Required coverage</span><strong>{percentage(autonomous.evidenceCoverage?.score)}</strong></div>
             <div><span>Live-scene proof</span><strong>{percentage(autonomous.liveScene?.score)}</strong></div>
             <div><span>Presentation risk</span><strong>{percentage(autonomous.presentationAttack?.score)}</strong></div>
+            <div><span>Two-model consensus</span><strong>{autonomous.semanticConsensusReady ? 'Ready' : 'Not proven'}</strong></div>
+            <div><span>Semantic audit chain</span><strong>{autonomous.auditBindingReady ? 'Complete' : 'Incomplete'}</strong></div>
+            <div><span>Frame diversity</span><strong>{percentage(autonomous.frameHashDiversity)}</strong></div>
+            <div><span>Sampled moments</span><strong>{autonomous.sampledFrameCount ?? 0}</strong></div>
           </div>
           <p className="muted">
-            Status {autonomous.status ?? 'unknown'} · {autonomous.sampledFrameCount ?? 0} sampled frames
+            Status {autonomous.status ?? 'unknown'}
             {autonomous.modelDisagreement ? ' · model disagreement detected' : ''}
           </p>
+          {autonomous.semanticConsensusReady === false ? (
+            <div className="notice error">
+              <strong>Two-model consensus missing</strong>
+              <p>Unattended approval is blocked until two differently configured semantic models independently support the evidence.</p>
+            </div>
+          ) : null}
+          {autonomous.auditBindingReady === false ? (
+            <div className="notice error">
+              <strong>Semantic audit chain incomplete</strong>
+              <p>The model, prompt, assignment or evidence-hash provenance is incomplete, so automatic approval is blocked.</p>
+              {(autonomous.auditBindingIssues?.length ?? 0) > 0 ? (
+                <p>{autonomous.auditBindingIssues?.map(words).join(' · ')}</p>
+              ) : null}
+            </div>
+          ) : null}
           {autonomous.failureReason ? <div className="notice error">{autonomous.failureReason}</div> : null}
           {(autonomous.mandatoryFailures?.length ?? 0) > 0 ? (
             <div className="notice error">
