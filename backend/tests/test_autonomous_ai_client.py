@@ -18,6 +18,7 @@ from app.services.autonomous_ai_client import (
     _validate_provider_base_url,
     _validate_provider_request,
     _validate_response_size,
+    provider_endpoints_independent,
 )
 
 
@@ -111,6 +112,18 @@ def test_provider_base_url_rejects_non_http_and_embedded_credentials():
     _validate_provider_base_url("https://provider.example/v1")
 
 
+def test_provider_independence_compares_normalized_endpoints():
+    assert provider_endpoints_independent(
+        "https://primary.example/v1",
+        "https://secondary.example/v1",
+    ) is True
+    assert provider_endpoints_independent(
+        "https://primary.example/v1/",
+        "https://PRIMARY.example:443/v1",
+    ) is False
+    assert provider_endpoints_independent("", "https://secondary.example/v1") is False
+
+
 def test_provider_request_rejects_remote_image_urls_and_excess_frames():
     with pytest.raises(AutonomousAIError, match="inline JPEG"):
         _validate_provider_request("{}", ["https://example.com/evidence.jpg"])
@@ -131,6 +144,8 @@ class _FakeHttpClient:
     def __init__(self, responses: list[httpx.Response]):
         self.responses = list(responses)
         self.payloads: list[dict] = []
+        self.endpoints: list[str] = []
+        self.headers: list[dict] = []
 
     def __enter__(self):
         return self
@@ -139,7 +154,8 @@ class _FakeHttpClient:
         return False
 
     def post(self, endpoint: str, *, headers: dict, json: dict):
-        del headers
+        self.endpoints.append(endpoint)
+        self.headers.append(dict(headers))
         self.payloads.append(json)
         response = self.responses.pop(0)
         response.request = httpx.Request("POST", endpoint)
@@ -155,8 +171,13 @@ def _provider_success(content: str = '{"ok": true}') -> httpx.Response:
 
 def _configured_client() -> AutonomousAIClient:
     client = AutonomousAIClient()
-    client.base_url = "https://provider.example"
-    client.api_key = ""
+    client.base_url = "https://provider.example/v1"
+    client.api_key = "primary-secret"
+    client.secondary_base_url = "https://secondary.example/v1"
+    client.secondary_api_key = "secondary-secret"
+    client.primary_model = "vlm-primary"
+    client.secondary_model = "vlm-secondary"
+    client.contract_model = "contract-model"
     client.timeout = 1.0
     return client
 
@@ -212,3 +233,35 @@ def test_complete_json_sends_minimized_structured_context(monkeypatch):
     sent_text = fake.payloads[0]["messages"][1]["content"][0]["text"]
     sent = json.loads(sent_text)
     assert sent == {"title": "Transformer"}
+
+
+def test_secondary_vlm_routes_to_separate_provider_and_credentials(monkeypatch):
+    fake = _FakeHttpClient([_provider_success()])
+    monkeypatch.setattr(ai_module.httpx, "Client", lambda **_: fake)
+    client = _configured_client()
+
+    result = client.complete_json(
+        model="vlm-secondary",
+        system_prompt="vision",
+        user_text="{}",
+    )
+
+    assert result.payload == {"ok": True}
+    assert fake.endpoints == ["https://secondary.example/v1/chat/completions"]
+    assert fake.headers[0]["Authorization"] == "Bearer secondary-secret"
+    assert client.independent_secondary_configured is True
+
+
+def test_primary_and_contract_models_stay_on_primary_provider(monkeypatch):
+    fake = _FakeHttpClient([_provider_success(), _provider_success()])
+    monkeypatch.setattr(ai_module.httpx, "Client", lambda **_: fake)
+    client = _configured_client()
+
+    client.complete_json(model="vlm-primary", system_prompt="vision", user_text="{}")
+    client.complete_json(model="contract-model", system_prompt="contract", user_text="{}")
+
+    assert fake.endpoints == [
+        "https://provider.example/v1/chat/completions",
+        "https://provider.example/v1/chat/completions",
+    ]
+    assert all(header["Authorization"] == "Bearer primary-secret" for header in fake.headers)
