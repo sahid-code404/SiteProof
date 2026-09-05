@@ -11,6 +11,10 @@ from app.models.advanced_security import (
 from app.models.advanced_signals import AdvancedSignalResult
 from app.models.assignment import AssignmentStatus, InspectionAssignment
 from app.models.audit import AuditLog
+from app.models.autonomous_verification import (
+    AutonomousAnalysisStatus,
+    AutonomousVerificationResult,
+)
 from app.models.challenge import (
     ChallengeResult,
     ChallengeStatus,
@@ -75,6 +79,8 @@ __all__ = [
     "AssignmentStatus",
     "AttestationChallenge",
     "AuditLog",
+    "AutonomousAnalysisStatus",
+    "AutonomousVerificationResult",
     "ChallengeResult",
     "ChallengeStatus",
     "ChallengeType",
