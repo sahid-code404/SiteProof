@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -211,7 +212,7 @@ def test_expired_semantic_challenge_retries_without_preloading(client, db, monke
     assert first.status_code == 200
     first_body = first.json()
 
-    row = db.query(SemanticCaptureChallenge).filter_by(id=first_body["challengeId"]).one()
+    row = db.query(SemanticCaptureChallenge).filter_by(id=uuid.UUID(first_body["challengeId"])).one()
     row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
     db.commit()
 
@@ -225,7 +226,7 @@ def test_expired_semantic_challenge_retries_without_preloading(client, db, monke
     db.expire_all()
     rows = (
         db.query(SemanticCaptureChallenge)
-        .filter_by(session_id=session_id)
+        .filter_by(session_id=uuid.UUID(session_id))
         .order_by(SemanticCaptureChallenge.attempt_number)
         .all()
     )
