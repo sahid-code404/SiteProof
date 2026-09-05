@@ -9,6 +9,7 @@ from app.api.routes import (
     inspections,
     inspectors,
     receipts,
+    semantic_challenges,
     sessions,
     verification,
     visual_analysis,
@@ -20,6 +21,7 @@ api_router.include_router(inspections.router)
 api_router.include_router(inspectors.router)
 api_router.include_router(sessions.router)
 api_router.include_router(challenges.router)
+api_router.include_router(semantic_challenges.router)
 api_router.include_router(visual_analysis.router)
 api_router.include_router(fusion_analysis.router)
 api_router.include_router(verification.router)
