@@ -43,7 +43,22 @@ class SemanticChallengeDefinition:
     target: dict[str, str]
 
 
-def semantic_challenges_enabled(settings: object | None = None) -> bool:
+def _frozen_required_count(session: VerificationSession | None) -> int | None:
+    if session is None:
+        return None
+    snapshot = session.site_snapshot or {}
+    if "semanticChallengeCount" not in snapshot:
+        return None
+    return max(0, min(4, int(snapshot.get("semanticChallengeCount", 0) or 0)))
+
+
+def semantic_challenges_enabled(
+    settings: object | None = None,
+    session: VerificationSession | None = None,
+) -> bool:
+    frozen = _frozen_required_count(session)
+    if frozen is not None:
+        return frozen > 0
     active = settings or get_settings()
     return bool(
         getattr(active, "autonomous_verification_enabled", False)
@@ -51,23 +66,43 @@ def semantic_challenges_enabled(settings: object | None = None) -> bool:
     )
 
 
-def semantic_challenge_required_count(settings: object | None = None) -> int:
+def semantic_challenge_required_count(
+    settings: object | None = None,
+    session: VerificationSession | None = None,
+) -> int:
+    frozen = _frozen_required_count(session)
+    if frozen is not None:
+        return frozen
     active = settings or get_settings()
+    if not semantic_challenges_enabled(active):
+        return 0
     return max(1, min(4, int(getattr(active, "autonomous_semantic_challenge_count", 2))))
 
 
 def _timeout_seconds(settings: object) -> int:
-    return max(8, min(60, int(getattr(settings, "autonomous_semantic_challenge_timeout_seconds", 25))))
+    return max(
+        8,
+        min(60, int(getattr(settings, "autonomous_semantic_challenge_timeout_seconds", 25))),
+    )
 
 
 def _duration_bounds_ms(settings: object) -> tuple[int, int]:
-    minimum = max(750, int(getattr(settings, "autonomous_semantic_challenge_min_duration_ms", 1500)))
-    maximum = max(minimum, int(getattr(settings, "autonomous_semantic_challenge_max_duration_ms", 12000)))
+    minimum = max(
+        750,
+        int(getattr(settings, "autonomous_semantic_challenge_min_duration_ms", 1500)),
+    )
+    maximum = max(
+        minimum,
+        int(getattr(settings, "autonomous_semantic_challenge_max_duration_ms", 12000)),
+    )
     return minimum, min(maximum, 30000)
 
 
 def _max_attempts(settings: object) -> int:
-    retries = max(0, min(3, int(getattr(settings, "autonomous_semantic_challenge_max_retries", 2))))
+    retries = max(
+        0,
+        min(3, int(getattr(settings, "autonomous_semantic_challenge_max_retries", 2))),
+    )
     return 1 + retries
 
 
@@ -91,11 +126,17 @@ def _for_update(db: Session, challenge_id: uuid.UUID) -> SemanticCaptureChalleng
         .with_for_update()
     )
     if challenge is None:
-        raise SiteProofError(404, "SEMANTIC_CHALLENGE_NOT_FOUND", "Semantic challenge was not found.")
+        raise SiteProofError(
+            404,
+            "SEMANTIC_CHALLENGE_NOT_FOUND",
+            "Semantic challenge was not found.",
+        )
     return challenge
 
 
-def _latest_by_sequence(rows: list[SemanticCaptureChallenge]) -> dict[int, SemanticCaptureChallenge]:
+def _latest_by_sequence(
+    rows: list[SemanticCaptureChallenge],
+) -> dict[int, SemanticCaptureChallenge]:
     latest: dict[int, SemanticCaptureChallenge] = {}
     for row in rows:
         current = latest.get(row.sequence_number)
@@ -105,6 +146,8 @@ def _latest_by_sequence(rows: list[SemanticCaptureChallenge]) -> dict[int, Seman
 
 
 def semantic_sequence_complete(rows: list[SemanticCaptureChallenge], required: int) -> bool:
+    if required <= 0:
+        return True
     latest = _latest_by_sequence(rows)
     return all(
         latest.get(sequence) is not None
@@ -123,7 +166,10 @@ def _definitions(session: VerificationSession) -> list[SemanticChallengeDefiniti
     title = _clean_text(snapshot.get("title"), limit=180) or "the assigned inspection subject"
     description = _clean_text(snapshot.get("description"), limit=420)
     instructions = _clean_text(snapshot.get("instructions"), limit=420)
-    task_text = _clean_text(" ".join(part for part in (description, instructions) if part), limit=650)
+    task_text = _clean_text(
+        " ".join(part for part in (description, instructions) if part),
+        limit=650,
+    )
     if not task_text:
         task_text = f"the required inspection evidence for {title}"
 
@@ -142,7 +188,11 @@ def _definitions(session: VerificationSession) -> list[SemanticChallengeDefiniti
                 f"Move closer and clearly show the task-relevant evidence for: {task_text}. "
                 "Do not stop or switch the recording."
             ),
-            target={"proofKind": "task_detail", "subject": title, "requirementText": task_text},
+            target={
+                "proofKind": "task_detail",
+                "subject": title,
+                "requirementText": task_text,
+            },
         ),
         SemanticChallengeDefinition(
             type=SemanticChallengeType.SHOW_SITE_CONTEXT,
@@ -157,7 +207,15 @@ def _definitions(session: VerificationSession) -> list[SemanticChallengeDefiniti
     identity_text = f"{title} {task_text}".lower()
     if any(
         marker in identity_text
-        for marker in ("serial", "asset id", "asset number", "identifier", "qr", "barcode", "plate")
+        for marker in (
+            "serial",
+            "asset id",
+            "asset number",
+            "identifier",
+            "qr",
+            "barcode",
+            "plate",
+        )
     ):
         definitions.append(
             SemanticChallengeDefinition(
@@ -242,14 +300,13 @@ def issue_next_semantic_challenge(
     session_id: uuid.UUID,
 ) -> SemanticChallengeIssueResponse:
     settings = get_settings()
-    if not semantic_challenges_enabled(settings):
+    session = owned_session(db, current_user, session_id)
+    if not semantic_challenges_enabled(settings, session):
         raise SiteProofError(
             409,
             "SEMANTIC_CHALLENGES_DISABLED",
-            "Task-specific semantic capture challenges are not enabled.",
+            "Task-specific semantic capture challenges are not enabled for this session.",
         )
-
-    session = owned_session(db, current_user, session_id)
     if session.status not in PHYSICAL_CHALLENGE_TERMINAL_SESSION_STATES:
         raise SiteProofError(
             409,
@@ -261,7 +318,7 @@ def issue_next_semantic_challenge(
     if session.capture_anchor_monotonic_ns is None:
         raise SiteProofError(409, "SESSION_NOT_ACTIVE", "Capture monotonic anchor is missing.")
 
-    required = semantic_challenge_required_count(settings)
+    required = semantic_challenge_required_count(settings, session)
     rows = _rows(db, session.id)
     active = next((row for row in reversed(rows) if row.status in ACTIVE_STATES), None)
     if active is not None:
@@ -354,7 +411,11 @@ def start_semantic_challenge(
         db.commit()
         raise SiteProofError(409, "SEMANTIC_CHALLENGE_EXPIRED", "Semantic challenge expired.")
     if not hmac.compare_digest(challenge.nonce, payload.nonce):
-        raise SiteProofError(409, "SEMANTIC_CHALLENGE_NONCE_INVALID", "Semantic challenge nonce is invalid.")
+        raise SiteProofError(
+            409,
+            "SEMANTIC_CHALLENGE_NONCE_INVALID",
+            "Semantic challenge nonce is invalid.",
+        )
     anchor = session.capture_anchor_monotonic_ns
     if anchor is None or payload.client_monotonic_ns < anchor:
         raise SiteProofError(
@@ -389,7 +450,10 @@ def start_semantic_challenge(
     )
     db.commit()
     db.refresh(challenge)
-    return _issue_response(challenge, total=semantic_challenge_required_count(settings))
+    return _issue_response(
+        challenge,
+        total=semantic_challenge_required_count(settings, session),
+    )
 
 
 def complete_semantic_challenge(
@@ -401,7 +465,7 @@ def complete_semantic_challenge(
     settings = get_settings()
     challenge = _for_update(db, challenge_id)
     session = owned_session(db, current_user, challenge.session_id)
-    required = semantic_challenge_required_count(settings)
+    required = semantic_challenge_required_count(settings, session)
 
     if challenge.status == SemanticChallengeStatus.COMPLETED:
         if (
@@ -425,7 +489,11 @@ def complete_semantic_challenge(
         db.commit()
         raise SiteProofError(409, "SEMANTIC_CHALLENGE_EXPIRED", "Semantic challenge expired.")
     if not hmac.compare_digest(challenge.nonce, payload.nonce):
-        raise SiteProofError(409, "SEMANTIC_CHALLENGE_NONCE_INVALID", "Semantic challenge nonce is invalid.")
+        raise SiteProofError(
+            409,
+            "SEMANTIC_CHALLENGE_NONCE_INVALID",
+            "Semantic challenge nonce is invalid.",
+        )
 
     start_ns = challenge.client_start_monotonic_ns
     anchor = session.capture_anchor_monotonic_ns
@@ -483,8 +551,8 @@ def list_semantic_challenges(
     current_user: User,
     session_id: uuid.UUID,
 ) -> SemanticChallengeListResponse:
-    viewable_session(db, current_user, session_id)
-    required = semantic_challenge_required_count()
+    session = viewable_session(db, current_user, session_id)
+    required = semantic_challenge_required_count(session=session)
     rows = _rows(db, session_id)
     return SemanticChallengeListResponse(
         session_id=session_id,
