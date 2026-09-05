@@ -145,6 +145,17 @@ class Settings(BaseSettings):
     autonomous_live_scene_review_threshold: float = 0.65
     autonomous_presentation_attack_flag_threshold: float = 0.90
 
+    # Optional live semantic proof protocol. Physical motion challenges remain authoritative and
+    # separate. When enabled, the server reveals one assignment-specific visual action at a time,
+    # binds its nonce to the active monotonic capture timeline, and requires every proof window to
+    # finish before capture completion. The VLM verifies those windows only after upload.
+    autonomous_semantic_challenges_enabled: bool = False
+    autonomous_semantic_challenge_count: int = 2
+    autonomous_semantic_challenge_timeout_seconds: int = 25
+    autonomous_semantic_challenge_min_duration_ms: int = 1500
+    autonomous_semantic_challenge_max_duration_ms: int = 12000
+    autonomous_semantic_challenge_max_retries: int = 2
+
     storage_backend: str = "local"
     local_storage_path: str = "./siteproof-evidence"
     storage_endpoint_url: str | None = None
