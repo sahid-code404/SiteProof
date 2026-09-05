@@ -45,6 +45,17 @@ jobs:
       - run: ruff check app tests alembic
       - run: pytest -q
 
+  backend-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production backend image
+        run: docker build -t siteproof-backend-ci ./backend
+      - name: Smoke test production-only imports
+        run: >-
+          docker run --rm siteproof-backend-ci
+          python -c "import app.main; import app.services.autonomous_ai_client; import app.services.autonomous_verification_service; print('production backend imports ok')"
+
   web:
     runs-on: ubuntu-latest
     defaults:
