@@ -46,6 +46,11 @@ from app.models.receipt import (
     SigningKey,
     SigningKeyStatus,
 )
+from app.models.semantic_challenge import (
+    SemanticCaptureChallenge,
+    SemanticChallengeStatus,
+    SemanticChallengeType,
+)
 from app.models.trust import (
     ReviewDecision,
     ReviewDecisionType,
@@ -108,6 +113,9 @@ __all__ = [
     "ReviewDecision",
     "ReviewDecisionType",
     "RiskLevel",
+    "SemanticCaptureChallenge",
+    "SemanticChallengeStatus",
+    "SemanticChallengeType",
     "SensorAnomalyResult",
     "SignedReceipt",
     "SigningKey",
