@@ -170,7 +170,8 @@ def complete_capture(
             "Capture can complete only after the challenge sequence finishes.",
         )
 
-    if semantic_challenges_enabled(settings):
+    semantic_required = semantic_challenge_required_count(settings, session)
+    if semantic_challenges_enabled(settings, session):
         semantic_rows = list(
             db.scalars(
                 select(SemanticCaptureChallenge)
@@ -181,7 +182,6 @@ def complete_capture(
                 )
             ).all()
         )
-        semantic_required = semantic_challenge_required_count(settings)
         if not semantic_sequence_complete(semantic_rows, semantic_required):
             raise SiteProofError(
                 409,
@@ -282,7 +282,7 @@ def complete_capture(
         metadata={
             "durationMs": payload.capture_duration_ms,
             "requiredDurationSeconds": required_seconds,
-            "semanticChallengesRequired": semantic_challenges_enabled(settings),
+            "semanticChallengesRequired": semantic_required,
             "sensorSummary": payload.sensor_summary.model_dump(),
             "locationSamples": payload.location_summary.location_samples,
         },
