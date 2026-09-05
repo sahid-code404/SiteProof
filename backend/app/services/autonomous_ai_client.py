@@ -12,6 +12,8 @@ import httpx
 from app.core.config import get_settings
 
 MAX_PROVIDER_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_PROVIDER_REQUEST_BYTES = 32 * 1024 * 1024
+MAX_PROVIDER_IMAGE_COUNT = 24
 MAX_PROVIDER_ATTEMPTS = 3
 RETRYABLE_STATUS_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
 SENSITIVE_PROVIDER_KEYS = frozenset(
@@ -137,6 +139,18 @@ def _validate_provider_base_url(base_url: str) -> None:
         raise AutonomousAIError("Autonomous AI provider URL must not contain a query or fragment")
 
 
+def _validate_provider_request(user_text: str, image_data_urls: list[str]) -> None:
+    if len(image_data_urls) > MAX_PROVIDER_IMAGE_COUNT:
+        raise AutonomousAIError("Autonomous AI request contained too many evidence frames")
+    total_bytes = len(user_text.encode("utf-8"))
+    for image in image_data_urls:
+        if not image.startswith("data:image/jpeg;base64,"):
+            raise AutonomousAIError("Autonomous AI evidence images must be inline JPEG data URLs")
+        total_bytes += len(image.encode("ascii"))
+        if total_bytes > MAX_PROVIDER_REQUEST_BYTES:
+            raise AutonomousAIError("Autonomous AI request exceeded the evidence payload safety limit")
+
+
 class AutonomousAIClient:
     """Minimal hardened OpenAI-compatible JSON client.
 
@@ -145,9 +159,9 @@ class AutonomousAIClient:
     on-prem model server. Evidence is sent only when autonomous verification is explicitly enabled.
 
     Redirects are disabled so an upstream endpoint cannot silently redirect evidence or bearer
-    credentials to another host. Provider response bodies are bounded, transient failures get only
-    a few short retries, provider response text is never copied into raised errors, and structured
-    precise-location fields are stripped before provider egress.
+    credentials to another host. Provider response bodies and request payloads are bounded,
+    transient failures get only a few short retries, provider response text is never copied into
+    raised errors, and structured precise-location fields are stripped before provider egress.
     """
 
     def __init__(self) -> None:
@@ -202,8 +216,10 @@ class AutonomousAIClient:
             raise AutonomousAIError("Autonomous AI model is not configured")
 
         minimized_user_text = _minimize_provider_user_text(user_text)
+        images = list(image_data_urls or [])
+        _validate_provider_request(minimized_user_text, images)
         content: list[dict[str, Any]] = [{"type": "text", "text": minimized_user_text}]
-        for image in image_data_urls or []:
+        for image in images:
             content.append(
                 {
                     "type": "image_url",
