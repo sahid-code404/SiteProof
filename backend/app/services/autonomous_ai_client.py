@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
 from app.core.config import get_settings
+
+MAX_PROVIDER_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_PROVIDER_ATTEMPTS = 3
+RETRYABLE_STATUS_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 
 @dataclass(frozen=True)
@@ -63,12 +68,37 @@ def _message_text(response: dict[str, Any]) -> str:
     raise AutonomousAIError("Provider returned unsupported message content")
 
 
+def _validate_response_size(response: httpx.Response) -> None:
+    declared = response.headers.get("content-length")
+    if declared:
+        try:
+            if int(declared) > MAX_PROVIDER_RESPONSE_BYTES:
+                raise AutonomousAIError("Autonomous AI provider response exceeded the safety limit")
+        except ValueError:
+            pass
+    if len(response.content) > MAX_PROVIDER_RESPONSE_BYTES:
+        raise AutonomousAIError("Autonomous AI provider response exceeded the safety limit")
+
+
+def _retry_delay_seconds(attempt: int) -> float:
+    # Deterministic and intentionally short: queue-level retries remain the outer reliability layer.
+    return 0.25 * (2 ** max(0, attempt - 1))
+
+
+def _should_retry_status(status_code: int) -> bool:
+    return status_code in RETRYABLE_STATUS_CODES
+
+
 class AutonomousAIClient:
-    """Minimal OpenAI-compatible JSON client.
+    """Minimal hardened OpenAI-compatible JSON client.
 
     SiteProof intentionally depends on an interface rather than a specific vendor. Any provider
     exposing an OpenAI-compatible ``/chat/completions`` endpoint can be used, including a private
     on-prem model server. Evidence is sent only when autonomous verification is explicitly enabled.
+
+    Redirects are disabled so an upstream endpoint cannot silently redirect evidence or bearer
+    credentials to another host. Provider response bodies are bounded, transient failures get only
+    a few short retries, and provider response text is never copied into raised errors.
     """
 
     def __init__(self) -> None:
@@ -80,6 +110,27 @@ class AutonomousAIClient:
     @property
     def configured(self) -> bool:
         return bool(self.base_url)
+
+    def _request(self, client: httpx.Client, endpoint: str, headers: dict[str, str], payload: dict[str, Any]) -> httpx.Response:
+        last_error: Exception | None = None
+        for attempt in range(1, MAX_PROVIDER_ATTEMPTS + 1):
+            try:
+                response = client.post(endpoint, headers=headers, json=payload)
+            except httpx.HTTPError as exc:
+                last_error = exc
+                if attempt == MAX_PROVIDER_ATTEMPTS:
+                    break
+                time.sleep(_retry_delay_seconds(attempt))
+                continue
+
+            if _should_retry_status(response.status_code) and attempt < MAX_PROVIDER_ATTEMPTS:
+                time.sleep(_retry_delay_seconds(attempt))
+                continue
+            return response
+
+        raise AutonomousAIError(
+            f"Autonomous AI provider request failed: {type(last_error).__name__ if last_error else 'transport error'}"
+        ) from last_error
 
     def complete_json(
         self,
@@ -119,16 +170,22 @@ class AutonomousAIClient:
         endpoint = f"{self.base_url}/chat/completions"
         try:
             with httpx.Client(timeout=self.timeout, follow_redirects=False) as client:
-                response = client.post(endpoint, headers=headers, json=payload)
-                if response.status_code in {400, 404, 422}:
+                response = self._request(client, endpoint, headers, payload)
+                if response.status_code in {400, 422}:
                     # Some OpenAI-compatible providers do not implement response_format.
-                    payload.pop("response_format", None)
-                    response = client.post(endpoint, headers=headers, json=payload)
+                    fallback_payload = dict(payload)
+                    fallback_payload.pop("response_format", None)
+                    response = self._request(client, endpoint, headers, fallback_payload)
+                _validate_response_size(response)
                 response.raise_for_status()
                 body = response.json()
+        except AutonomousAIError:
+            raise
         except (httpx.HTTPError, ValueError) as exc:
             raise AutonomousAIError(f"Autonomous AI provider request failed: {type(exc).__name__}") from exc
 
+        if not isinstance(body, dict):
+            raise AutonomousAIError("Provider response JSON must be an object")
         text = _message_text(body)
         parsed = _extract_json(text)
         return AIJsonResponse(
