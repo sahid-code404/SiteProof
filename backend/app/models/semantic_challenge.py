@@ -49,7 +49,8 @@ class SemanticCaptureChallenge(Base):
         UniqueConstraint(
             "session_id",
             "sequence_number",
-            name="uq_semantic_challenge_session_sequence",
+            "attempt_number",
+            name="uq_semantic_challenge_session_sequence_attempt",
         ),
         UniqueConstraint("nonce", name="uq_semantic_challenge_nonce"),
         Index("ix_semantic_challenge_session_status", "session_id", "status"),
@@ -66,6 +67,7 @@ class SemanticCaptureChallenge(Base):
         Uuid, ForeignKey("verification_sessions.id", ondelete="CASCADE"), index=True, nullable=False
     )
     sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     challenge_type: Mapped[SemanticChallengeType] = mapped_column(
         Enum(SemanticChallengeType, native_enum=False, length=32), index=True, nullable=False
     )
