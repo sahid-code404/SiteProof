@@ -139,6 +139,28 @@ def _validate_provider_base_url(base_url: str) -> None:
         raise AutonomousAIError("Autonomous AI provider URL must not contain a query or fragment")
 
 
+def _normalized_provider_endpoint(base_url: str) -> tuple[str, str, int | None, str] | None:
+    value = base_url.strip().rstrip("/")
+    if not value:
+        return None
+    try:
+        _validate_provider_base_url(value)
+        parsed = urlsplit(value)
+        port = parsed.port
+    except (AutonomousAIError, ValueError):
+        return None
+    if port is None:
+        port = 443 if parsed.scheme.lower() == "https" else 80
+    path = parsed.path.rstrip("/")
+    return parsed.scheme.lower(), (parsed.hostname or "").lower(), port, path
+
+
+def provider_endpoints_independent(primary_base_url: str, secondary_base_url: str) -> bool:
+    primary = _normalized_provider_endpoint(primary_base_url)
+    secondary = _normalized_provider_endpoint(secondary_base_url)
+    return bool(primary and secondary and primary != secondary)
+
+
 def _validate_provider_request(user_text: str, image_data_urls: list[str]) -> None:
     if len(image_data_urls) > MAX_PROVIDER_IMAGE_COUNT:
         raise AutonomousAIError("Autonomous AI request contained too many evidence frames")
@@ -152,11 +174,11 @@ def _validate_provider_request(user_text: str, image_data_urls: list[str]) -> No
 
 
 class AutonomousAIClient:
-    """Minimal hardened OpenAI-compatible JSON client.
+    """Minimal hardened OpenAI-compatible JSON client with provider diversity support.
 
-    SiteProof intentionally depends on an interface rather than a specific vendor. Any provider
-    exposing an OpenAI-compatible ``/chat/completions`` endpoint can be used, including a private
-    on-prem model server. Evidence is sent only when autonomous verification is explicitly enabled.
+    The contract compiler and primary VLM use the primary endpoint. A distinctly named secondary
+    VLM can be routed to a separate secondary endpoint so one provider outage, policy defect or
+    correlated model behavior cannot masquerade as independent semantic consensus.
 
     Redirects are disabled so an upstream endpoint cannot silently redirect evidence or bearer
     credentials to another host. Provider response bodies and request payloads are bounded,
@@ -168,11 +190,33 @@ class AutonomousAIClient:
         settings = get_settings()
         self.base_url = settings.autonomous_ai_base_url.rstrip("/")
         self.api_key = settings.autonomous_ai_api_key.strip()
+        self.secondary_base_url = settings.autonomous_secondary_ai_base_url.rstrip("/")
+        self.secondary_api_key = settings.autonomous_secondary_ai_api_key.strip()
+        self.primary_model = settings.autonomous_vlm_model.strip()
+        self.secondary_model = settings.autonomous_secondary_vlm_model.strip()
+        self.contract_model = settings.autonomous_contract_model.strip()
         self.timeout = settings.autonomous_ai_timeout_seconds
 
     @property
     def configured(self) -> bool:
         return bool(self.base_url)
+
+    @property
+    def independent_secondary_configured(self) -> bool:
+        return bool(
+            self.secondary_model
+            and self.secondary_model != self.primary_model
+            and self.secondary_model != self.contract_model
+            and provider_endpoints_independent(self.base_url, self.secondary_base_url)
+        )
+
+    def _provider_for_model(self, model: str) -> tuple[str, str]:
+        selected = model.strip()
+        if selected and selected == self.secondary_model and selected != self.contract_model:
+            if not self.secondary_base_url:
+                raise AutonomousAIError("Secondary autonomous AI provider is not configured")
+            return self.secondary_base_url, self.secondary_api_key
+        return self.base_url, self.api_key
 
     def _request(
         self,
@@ -211,10 +255,11 @@ class AutonomousAIClient:
     ) -> AIJsonResponse:
         if not self.configured:
             raise AutonomousAIError("Autonomous AI provider is not configured")
-        _validate_provider_base_url(self.base_url)
         if not model.strip():
             raise AutonomousAIError("Autonomous AI model is not configured")
 
+        provider_base_url, provider_api_key = self._provider_for_model(model)
+        _validate_provider_base_url(provider_base_url)
         minimized_user_text = _minimize_provider_user_text(user_text)
         images = list(image_data_urls or [])
         _validate_provider_request(minimized_user_text, images)
@@ -237,10 +282,10 @@ class AutonomousAIClient:
             "response_format": {"type": "json_object"},
         }
         headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        if provider_api_key:
+            headers["Authorization"] = f"Bearer {provider_api_key}"
 
-        endpoint = f"{self.base_url}/chat/completions"
+        endpoint = f"{provider_base_url}/chat/completions"
         try:
             with httpx.Client(timeout=self.timeout, follow_redirects=False) as client:
                 response = self._request(client, endpoint, headers, payload)
