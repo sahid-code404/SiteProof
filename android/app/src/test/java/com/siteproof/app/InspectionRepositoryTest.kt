@@ -24,6 +24,11 @@ import com.siteproof.app.verification.model.EvidenceFileResponse
 import com.siteproof.app.verification.model.EvidenceInitiateRequest
 import com.siteproof.app.verification.model.EvidenceInitiateResponse
 import com.siteproof.app.verification.model.EvidenceListResponse
+import com.siteproof.app.verification.model.SemanticChallengeCompleteRequest
+import com.siteproof.app.verification.model.SemanticChallengeCompleteResult
+import com.siteproof.app.verification.model.SemanticChallengeIssue
+import com.siteproof.app.verification.model.SemanticChallengeListResponse
+import com.siteproof.app.verification.model.SemanticChallengeStartRequest
 import com.siteproof.app.verification.model.SessionCreateRequest
 import com.siteproof.app.verification.model.SessionCreateResponse
 import com.siteproof.app.verification.model.StartCaptureRequest
@@ -168,6 +173,22 @@ private class FakeApi(
     ): ChallengeValidationResult = error("unused in inspection repository tests")
 
     override suspend fun challenges(sessionId: String): ChallengeListResponse =
+        error("unused in inspection repository tests")
+
+    override suspend fun nextSemanticChallenge(sessionId: String): SemanticChallengeIssue =
+        error("unused in inspection repository tests")
+
+    override suspend fun startSemanticChallenge(
+        challengeId: String,
+        request: SemanticChallengeStartRequest,
+    ): SemanticChallengeIssue = error("unused in inspection repository tests")
+
+    override suspend fun completeSemanticChallenge(
+        challengeId: String,
+        request: SemanticChallengeCompleteRequest,
+    ): SemanticChallengeCompleteResult = error("unused in inspection repository tests")
+
+    override suspend fun semanticChallenges(sessionId: String): SemanticChallengeListResponse =
         error("unused in inspection repository tests")
 
     override suspend fun captureComplete(
