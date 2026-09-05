@@ -46,6 +46,22 @@ export type VerificationSignalItem = {
   sourceAlgorithmVersion?: string | null
 }
 
+export type AutonomousFrameQualityDiagnostics = {
+  total?: number
+  sharpCount?: number
+  exposureAcceptableCount?: number
+  usableCount?: number
+  sharpRatio?: number | null
+  exposureAcceptableRatio?: number | null
+  usableRatio?: number | null
+  thresholds?: {
+    minSharpness?: number
+    minBrightness?: number
+    maxBrightness?: number
+    minUsableRatio?: number
+  }
+}
+
 export type AutonomousVerificationDiagnostics = {
   enabled: boolean
   status?: string
@@ -61,6 +77,9 @@ export type AutonomousVerificationDiagnostics = {
   auditBindingIssues?: string[]
   sampledFrameCount?: number
   frameHashDiversity?: number | null
+  frameQualityReady?: boolean
+  frameQualityIssues?: string[]
+  frameQuality?: AutonomousFrameQualityDiagnostics | null
   taskMatch?: { score?: number | null; confidence?: number | null }
   assetIdentity?: { score?: number | null; confidence?: number | null }
   evidenceCoverage?: { score?: number | null; confidence?: number | null }
