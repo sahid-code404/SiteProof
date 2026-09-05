@@ -56,6 +56,7 @@ export type AutonomousVerificationDiagnostics = {
   primaryVlmModel?: string | null
   secondaryVlmModel?: string | null
   semanticConsensusReady?: boolean
+  independentProviderReady?: boolean
   auditBindingReady?: boolean
   auditBindingIssues?: string[]
   sampledFrameCount?: number
