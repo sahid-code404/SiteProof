@@ -38,8 +38,8 @@ class VerificationRepository(
 ) {
     suspend fun inspection(id: String): InspectionDetail = api.inspection(id)
 
-    suspend fun createSession(inspectionId: String, deviceSessionId: String): SessionCreateResponse =
-        api.createVerificationSession(
+    suspend fun createSession(inspectionId: String, deviceSessionId: String): SessionCreateResponse {
+        val session = api.createVerificationSession(
             inspectionId,
             SessionCreateRequest(
                 deviceSessionId = deviceSessionId,
@@ -50,6 +50,19 @@ class VerificationRepository(
                 deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
             ),
         )
+
+        // Resolve the semantic proof plan from the authoritative frozen server timeline instead
+        // of trusting only the create-session payload. This prevents a missing/defaulted client
+        // field from silently skipping required visual proof challenges and reaching a late 409.
+        val semanticPlan = api.semanticChallenges(session.sessionId)
+        require(semanticPlan.sessionId == session.sessionId) {
+            "Server returned a semantic proof plan for the wrong verification session."
+        }
+        require(semanticPlan.totalRequired in 0..4) {
+            "Server returned an invalid semantic proof challenge count."
+        }
+        return session.copy(semanticChallengeCount = semanticPlan.totalRequired)
+    }
 
     suspend fun startCapture(
         sessionId: String,
