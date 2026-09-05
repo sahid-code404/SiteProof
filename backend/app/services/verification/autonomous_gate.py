@@ -13,6 +13,30 @@ from app.services.autonomous_verification_service import get_autonomous_result
 from app.services.verification.domain import EngineDecision, HardRuleResult
 
 
+def semantic_consensus_ready(primary_model: str | None, secondary_model: str | None) -> bool:
+    """Require two distinctly configured semantic observers for unattended approval.
+
+    This does not claim the providers are statistically independent, but it prevents the
+    autonomous gate from treating a single VLM invocation (or the same model configured twice)
+    as sufficient consensus for an automatic VERIFIED result.
+    """
+    primary = (primary_model or "").strip()
+    secondary = (secondary_model or "").strip()
+    return bool(primary and secondary and primary != secondary)
+
+
+def frame_hash_diversity(frame_hashes: list[str] | None) -> float:
+    """Return exact sampled-frame diversity without interpreting scene semantics.
+
+    Exact duplicate sampled JPEG hashes are a conservative signal for frozen/repeated evidence.
+    It is intentionally only used to block unattended approval, never to flag fraud by itself.
+    """
+    hashes = [item.strip() for item in (frame_hashes or []) if isinstance(item, str) and item.strip()]
+    if not hashes:
+        return 0.0
+    return len(set(hashes)) / len(hashes)
+
+
 def evaluate_autonomous_gate(db: Session, session_id: uuid.UUID) -> list[HardRuleResult]:
     """Convert AI observations into one-way constraints on the deterministic verdict.
 
@@ -53,6 +77,35 @@ def evaluate_autonomous_gate(db: Session, session_id: uuid.UUID) -> list[HardRul
                 code="AUTONOMOUS_CONTRACT_LOW_CONFIDENCE",
                 maximum_verdict=VerificationVerdict.REVIEW_REQUIRED,
                 explanation="The natural-language inspection contract could not be interpreted with enough confidence for unattended approval.",
+            )
+        )
+
+    if not semantic_consensus_ready(result.primary_vlm_model, result.secondary_vlm_model):
+        rules.append(
+            HardRuleResult(
+                code="AUTONOMOUS_TWO_MODEL_CONSENSUS_REQUIRED",
+                maximum_verdict=VerificationVerdict.REVIEW_REQUIRED,
+                explanation="Automatic approval requires two differently configured semantic vision models to agree on the critical evidence.",
+            )
+        )
+
+    minimum_frame_count = min(8, max(4, settings.autonomous_frame_count))
+    if result.sampled_frame_count < minimum_frame_count:
+        rules.append(
+            HardRuleResult(
+                code="AUTONOMOUS_TEMPORAL_COVERAGE_INSUFFICIENT",
+                maximum_verdict=VerificationVerdict.REVIEW_REQUIRED,
+                explanation="Too few independently sampled video moments were available for unattended semantic approval.",
+            )
+        )
+
+    diversity = frame_hash_diversity(result.frame_hashes_json)
+    if result.sampled_frame_count >= 4 and diversity < 0.50:
+        rules.append(
+            HardRuleResult(
+                code="AUTONOMOUS_FRAME_DIVERSITY_INSUFFICIENT",
+                maximum_verdict=VerificationVerdict.REVIEW_REQUIRED,
+                explanation="Too many sampled video frames were exact repeats; a reviewer must confirm the capture is not frozen or replayed.",
             )
         )
 
@@ -216,7 +269,12 @@ def autonomous_diagnostics(db: Session, session_id: uuid.UUID) -> dict[str, Any]
         "compilerModel": result.compiler_model,
         "primaryVlmModel": result.primary_vlm_model,
         "secondaryVlmModel": result.secondary_vlm_model,
+        "semanticConsensusReady": semantic_consensus_ready(
+            result.primary_vlm_model,
+            result.secondary_vlm_model,
+        ),
         "sampledFrameCount": result.sampled_frame_count,
+        "frameHashDiversity": frame_hash_diversity(result.frame_hashes_json),
         "taskMatch": {
             "score": result.task_match_score,
             "confidence": result.task_match_confidence,
