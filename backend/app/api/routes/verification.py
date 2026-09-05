@@ -20,6 +20,7 @@ from app.schemas.verification_result import (
 )
 from app.services.audit_service import record_audit
 from app.services.session_common import viewable_session
+from app.services.verification.autonomous_gate import autonomous_diagnostics
 from app.services.verification.queue import list_review_queue
 from app.services.verification.review import create_review_decision, latest_review_for_result
 from app.services.verification.security_gate import engine_version_for_session
@@ -64,6 +65,7 @@ def _response(
             for row in signal_rows(db, result.id)
         ]
     review = latest_review_for_result(db, result.id) if detailed else None
+    autonomous = autonomous_diagnostics(db, session.id) if detailed else None
     return VerificationResponse(
         result_id=result.id,
         session_id=result.session_id,
@@ -84,6 +86,7 @@ def _response(
         summary_reasons=(result.summary_reasons_json or []) if detailed else [],
         warnings=(result.warnings_json or []) if detailed else [],
         limitations=(result.limitations_json or []) if detailed else [],
+        autonomous=autonomous,
         calculated_at=result.calculated_at,
         latest_review=(
             ReviewDecisionResponse(
