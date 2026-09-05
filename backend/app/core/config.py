@@ -122,7 +122,13 @@ class Settings(BaseSettings):
     autonomous_ai_api_key: str = ""
     autonomous_contract_model: str = ""
     autonomous_vlm_model: str = ""
+    # The secondary semantic observer can use a separate OpenAI-compatible provider. For
+    # zero-tolerance unattended approval, its endpoint must be configured and differ from the
+    # primary provider endpoint; otherwise the autonomous gate routes the result to review.
+    autonomous_secondary_ai_base_url: str = ""
+    autonomous_secondary_ai_api_key: str = ""
     autonomous_secondary_vlm_model: str = ""
+    autonomous_require_independent_provider: bool = True
     autonomous_ai_timeout_seconds: float = 60.0
     autonomous_frame_count: int = 12
     autonomous_max_frame_width: int = 1280
