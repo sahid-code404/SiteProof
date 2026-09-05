@@ -7,6 +7,7 @@ from app.services.verification.autonomous_gate import (
     autonomous_audit_binding_issues,
     evaluate_autonomous_gate,
     frame_hash_diversity,
+    independent_provider_ready,
     semantic_consensus_ready,
 )
 
@@ -14,6 +15,12 @@ from app.services.verification.autonomous_gate import (
 def _settings():
     return SimpleNamespace(
         autonomous_verification_enabled=True,
+        autonomous_ai_base_url="https://primary.example/v1",
+        autonomous_secondary_ai_base_url="https://secondary.example/v1",
+        autonomous_contract_model="contract-model",
+        autonomous_vlm_model="vlm-a",
+        autonomous_secondary_vlm_model="vlm-b",
+        autonomous_require_independent_provider=True,
         autonomous_hard_flag_confidence=0.90,
         autonomous_frame_count=12,
         autonomous_task_mismatch_threshold=0.25,
@@ -66,8 +73,9 @@ def _strong_result(*, primary="vlm-a", secondary="vlm-b", hashes=None):
     )
 
 
-def _codes(monkeypatch, result):
-    monkeypatch.setattr(gate_module, "get_settings", _settings)
+def _codes(monkeypatch, result, settings=None):
+    active_settings = settings or _settings()
+    monkeypatch.setattr(gate_module, "get_settings", lambda: active_settings)
     monkeypatch.setattr(gate_module, "get_autonomous_result", lambda db, session_id: result)
     return {item.code for item in evaluate_autonomous_gate(None, None)}
 
@@ -77,6 +85,16 @@ def test_semantic_consensus_requires_two_distinct_models():
     assert semantic_consensus_ready("vlm-a", None) is False
     assert semantic_consensus_ready("vlm-a", "vlm-a") is False
     assert semantic_consensus_ready("vlm-a", "vlm-b") is True
+
+
+def test_independent_provider_requires_distinct_models_and_endpoints():
+    settings = _settings()
+    assert independent_provider_ready(settings) is True
+    settings.autonomous_secondary_ai_base_url = settings.autonomous_ai_base_url
+    assert independent_provider_ready(settings) is False
+    settings.autonomous_secondary_ai_base_url = "https://secondary.example/v1"
+    settings.autonomous_secondary_vlm_model = settings.autonomous_vlm_model
+    assert independent_provider_ready(settings) is False
 
 
 def test_single_model_can_never_auto_approve(monkeypatch):
@@ -91,10 +109,18 @@ def test_same_model_twice_is_not_treated_as_consensus(monkeypatch):
     assert "AUTONOMOUS_TWO_MODEL_CONSENSUS_REQUIRED" in codes
 
 
+def test_same_provider_endpoint_blocks_unattended_approval(monkeypatch):
+    settings = _settings()
+    settings.autonomous_secondary_ai_base_url = settings.autonomous_ai_base_url
+    codes = _codes(monkeypatch, _strong_result(), settings)
+    assert "AUTONOMOUS_INDEPENDENT_PROVIDER_REQUIRED" in codes
+
+
 def test_distinct_models_with_strong_evidence_have_complete_audit_chain(monkeypatch):
     result = _strong_result()
     codes = _codes(monkeypatch, result)
     assert "AUTONOMOUS_TWO_MODEL_CONSENSUS_REQUIRED" not in codes
+    assert "AUTONOMOUS_INDEPENDENT_PROVIDER_REQUIRED" not in codes
     assert "AUTONOMOUS_AUDIT_BINDING_INCOMPLETE" not in codes
     assert autonomous_audit_binding_issues(result) == []
 
