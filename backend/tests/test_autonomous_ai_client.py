@@ -3,8 +3,10 @@ import json
 import httpx
 import pytest
 
+import app.services.autonomous_ai_client as ai_module
 from app.services.autonomous_ai_client import (
     MAX_PROVIDER_RESPONSE_BYTES,
+    AutonomousAIClient,
     AutonomousAIError,
     _extract_json,
     _message_text,
@@ -63,3 +65,68 @@ def test_retry_policy_is_limited_to_transient_status_codes():
     assert _should_retry_status(404) is False
     assert _retry_delay_seconds(1) == pytest.approx(0.25)
     assert _retry_delay_seconds(2) == pytest.approx(0.50)
+
+
+class _FakeHttpClient:
+    def __init__(self, responses: list[httpx.Response]):
+        self.responses = list(responses)
+        self.payloads: list[dict] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def post(self, endpoint: str, *, headers: dict, json: dict):
+        del headers
+        self.payloads.append(json)
+        response = self.responses.pop(0)
+        response.request = httpx.Request("POST", endpoint)
+        return response
+
+
+def _provider_success(content: str = '{"ok": true}') -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={"choices": [{"message": {"content": content}}]},
+    )
+
+
+def _configured_client() -> AutonomousAIClient:
+    client = AutonomousAIClient()
+    client.base_url = "https://provider.example"
+    client.api_key = ""
+    client.timeout = 1.0
+    return client
+
+
+def test_complete_json_retries_transient_provider_failure(monkeypatch):
+    fake = _FakeHttpClient([httpx.Response(503, json={"error": "busy"}), _provider_success()])
+    monkeypatch.setattr(ai_module.httpx, "Client", lambda **_: fake)
+    monkeypatch.setattr(ai_module.time, "sleep", lambda _: None)
+
+    result = _configured_client().complete_json(
+        model="vlm-test",
+        system_prompt="system",
+        user_text="user",
+    )
+
+    assert result.payload == {"ok": True}
+    assert len(fake.payloads) == 2
+    assert all("response_format" in payload for payload in fake.payloads)
+
+
+def test_complete_json_falls_back_when_provider_rejects_response_format(monkeypatch):
+    fake = _FakeHttpClient([httpx.Response(400, json={"error": "unsupported"}), _provider_success()])
+    monkeypatch.setattr(ai_module.httpx, "Client", lambda **_: fake)
+
+    result = _configured_client().complete_json(
+        model="vlm-test",
+        system_prompt="system",
+        user_text="user",
+    )
+
+    assert result.payload == {"ok": True}
+    assert "response_format" in fake.payloads[0]
+    assert "response_format" not in fake.payloads[1]
