@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import string
 import uuid
 from dataclasses import replace
 from typing import Any
@@ -11,6 +12,14 @@ from app.models.autonomous_verification import AutonomousAnalysisStatus
 from app.models.trust import VerificationVerdict
 from app.services.autonomous_verification_service import get_autonomous_result
 from app.services.verification.domain import EngineDecision, HardRuleResult
+
+
+_SHA256_HEX = frozenset(string.hexdigits)
+
+
+def _is_sha256(value: object) -> bool:
+    text = value.strip() if isinstance(value, str) else ""
+    return len(text) == 64 and all(character in _SHA256_HEX for character in text)
 
 
 def semantic_consensus_ready(primary_model: str | None, secondary_model: str | None) -> bool:
@@ -35,6 +44,60 @@ def frame_hash_diversity(frame_hashes: list[str] | None) -> float:
     if not hashes:
         return 0.0
     return len(set(hashes)) / len(hashes)
+
+
+def autonomous_audit_binding_issues(result: object) -> list[str]:
+    """Return missing/malformed provenance needed for a defensible autonomous decision.
+
+    Automatic verification must be reproducibly attributable to a frozen assignment, prompt and
+    model versions, sampled evidence hashes, and raw model-response hashes. A malformed audit
+    chain is not evidence of fraud, so it only blocks unattended approval and sends the result to
+    review.
+    """
+    issues: list[str] = []
+    required_text_fields = {
+        "analysisVersion": getattr(result, "analysis_version", None),
+        "contractVersion": getattr(result, "contract_version", None),
+        "contractPromptVersion": getattr(result, "contract_prompt_version", None),
+        "visionPromptVersion": getattr(result, "vision_prompt_version", None),
+        "compilerModel": getattr(result, "compiler_model", None),
+        "primaryVlmModel": getattr(result, "primary_vlm_model", None),
+        "secondaryVlmModel": getattr(result, "secondary_vlm_model", None),
+    }
+    for name, value in required_text_fields.items():
+        if not isinstance(value, str) or not value.strip():
+            issues.append(f"missing:{name}")
+
+    if not _is_sha256(getattr(result, "contract_source_hash", None)):
+        issues.append("invalid:contractSourceHash")
+
+    frame_hashes = getattr(result, "frame_hashes_json", None)
+    sampled_count = int(getattr(result, "sampled_frame_count", 0) or 0)
+    if not isinstance(frame_hashes, list) or len(frame_hashes) != sampled_count:
+        issues.append("invalid:frameHashCount")
+    elif any(not _is_sha256(item) for item in frame_hashes):
+        issues.append("invalid:frameHash")
+
+    raw_hashes = getattr(result, "raw_response_hashes_json", None)
+    if not isinstance(raw_hashes, dict):
+        issues.append("missing:rawResponseHashes")
+    else:
+        for key in ("contract", "primaryVlm", "secondaryVlm"):
+            if not _is_sha256(raw_hashes.get(key)):
+                issues.append(f"invalid:rawResponseHash:{key}")
+
+    if not isinstance(getattr(result, "contract_json", None), dict) or not getattr(
+        result, "contract_json", None
+    ):
+        issues.append("missing:contract")
+    if not isinstance(getattr(result, "observations_json", None), dict) or not getattr(
+        result, "observations_json", None
+    ):
+        issues.append("missing:observations")
+    if getattr(result, "analyzed_at", None) is None:
+        issues.append("missing:analyzedAt")
+
+    return issues
 
 
 def evaluate_autonomous_gate(db: Session, session_id: uuid.UUID) -> list[HardRuleResult]:
@@ -86,6 +149,16 @@ def evaluate_autonomous_gate(db: Session, session_id: uuid.UUID) -> list[HardRul
                 code="AUTONOMOUS_TWO_MODEL_CONSENSUS_REQUIRED",
                 maximum_verdict=VerificationVerdict.REVIEW_REQUIRED,
                 explanation="Automatic approval requires two differently configured semantic vision models to agree on the critical evidence.",
+            )
+        )
+
+    audit_issues = autonomous_audit_binding_issues(result)
+    if audit_issues:
+        rules.append(
+            HardRuleResult(
+                code="AUTONOMOUS_AUDIT_BINDING_INCOMPLETE",
+                maximum_verdict=VerificationVerdict.REVIEW_REQUIRED,
+                explanation="The semantic decision provenance is incomplete or malformed; unattended approval is blocked.",
             )
         )
 
@@ -260,6 +333,7 @@ def autonomous_diagnostics(db: Session, session_id: uuid.UUID) -> dict[str, Any]
     result = get_autonomous_result(db, session_id)
     if result is None:
         return {"enabled": True, "status": "PENDING"}
+    audit_issues = autonomous_audit_binding_issues(result)
     return {
         "enabled": True,
         "status": result.status.value,
@@ -273,6 +347,8 @@ def autonomous_diagnostics(db: Session, session_id: uuid.UUID) -> dict[str, Any]
             result.primary_vlm_model,
             result.secondary_vlm_model,
         ),
+        "auditBindingReady": not audit_issues,
+        "auditBindingIssues": audit_issues,
         "sampledFrameCount": result.sampled_frame_count,
         "frameHashDiversity": frame_hash_diversity(result.frame_hashes_json),
         "taskMatch": {
