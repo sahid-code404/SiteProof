@@ -20,25 +20,32 @@ from app.models.user import User
 from app.models.verification import VerificationSession
 from app.models.visual_motion import VisualAnalysisStatus, VisualMotionResult
 from app.services.audit_service import record_audit
+from app.services.autonomous_verification_service import autonomous_analysis_waiting
+from app.services.verification.autonomous_gate import (
+    apply_autonomous_gate,
+    autonomous_diagnostics,
+    evaluate_autonomous_gate,
+)
 from app.services.verification.collectors import SignalCollector
 from app.services.verification.policy import get_or_create_default_policy, policy_from_row
 from app.services.verification.scoring import calculate_score, resolve_decision
 from app.services.verification.security_gate import (
     LEGACY_ENGINE_VERSION,
-    SECURITY_ENGINE_VERSION,
     apply_security_gate,
     engine_version_for_session,
     evaluate_security_gate,
 )
+from app.services.verification.versions import AUTONOMOUS_ENGINE_VERSION, SECURITY_ENGINE_VERSION
 
 # Compatibility export for older callers/tests. calculate_verification selects the engine
-# per session: v1.1 when Phase 9/10 analysis is unavailable, v2.0 once the security pipeline
-# has completed. This keeps historical v1.1 decisions intact while new complete pipelines use v2.
+# per session: v1.1 before Phase 9/10, v2.0 with deterministic security, and v3.0 when the
+# explicitly enabled autonomous semantic gate is authoritative.
 ENGINE_VERSION = LEGACY_ENGINE_VERSION
 LIMITATIONS = [
     "The SiteProof score is confidence derived from configured multi-signal policy, not legal certainty.",
     "The result depends on phone hardware, scene quality, upstream algorithms, and policy configuration.",
     "Sophisticated synchronized replay or compromised device/OS behavior may remain undetected.",
+    "Semantic model observations can be uncertain or wrong and therefore never independently grant approval.",
     "Human review remains appropriate for high-risk or ambiguous operational decisions.",
 ]
 
@@ -190,6 +197,16 @@ def calculate_verification(
         db.commit()
         return result
 
+    if engine_version == AUTONOMOUS_ENGINE_VERSION and autonomous_analysis_waiting(db, session.id):
+        result.processing_status = VerificationProcessingStatus.WAITING_FOR_SIGNALS
+        result.summary = "Waiting for autonomous semantic video analysis to finish."
+        result.diagnostics_json = {
+            "waitingFor": ["AUTONOMOUS_SEMANTIC_VERIFICATION"],
+            "autonomousGate": autonomous_diagnostics(db, session.id),
+        }
+        db.commit()
+        return result
+
     signals = SignalCollector(db, session, inspection).collect(policy.required_signals)
     required_not_ready = [signal for signal in signals if signal.required and not signal.available]
     if required_not_ready:
@@ -204,9 +221,13 @@ def calculate_verification(
     score = calculate_score(signals, policy)
     decision = resolve_decision(signals, policy)
     security_rules = []
-    if engine_version == SECURITY_ENGINE_VERSION:
+    autonomous_rules = []
+    if engine_version in {SECURITY_ENGINE_VERSION, AUTONOMOUS_ENGINE_VERSION}:
         security_rules = evaluate_security_gate(db, session.id)
         decision = apply_security_gate(decision, security_rules)
+    if engine_version == AUTONOMOUS_ENGINE_VERSION:
+        autonomous_rules = evaluate_autonomous_gate(db, session.id)
+        decision = apply_autonomous_gate(decision, autonomous_rules)
 
     result.raw_score = decision.score
     result.final_score = decision.score
@@ -219,24 +240,34 @@ def calculate_verification(
     result.limitations_json = LIMITATIONS
     result.summary = {
         VerificationVerdict.VERIFIED: (
-            "Evidence strongly satisfies the configured SiteProof verification policy."
+            "Evidence strongly satisfies the configured SiteProof verification policy and all enabled safety gates."
         ),
-        VerificationVerdict.REVIEW_REQUIRED: "Some verification signals require human review.",
-        VerificationVerdict.FLAGGED: "Strong contradictory or failing evidence was detected.",
+        VerificationVerdict.REVIEW_REQUIRED: "Some verification evidence requires human review.",
+        VerificationVerdict.FLAGGED: "Strong contradictory or suspicious evidence was detected.",
         VerificationVerdict.INCONCLUSIVE: (
-            "Insufficient reliable evidence was available for an automatic decision."
+            "Required evidence could not be established reliably enough for an automatic decision."
         ),
     }[decision.verdict]
     result.diagnostics_json = {
         "availableWeight": score.available_weight,
-        "scoreMethod": "weighted normalized signal score; confidence used for gating",
-        "confidenceMethod": "configured-weighted mean of available signal confidence",
+        "scoreMethod": "weighted normalized deterministic signal score; external gates never add score",
+        "confidenceMethod": "configured-weighted mean of available deterministic signal confidence",
         "securityGate": {
-            "enabled": engine_version == SECURITY_ENGINE_VERSION,
+            "enabled": engine_version in {SECURITY_ENGINE_VERSION, AUTONOMOUS_ENGINE_VERSION},
             "scoreAdjusted": False,
             "constraintCodes": [rule.code for rule in security_rules],
             "advancedSignalsRole": "supporting-evidence-only",
         },
+        "autonomousGate": (
+            {
+                **autonomous_diagnostics(db, session.id),
+                "scoreAdjusted": False,
+                "constraintCodes": [rule.code for rule in autonomous_rules],
+                "authority": "one-way constraint only; cannot grant VERIFIED",
+            }
+            if engine_version == AUTONOMOUS_ENGINE_VERSION
+            else {"enabled": False}
+        ),
     }
     result.calculated_at = utc_now()
     result.processing_status = VerificationProcessingStatus.COMPLETED
@@ -284,6 +315,7 @@ def calculate_verification(
             "score": round(decision.score, 2),
             "verdict": decision.verdict.value,
             "hardRules": [item.code for item in decision.hard_rules],
+            "autonomousEnabled": engine_version == AUTONOMOUS_ENGINE_VERSION,
         },
     )
     db.commit()
