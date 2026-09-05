@@ -1,15 +1,22 @@
 import uuid
 from datetime import datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.errors import SiteProofError
 from app.models.inspection import Inspection, InspectionStatus
+from app.models.semantic_challenge import SemanticCaptureChallenge
 from app.models.user import User
 from app.models.verification import VerificationSessionStatus
 from app.schemas.session import AbortRequest, CaptureCompleteRequest, StartCaptureRequest, VerificationSessionResponse
 from app.services.audit_service import record_audit
+from app.services.semantic_challenges import (
+    semantic_challenge_required_count,
+    semantic_challenges_enabled,
+    semantic_sequence_complete,
+)
 from app.services.session_common import (
     ACTIVE_SESSION_STATES,
     aware,
@@ -163,6 +170,25 @@ def complete_capture(
             "Capture can complete only after the challenge sequence finishes.",
         )
 
+    if semantic_challenges_enabled(settings):
+        semantic_rows = list(
+            db.scalars(
+                select(SemanticCaptureChallenge)
+                .where(SemanticCaptureChallenge.session_id == session.id)
+                .order_by(
+                    SemanticCaptureChallenge.sequence_number,
+                    SemanticCaptureChallenge.attempt_number,
+                )
+            ).all()
+        )
+        semantic_required = semantic_challenge_required_count(settings)
+        if not semantic_sequence_complete(semantic_rows, semantic_required):
+            raise SiteProofError(
+                409,
+                "SEMANTIC_CHALLENGES_REQUIRED",
+                "Required assignment-specific visual proof challenges must finish before capture can complete.",
+            )
+
     inspection = db.get(Inspection, session.inspection_id)
     if inspection is None:
         raise SiteProofError(409, "INSPECTION_UNAVAILABLE", "Inspection is unavailable.")
@@ -240,6 +266,7 @@ def complete_capture(
         metadata={
             "durationMs": payload.capture_duration_ms,
             "requiredDurationSeconds": required_seconds,
+            "semanticChallengesRequired": semantic_challenges_enabled(settings),
             "sensorSummary": payload.sensor_summary.model_dump(),
             "locationSamples": payload.location_summary.location_samples,
         },
