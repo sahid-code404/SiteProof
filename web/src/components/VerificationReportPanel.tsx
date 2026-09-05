@@ -141,6 +141,7 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
   const confidenceText = `${percentage(data.confidence)} · ${confidenceQuality(data.confidence)}`
   const scoreText = score === null ? '—' : `${score} / 100 · ${scoreQuality(data.score)}`
   const completedReview = data.latestReview
+  const autonomous = data.autonomous?.enabled ? data.autonomous : null
   const finalTitle = completedReview ? reviewDecisionLabel(completedReview.decision) : verdictLabel(data.verdict)
   const finalMessage = completedReview
     ? reviewDecisionMessage(completedReview.decision, data.verdict)
@@ -166,6 +167,36 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
         <div><span>Automated result</span><strong>{verdictLabel(data.verdict)}</strong></div>
         <div><span>Engine</span><strong>{data.policy?.engineVersion ?? '—'}</strong></div>
       </div>
+
+      {autonomous ? (
+        <div className="review-decision-box">
+          <div>
+            <strong>Autonomous semantic verification</strong>
+            <p className="muted">
+              AI observations can block automatic approval but cannot promote a weaker deterministic result.
+            </p>
+          </div>
+          <div className="verification-key-metrics">
+            <div><span>Task match</span><strong>{percentage(autonomous.taskMatch?.score)}</strong></div>
+            <div><span>Required coverage</span><strong>{percentage(autonomous.evidenceCoverage?.score)}</strong></div>
+            <div><span>Live-scene proof</span><strong>{percentage(autonomous.liveScene?.score)}</strong></div>
+            <div><span>Presentation risk</span><strong>{percentage(autonomous.presentationAttack?.score)}</strong></div>
+          </div>
+          <p className="muted">
+            Status {autonomous.status ?? 'unknown'} · {autonomous.sampledFrameCount ?? 0} sampled frames
+            {autonomous.modelDisagreement ? ' · model disagreement detected' : ''}
+          </p>
+          {autonomous.failureReason ? <div className="notice error">{autonomous.failureReason}</div> : null}
+          {(autonomous.mandatoryFailures?.length ?? 0) > 0 ? (
+            <div className="notice error">
+              <strong>Mandatory evidence not proven</strong>
+              {autonomous.mandatoryFailures?.map((failure, index) => (
+                <p key={failure.id ?? index}>• {failure.description || failure.reason || 'Required evidence was not established.'}</p>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {data.verdict === 'INCONCLUSIVE' && typeof data.confidence === 'number' && data.confidence >= 0.70 ? (
         <div className="notice">
