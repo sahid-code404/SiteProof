@@ -114,7 +114,7 @@ class Settings(BaseSettings):
     # When enabled it is fail-closed: unavailable/uncertain AI evidence can block automatic
     # approval, but AI can never promote a weaker deterministic verdict to VERIFIED.
     autonomous_verification_enabled: bool = False
-    autonomous_analysis_version: str = "autonomous-v1"
+    autonomous_analysis_version: str = "autonomous-v2"
     autonomous_contract_version: str = "contract-v1"
     autonomous_contract_prompt_version: str = "contract-prompt-v1"
     autonomous_vision_prompt_version: str = "vision-prompt-v1"
@@ -133,6 +133,9 @@ class Settings(BaseSettings):
     autonomous_frame_count: int = 12
     autonomous_max_frame_width: int = 1280
     autonomous_min_frame_sharpness: float = 20.0
+    autonomous_min_frame_brightness: float = 12.0
+    autonomous_max_frame_brightness: float = 243.0
+    autonomous_min_usable_frame_ratio: float = 0.75
     autonomous_model_disagreement_threshold: float = 0.20
     autonomous_hard_flag_confidence: float = 0.90
     autonomous_task_mismatch_threshold: float = 0.25
