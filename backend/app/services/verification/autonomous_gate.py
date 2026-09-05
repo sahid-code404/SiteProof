@@ -12,8 +12,6 @@ from app.models.trust import VerificationVerdict
 from app.services.autonomous_verification_service import get_autonomous_result
 from app.services.verification.domain import EngineDecision, HardRuleResult
 
-AUTONOMOUS_ENGINE_VERSION = "verification-engine-v3.0"
-
 
 def evaluate_autonomous_gate(db: Session, session_id: uuid.UUID) -> list[HardRuleResult]:
     """Convert AI observations into one-way constraints on the deterministic verdict.
