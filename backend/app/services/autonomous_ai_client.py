@@ -5,6 +5,7 @@ import json
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -13,6 +14,16 @@ from app.core.config import get_settings
 MAX_PROVIDER_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_PROVIDER_ATTEMPTS = 3
 RETRYABLE_STATUS_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
+SENSITIVE_PROVIDER_KEYS = frozenset(
+    {
+        "latitude",
+        "longitude",
+        "expectedlatitude",
+        "expectedlongitude",
+        "allowedradiusmeters",
+        "locationaddress",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -89,6 +100,43 @@ def _should_retry_status(status_code: int) -> bool:
     return status_code in RETRYABLE_STATUS_CODES
 
 
+def _redact_sensitive_provider_fields(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _redact_sensitive_provider_fields(item)
+            for key, item in value.items()
+            if str(key).replace("_", "").lower() not in SENSITIVE_PROVIDER_KEYS
+        }
+    if isinstance(value, list):
+        return [_redact_sensitive_provider_fields(item) for item in value]
+    return value
+
+
+def _minimize_provider_user_text(user_text: str) -> str:
+    """Remove dedicated precise-location fields before any text leaves SiteProof.
+
+    Natural-language admin text is preserved exactly because it can itself define the inspection
+    task. Structured latitude/longitude, radius and full address fields are unnecessary for visual
+    semantic analysis and remain handled by SiteProof's deterministic location checks instead.
+    """
+    try:
+        parsed = json.loads(user_text)
+    except json.JSONDecodeError:
+        return user_text
+    minimized = _redact_sensitive_provider_fields(parsed)
+    return json.dumps(minimized, ensure_ascii=False, separators=(",", ":"))
+
+
+def _validate_provider_base_url(base_url: str) -> None:
+    parsed = urlsplit(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise AutonomousAIError("Autonomous AI provider URL must be an HTTP(S) endpoint")
+    if parsed.username or parsed.password:
+        raise AutonomousAIError("Autonomous AI provider URL must not contain embedded credentials")
+    if parsed.query or parsed.fragment:
+        raise AutonomousAIError("Autonomous AI provider URL must not contain a query or fragment")
+
+
 class AutonomousAIClient:
     """Minimal hardened OpenAI-compatible JSON client.
 
@@ -98,7 +146,8 @@ class AutonomousAIClient:
 
     Redirects are disabled so an upstream endpoint cannot silently redirect evidence or bearer
     credentials to another host. Provider response bodies are bounded, transient failures get only
-    a few short retries, and provider response text is never copied into raised errors.
+    a few short retries, provider response text is never copied into raised errors, and structured
+    precise-location fields are stripped before provider egress.
     """
 
     def __init__(self) -> None:
@@ -111,7 +160,13 @@ class AutonomousAIClient:
     def configured(self) -> bool:
         return bool(self.base_url)
 
-    def _request(self, client: httpx.Client, endpoint: str, headers: dict[str, str], payload: dict[str, Any]) -> httpx.Response:
+    def _request(
+        self,
+        client: httpx.Client,
+        endpoint: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+    ) -> httpx.Response:
         last_error: Exception | None = None
         for attempt in range(1, MAX_PROVIDER_ATTEMPTS + 1):
             try:
@@ -142,10 +197,12 @@ class AutonomousAIClient:
     ) -> AIJsonResponse:
         if not self.configured:
             raise AutonomousAIError("Autonomous AI provider is not configured")
+        _validate_provider_base_url(self.base_url)
         if not model.strip():
             raise AutonomousAIError("Autonomous AI model is not configured")
 
-        content: list[dict[str, Any]] = [{"type": "text", "text": user_text}]
+        minimized_user_text = _minimize_provider_user_text(user_text)
+        content: list[dict[str, Any]] = [{"type": "text", "text": minimized_user_text}]
         for image in image_data_urls or []:
             content.append(
                 {
