@@ -7,4 +7,5 @@ def test_health_endpoint(client):
     assert body["autonomousVerificationEnabled"] is False
     assert body["autonomousProviderConfigured"] is False
     assert body["autonomousConsensusConfigured"] is False
+    assert body["autonomousIndependentProviderConfigured"] is False
     assert body["autonomousVerificationReady"] is True
