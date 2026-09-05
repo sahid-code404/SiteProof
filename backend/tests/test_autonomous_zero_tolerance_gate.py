@@ -7,6 +7,8 @@ from app.services.verification.autonomous_gate import (
     autonomous_audit_binding_issues,
     evaluate_autonomous_gate,
     frame_hash_diversity,
+    frame_quality_issues,
+    frame_quality_usable_ratio,
     independent_provider_ready,
     semantic_consensus_ready,
 )
@@ -23,6 +25,7 @@ def _settings():
         autonomous_require_independent_provider=True,
         autonomous_hard_flag_confidence=0.90,
         autonomous_frame_count=12,
+        autonomous_min_usable_frame_ratio=0.75,
         autonomous_task_mismatch_threshold=0.25,
         autonomous_review_task_threshold=0.70,
         autonomous_asset_mismatch_threshold=0.25,
@@ -58,7 +61,18 @@ def _strong_result(*, primary="vlm-a", secondary="vlm-b", hashes=None):
         task_match_score=0.96,
         task_match_confidence=0.95,
         contract_json={"assetIdentity": {"required": False}},
-        observations_json={"primary": {"taskMatch": {"score": 0.96}}},
+        observations_json={
+            "frameQuality": {
+                "total": 12,
+                "sharpCount": 12,
+                "exposureAcceptableCount": 12,
+                "usableCount": 12,
+                "sharpRatio": 1.0,
+                "exposureAcceptableRatio": 1.0,
+                "usableRatio": 1.0,
+            },
+            "primary": {"taskMatch": {"score": 0.96}},
+        },
         analyzed_at=datetime(2026, 9, 5, 8, 0, tzinfo=timezone.utc),
         asset_identity_score=0.95,
         asset_identity_confidence=0.95,
@@ -122,7 +136,11 @@ def test_distinct_models_with_strong_evidence_have_complete_audit_chain(monkeypa
     assert "AUTONOMOUS_TWO_MODEL_CONSENSUS_REQUIRED" not in codes
     assert "AUTONOMOUS_INDEPENDENT_PROVIDER_REQUIRED" not in codes
     assert "AUTONOMOUS_AUDIT_BINDING_INCOMPLETE" not in codes
+    assert "AUTONOMOUS_FRAME_QUALITY_UNAVAILABLE" not in codes
+    assert "AUTONOMOUS_FRAME_QUALITY_INSUFFICIENT" not in codes
     assert autonomous_audit_binding_issues(result) == []
+    assert frame_quality_issues(result) == []
+    assert frame_quality_usable_ratio(result) == 1.0
 
 
 def test_frame_hash_diversity_blocks_exactly_repeated_evidence(monkeypatch):
@@ -136,8 +154,52 @@ def test_temporal_sampling_floor_blocks_too_few_video_moments(monkeypatch):
     result = _strong_result()
     result.sampled_frame_count = 4
     result.frame_hashes_json = _valid_hashes(4)
+    result.observations_json["frameQuality"].update(
+        total=4,
+        sharpCount=4,
+        exposureAcceptableCount=4,
+        usableCount=4,
+        sharpRatio=1.0,
+        exposureAcceptableRatio=1.0,
+        usableRatio=1.0,
+    )
     codes = _codes(monkeypatch, result)
     assert "AUTONOMOUS_TEMPORAL_COVERAGE_INSUFFICIENT" in codes
+
+
+def test_low_usable_frame_ratio_blocks_unattended_approval(monkeypatch):
+    result = _strong_result()
+    result.observations_json["frameQuality"].update(
+        sharpCount=8,
+        exposureAcceptableCount=9,
+        usableCount=8,
+        sharpRatio=8 / 12,
+        exposureAcceptableRatio=9 / 12,
+        usableRatio=8 / 12,
+    )
+    codes = _codes(monkeypatch, result)
+    assert frame_quality_usable_ratio(result) == 8 / 12
+    assert "AUTONOMOUS_FRAME_QUALITY_INSUFFICIENT" in codes
+    assert "AUTONOMOUS_FRAME_QUALITY_UNAVAILABLE" not in codes
+
+
+def test_missing_frame_quality_fails_closed(monkeypatch):
+    result = _strong_result()
+    result.observations_json.pop("frameQuality")
+    codes = _codes(monkeypatch, result)
+    assert frame_quality_issues(result) == ["missing:frameQuality"]
+    assert frame_quality_usable_ratio(result) is None
+    assert "AUTONOMOUS_FRAME_QUALITY_UNAVAILABLE" in codes
+
+
+def test_tampered_frame_quality_ratio_fails_closed(monkeypatch):
+    result = _strong_result()
+    result.observations_json["frameQuality"]["usableCount"] = 12
+    result.observations_json["frameQuality"]["usableRatio"] = 0.50
+    issues = frame_quality_issues(result)
+    codes = _codes(monkeypatch, result)
+    assert "invalid:frameQualityRatioBinding" in issues
+    assert "AUTONOMOUS_FRAME_QUALITY_UNAVAILABLE" in codes
 
 
 def test_malformed_semantic_provenance_blocks_unattended_approval(monkeypatch):
