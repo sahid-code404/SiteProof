@@ -182,6 +182,7 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
             <div><span>Live-scene proof</span><strong>{percentage(autonomous.liveScene?.score)}</strong></div>
             <div><span>Presentation risk</span><strong>{percentage(autonomous.presentationAttack?.score)}</strong></div>
             <div><span>Two-model consensus</span><strong>{autonomous.semanticConsensusReady ? 'Ready' : 'Not proven'}</strong></div>
+            <div><span>Independent provider</span><strong>{autonomous.independentProviderReady ? 'Ready' : 'Not proven'}</strong></div>
             <div><span>Semantic audit chain</span><strong>{autonomous.auditBindingReady ? 'Complete' : 'Incomplete'}</strong></div>
             <div><span>Frame diversity</span><strong>{percentage(autonomous.frameHashDiversity)}</strong></div>
             <div><span>Sampled moments</span><strong>{autonomous.sampledFrameCount ?? 0}</strong></div>
@@ -194,6 +195,12 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
             <div className="notice error">
               <strong>Two-model consensus missing</strong>
               <p>Unattended approval is blocked until two differently configured semantic models independently support the evidence.</p>
+            </div>
+          ) : null}
+          {autonomous.independentProviderReady === false ? (
+            <div className="notice error">
+              <strong>Independent semantic provider missing</strong>
+              <p>Automatic approval is blocked because the secondary observer is not running through a distinct provider endpoint.</p>
             </div>
           ) : null}
           {autonomous.auditBindingReady === false ? (
