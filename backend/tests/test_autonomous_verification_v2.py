@@ -1,6 +1,14 @@
+from types import SimpleNamespace
+
+import app.services.autonomous_verification_service as autonomous_module
 from app.models.trust import VerificationVerdict
 from app.services.autonomous_ai_client import AIJsonResponse
-from app.services.autonomous_verification_service import _aggregate_analysis, _fallback_contract
+from app.services.autonomous_verification_service import (
+    SampledFrame,
+    _aggregate_analysis,
+    _fallback_contract,
+    _frame_quality_summary,
+)
 from app.services.verification.autonomous_gate import apply_autonomous_gate
 from app.services.verification.domain import EngineDecision, HardRuleResult
 
@@ -188,3 +196,51 @@ def test_missing_mandatory_evidence_cannot_be_hidden_by_high_vlm_coverage_score(
     result = _aggregate_analysis(contract, primary, None)
     assert result["mandatoryFailures"]
     assert result["evidenceCoverageScore"] == 0.0
+
+
+def test_frame_quality_summary_is_deterministic_and_requires_both_focus_and_exposure(monkeypatch):
+    settings = SimpleNamespace(
+        autonomous_min_frame_sharpness=20.0,
+        autonomous_min_frame_brightness=12.0,
+        autonomous_max_frame_brightness=243.0,
+        autonomous_min_usable_frame_ratio=0.75,
+    )
+    monkeypatch.setattr(autonomous_module, "get_settings", lambda: settings)
+    frames = [
+        SampledFrame(0, 0, b"a", "a" * 64, sharpness=30.0, brightness=100.0),
+        SampledFrame(1, 1000, b"b", "b" * 64, sharpness=25.0, brightness=20.0),
+        SampledFrame(2, 2000, b"c", "c" * 64, sharpness=40.0, brightness=230.0),
+        SampledFrame(3, 3000, b"d", "d" * 64, sharpness=10.0, brightness=100.0),
+    ]
+
+    summary = _frame_quality_summary(frames)
+
+    assert summary["total"] == 4
+    assert summary["sharpCount"] == 3
+    assert summary["exposureAcceptableCount"] == 4
+    assert summary["usableCount"] == 3
+    assert summary["usableRatio"] == 0.75
+    assert summary["thresholds"]["minUsableRatio"] == 0.75
+
+
+def test_frame_quality_summary_rejects_under_and_over_exposed_frames(monkeypatch):
+    settings = SimpleNamespace(
+        autonomous_min_frame_sharpness=20.0,
+        autonomous_min_frame_brightness=12.0,
+        autonomous_max_frame_brightness=243.0,
+        autonomous_min_usable_frame_ratio=0.75,
+    )
+    monkeypatch.setattr(autonomous_module, "get_settings", lambda: settings)
+    frames = [
+        SampledFrame(0, 0, b"a", "a" * 64, sharpness=30.0, brightness=11.0),
+        SampledFrame(1, 1000, b"b", "b" * 64, sharpness=30.0, brightness=244.0),
+        SampledFrame(2, 2000, b"c", "c" * 64, sharpness=30.0, brightness=120.0),
+        SampledFrame(3, 3000, b"d", "d" * 64, sharpness=30.0, brightness=180.0),
+    ]
+
+    summary = _frame_quality_summary(frames)
+
+    assert summary["sharpCount"] == 4
+    assert summary["exposureAcceptableCount"] == 2
+    assert summary["usableCount"] == 2
+    assert summary["usableRatio"] == 0.5
