@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import string
 import uuid
 from dataclasses import replace
@@ -45,6 +46,59 @@ def frame_hash_diversity(frame_hashes: list[str] | None) -> float:
     if not hashes:
         return 0.0
     return len(set(hashes)) / len(hashes)
+
+
+def frame_quality_issues(result: object) -> list[str]:
+    """Validate the deterministic sampled-frame quality record used by the autonomous gate."""
+    observations = getattr(result, "observations_json", None)
+    if not isinstance(observations, dict):
+        return ["missing:frameQuality"]
+    quality = observations.get("frameQuality")
+    if not isinstance(quality, dict):
+        return ["missing:frameQuality"]
+
+    issues: list[str] = []
+    total = quality.get("total")
+    usable_count = quality.get("usableCount")
+    usable_ratio = quality.get("usableRatio")
+    sampled_count = int(getattr(result, "sampled_frame_count", 0) or 0)
+
+    if isinstance(total, bool) or not isinstance(total, int) or total <= 0:
+        issues.append("invalid:frameQualityTotal")
+    elif total != sampled_count:
+        issues.append("invalid:frameQualitySampleCount")
+
+    if isinstance(usable_count, bool) or not isinstance(usable_count, int):
+        issues.append("invalid:frameQualityUsableCount")
+    elif isinstance(total, int) and not isinstance(total, bool) and not 0 <= usable_count <= total:
+        issues.append("invalid:frameQualityUsableCount")
+
+    if isinstance(usable_ratio, bool) or not isinstance(usable_ratio, (int, float)):
+        issues.append("invalid:frameQualityUsableRatio")
+    else:
+        ratio = float(usable_ratio)
+        if not math.isfinite(ratio) or not 0.0 <= ratio <= 1.0:
+            issues.append("invalid:frameQualityUsableRatio")
+        elif (
+            isinstance(total, int)
+            and not isinstance(total, bool)
+            and total > 0
+            and isinstance(usable_count, int)
+            and not isinstance(usable_count, bool)
+            and 0 <= usable_count <= total
+            and abs(ratio - (usable_count / total)) > 0.0000015
+        ):
+            issues.append("invalid:frameQualityRatioBinding")
+
+    return list(dict.fromkeys(issues))
+
+
+def frame_quality_usable_ratio(result: object) -> float | None:
+    if frame_quality_issues(result):
+        return None
+    observations = getattr(result, "observations_json", {})
+    quality = observations.get("frameQuality", {})
+    return float(quality["usableRatio"])
 
 
 def autonomous_audit_binding_issues(result: object) -> list[str]:
@@ -205,6 +259,27 @@ def evaluate_autonomous_gate(db: Session, session_id: uuid.UUID) -> list[HardRul
             )
         )
 
+    quality_issues = frame_quality_issues(result)
+    usable_frame_ratio = frame_quality_usable_ratio(result)
+    if quality_issues or usable_frame_ratio is None:
+        rules.append(
+            HardRuleResult(
+                code="AUTONOMOUS_FRAME_QUALITY_UNAVAILABLE",
+                maximum_verdict=VerificationVerdict.REVIEW_REQUIRED,
+                explanation="Deterministic sharpness/exposure quality could not be validated for the sampled video evidence.",
+            )
+        )
+    else:
+        minimum_usable_ratio = max(0.0, min(1.0, settings.autonomous_min_usable_frame_ratio))
+        if usable_frame_ratio < minimum_usable_ratio:
+            rules.append(
+                HardRuleResult(
+                    code="AUTONOMOUS_FRAME_QUALITY_INSUFFICIENT",
+                    maximum_verdict=VerificationVerdict.REVIEW_REQUIRED,
+                    explanation="Too few sampled video moments were both sharp and acceptably exposed for unattended semantic approval.",
+                )
+            )
+
     task_score = result.task_match_score or 0.0
     task_conf = result.task_match_confidence or 0.0
     if task_score <= settings.autonomous_task_mismatch_threshold and task_conf >= hard_conf:
@@ -357,6 +432,11 @@ def autonomous_diagnostics(db: Session, session_id: uuid.UUID) -> dict[str, Any]
     if result is None:
         return {"enabled": True, "status": "PENDING"}
     audit_issues = autonomous_audit_binding_issues(result)
+    quality_issues = frame_quality_issues(result)
+    usable_frame_ratio = frame_quality_usable_ratio(result)
+    minimum_usable_ratio = max(0.0, min(1.0, settings.autonomous_min_usable_frame_ratio))
+    observations = result.observations_json if isinstance(result.observations_json, dict) else {}
+    frame_quality = observations.get("frameQuality")
     return {
         "enabled": True,
         "status": result.status.value,
@@ -375,6 +455,11 @@ def autonomous_diagnostics(db: Session, session_id: uuid.UUID) -> dict[str, Any]
         "auditBindingIssues": audit_issues,
         "sampledFrameCount": result.sampled_frame_count,
         "frameHashDiversity": frame_hash_diversity(result.frame_hashes_json),
+        "frameQualityReady": not quality_issues
+        and usable_frame_ratio is not None
+        and usable_frame_ratio >= minimum_usable_ratio,
+        "frameQualityIssues": quality_issues,
+        "frameQuality": frame_quality if isinstance(frame_quality, dict) else None,
         "taskMatch": {
             "score": result.task_match_score,
             "confidence": result.task_match_confidence,
