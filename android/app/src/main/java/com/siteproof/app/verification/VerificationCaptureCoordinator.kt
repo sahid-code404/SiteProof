@@ -18,6 +18,8 @@ import com.siteproof.app.verification.model.ChallengeValidationResult
 import com.siteproof.app.verification.model.DeviceCapabilities
 import com.siteproof.app.verification.model.EvidencePackage
 import com.siteproof.app.verification.model.LocationReadiness
+import com.siteproof.app.verification.model.SemanticChallengeCompleteResult
+import com.siteproof.app.verification.model.SemanticChallengeIssue
 import com.siteproof.app.verification.model.SessionCreateResponse
 import com.siteproof.app.verification.sensors.ChallengeMovementGuidance
 import com.siteproof.app.verification.sensors.SensorRecorder
@@ -64,10 +66,17 @@ class VerificationCaptureCoordinator(
         val idempotencyKey: String,
     )
 
+    data class ActiveSemanticChallenge(
+        val issue: SemanticChallengeIssue,
+        val startedMonotonicNs: Long,
+    )
+
     private val startMutex = Mutex()
     private var active: ActiveCapture? = null
     private var activeChallenge: ActiveChallenge? = null
+    private var activeSemanticChallenge: ActiveSemanticChallenge? = null
     private var pendingSubmission: ChallengeSubmitRequest? = null
+    private var pendingSemanticCompleteNs: Long? = null
     private val challengeTimeline = mutableListOf<ChallengeTimelineMetadata>()
 
     suspend fun prepare(inspectionId: String): Prepared {
@@ -86,6 +95,9 @@ class VerificationCaptureCoordinator(
             }
             require(session.captureMaximumSeconds in session.requiredCaptureDurationSeconds..90) {
                 "Server returned an invalid capture time limit."
+            }
+            require(session.semanticChallengeCount in 0..4) {
+                "Server returned an invalid semantic proof challenge count."
             }
             ensureStorage(session.requiredCaptureDurationSeconds)
             val location = locationRecorder.freshLocation(
@@ -155,7 +167,9 @@ class VerificationCaptureCoordinator(
             val videoStartNs = cameraManager.startRecording(File(directory, "capture.mp4"))
             challengeTimeline.clear()
             activeChallenge = null
+            activeSemanticChallenge = null
             pendingSubmission = null
+            pendingSemanticCompleteNs = null
             active = ActiveCapture(
                 prepared = prepared,
                 directory = directory,
@@ -187,6 +201,7 @@ class VerificationCaptureCoordinator(
     suspend fun beginNextChallenge(): ChallengeIssue {
         val capture = checkNotNull(active) { "Capture is not active." }
         check(activeChallenge == null) { "A challenge is already active." }
+        check(activeSemanticChallenge == null) { "A semantic challenge is already active." }
         val issuedReceiveNs = SystemClock.elapsedRealtimeNanos()
         val issue = repository.issueChallenge(capture.prepared.session.sessionId)
         val startNs = SystemClock.elapsedRealtimeNanos()
@@ -248,6 +263,38 @@ class VerificationCaptureCoordinator(
 
     suspend fun retryCurrentChallengeSubmission(): ChallengeValidationResult = submitCurrentChallenge()
 
+    suspend fun beginNextSemanticChallenge(): SemanticChallengeIssue {
+        val capture = checkNotNull(active) { "Capture is not active." }
+        check(activeChallenge == null) { "Movement challenge must finish first." }
+        check(activeSemanticChallenge == null) { "A semantic challenge is already active." }
+        val issue = repository.issueSemanticChallenge(capture.prepared.session.sessionId)
+        val startNs = SystemClock.elapsedRealtimeNanos()
+        val started = repository.startSemanticChallenge(issue, startNs)
+        activeSemanticChallenge = ActiveSemanticChallenge(started, startNs)
+        pendingSemanticCompleteNs = null
+        return started
+    }
+
+    fun semanticChallengeElapsedMs(): Long {
+        val challenge = activeSemanticChallenge ?: return 0L
+        return (SystemClock.elapsedRealtimeNanos() - challenge.startedMonotonicNs) / 1_000_000L
+    }
+
+    suspend fun completeCurrentSemanticChallenge(): SemanticChallengeCompleteResult {
+        checkNotNull(active) { "Capture is not active." }
+        val challenge = checkNotNull(activeSemanticChallenge) { "No semantic challenge is active." }
+        val completeNs = pendingSemanticCompleteNs ?: SystemClock.elapsedRealtimeNanos().also {
+            pendingSemanticCompleteNs = it
+        }
+        val result = repository.completeSemanticChallenge(challenge.issue, completeNs)
+        pendingSemanticCompleteNs = null
+        activeSemanticChallenge = null
+        return result
+    }
+
+    suspend fun retryCurrentSemanticCompletion(): SemanticChallengeCompleteResult =
+        completeCurrentSemanticChallenge()
+
     private fun buildSubmission(challenge: ActiveChallenge): ChallengeSubmitRequest {
         val endRelativeNs = sensorRecorder.relativeNowNs(SystemClock.elapsedRealtimeNanos())
         val slice = sensorRecorder.challengeSlice(challenge.startRelativeNs, endRelativeNs)
@@ -295,11 +342,14 @@ class VerificationCaptureCoordinator(
 
     suspend fun stop(): EvidencePackage {
         val capture = checkNotNull(active) { "No capture is active." }
-        check(activeChallenge == null) { "Current challenge must finish before capture stops." }
+        check(activeChallenge == null) { "Current movement challenge must finish before capture stops." }
+        check(activeSemanticChallenge == null) { "Current semantic challenge must finish before capture stops." }
         try {
             val requestedSeconds = capture.prepared.session.requiredCaptureDurationSeconds
             val maximumSeconds = capture.prepared.session.captureMaximumSeconds
-            require(requestedSeconds in 10..75) { "Unsupported required video duration: $requestedSeconds seconds." }
+            require(requestedSeconds in 10..75) {
+                "Unsupported required video duration: $requestedSeconds seconds."
+            }
             val requestedMinimumMs = requestedSeconds * 1_000L
 
             // Wait on CameraX's encoded duration, not a wall-clock approximation. Status events
@@ -369,7 +419,9 @@ class VerificationCaptureCoordinator(
         capture.directory.deleteRecursively()
         active = null
         activeChallenge = null
+        activeSemanticChallenge = null
         pendingSubmission = null
+        pendingSemanticCompleteNs = null
         repository.abort(capture.prepared.session.sessionId, reason)
     }
 
@@ -398,7 +450,9 @@ class VerificationCaptureCoordinator(
         locationRecorder.stopCapture()
         active = null
         activeChallenge = null
+        activeSemanticChallenge = null
         pendingSubmission = null
+        pendingSemanticCompleteNs = null
     }
 
     private companion object {
