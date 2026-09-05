@@ -6,10 +6,10 @@ plugins {
 }
 
 val siteProofVersionCode = providers.gradleProperty("SITEPROOF_VERSION_CODE")
-    .orElse("7")
+    .orElse("8")
     .map(String::toInt)
 val siteProofVersionName = providers.gradleProperty("SITEPROOF_VERSION_NAME")
-    .orElse("0.7.0")
+    .orElse("0.7.1")
 val siteProofUpdateManifestUrl = providers.gradleProperty("SITEPROOF_UPDATE_MANIFEST_URL")
     .orElse("https://github.com/sahid-code404/SiteProof/releases/download/dev-latest/siteproof-update.json")
 
