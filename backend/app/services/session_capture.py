@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.errors import SiteProofError
 from app.models.inspection import Inspection, InspectionStatus
-from app.models.semantic_challenge import SemanticCaptureChallenge
+from app.models.semantic_challenge import SemanticCaptureChallenge, SemanticChallengeStatus
 from app.models.user import User
 from app.models.verification import VerificationSessionStatus
 from app.schemas.session import AbortRequest, CaptureCompleteRequest, StartCaptureRequest, VerificationSessionResponse
@@ -187,6 +187,22 @@ def complete_capture(
                 409,
                 "SEMANTIC_CHALLENGES_REQUIRED",
                 "Required assignment-specific visual proof challenges must finish before capture can complete.",
+            )
+        completed_semantic_rows = [
+            row for row in semantic_rows if row.status == SemanticChallengeStatus.COMPLETED
+        ]
+        if any(
+            row.window_start_ms is None
+            or row.window_end_ms is None
+            or row.window_start_ms < 0
+            or row.window_end_ms <= row.window_start_ms
+            or row.window_end_ms > payload.capture_duration_ms
+            for row in completed_semantic_rows
+        ):
+            raise SiteProofError(
+                422,
+                "SEMANTIC_CHALLENGE_TIMING_INVALID",
+                "A semantic proof window falls outside the reported continuous video duration.",
             )
 
     inspection = db.get(Inspection, session.inspection_id)
