@@ -46,6 +46,32 @@ export type VerificationSignalItem = {
   sourceAlgorithmVersion?: string | null
 }
 
+export type AutonomousVerificationDiagnostics = {
+  enabled: boolean
+  status?: string
+  analysisVersion?: string
+  contractVersion?: string
+  contractConfidence?: number | null
+  compilerModel?: string | null
+  primaryVlmModel?: string | null
+  secondaryVlmModel?: string | null
+  sampledFrameCount?: number
+  taskMatch?: { score?: number | null; confidence?: number | null }
+  assetIdentity?: { score?: number | null; confidence?: number | null }
+  evidenceCoverage?: { score?: number | null; confidence?: number | null }
+  liveScene?: { score?: number | null; confidence?: number | null }
+  presentationAttack?: { score?: number | null; confidence?: number | null }
+  mandatoryFailureCount?: number
+  mandatoryFailures?: Array<{
+    id?: string
+    description?: string
+    confidence?: number | null
+    reason?: string
+  }>
+  modelDisagreement?: boolean
+  failureReason?: string | null
+}
+
 export type VerificationResponse = {
   resultId?: string | null
   sessionId: string
@@ -66,6 +92,7 @@ export type VerificationResponse = {
   summaryReasons: string[]
   warnings: string[]
   limitations: string[]
+  autonomous?: AutonomousVerificationDiagnostics | null
   calculatedAt?: string | null
   latestReview?: {
     id: string
