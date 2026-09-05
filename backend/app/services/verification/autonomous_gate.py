@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models.autonomous_verification import AutonomousAnalysisStatus
 from app.models.trust import VerificationVerdict
+from app.services.autonomous_ai_client import provider_endpoints_independent
 from app.services.autonomous_verification_service import get_autonomous_result
 from app.services.verification.domain import EngineDecision, HardRuleResult
 
@@ -100,6 +101,18 @@ def autonomous_audit_binding_issues(result: object) -> list[str]:
     return issues
 
 
+def independent_provider_ready(settings: object) -> bool:
+    primary_model = str(getattr(settings, "autonomous_vlm_model", "") or "").strip()
+    secondary_model = str(getattr(settings, "autonomous_secondary_vlm_model", "") or "").strip()
+    contract_model = str(getattr(settings, "autonomous_contract_model", "") or "").strip()
+    if not primary_model or not secondary_model or secondary_model in {primary_model, contract_model}:
+        return False
+    return provider_endpoints_independent(
+        str(getattr(settings, "autonomous_ai_base_url", "") or ""),
+        str(getattr(settings, "autonomous_secondary_ai_base_url", "") or ""),
+    )
+
+
 def evaluate_autonomous_gate(db: Session, session_id: uuid.UUID) -> list[HardRuleResult]:
     """Convert AI observations into one-way constraints on the deterministic verdict.
 
@@ -149,6 +162,16 @@ def evaluate_autonomous_gate(db: Session, session_id: uuid.UUID) -> list[HardRul
                 code="AUTONOMOUS_TWO_MODEL_CONSENSUS_REQUIRED",
                 maximum_verdict=VerificationVerdict.REVIEW_REQUIRED,
                 explanation="Automatic approval requires two differently configured semantic vision models to agree on the critical evidence.",
+            )
+        )
+
+    provider_ready = independent_provider_ready(settings)
+    if settings.autonomous_require_independent_provider and not provider_ready:
+        rules.append(
+            HardRuleResult(
+                code="AUTONOMOUS_INDEPENDENT_PROVIDER_REQUIRED",
+                maximum_verdict=VerificationVerdict.REVIEW_REQUIRED,
+                explanation="Unattended approval requires the secondary semantic model to run through a distinct provider endpoint.",
             )
         )
 
@@ -347,6 +370,7 @@ def autonomous_diagnostics(db: Session, session_id: uuid.UUID) -> dict[str, Any]
             result.primary_vlm_model,
             result.secondary_vlm_model,
         ),
+        "independentProviderReady": independent_provider_ready(settings),
         "auditBindingReady": not audit_issues,
         "auditBindingIssues": audit_issues,
         "sampledFrameCount": result.sampled_frame_count,
