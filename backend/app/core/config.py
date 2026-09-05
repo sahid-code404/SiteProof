@@ -110,6 +110,32 @@ class Settings(BaseSettings):
     fusion_correlation_weight: float = 0.20
     fusion_duration_weight: float = 0.10
 
+    # Autonomous verification v2. This layer is opt-in while it is tested on its feature branch.
+    # When enabled it is fail-closed: unavailable/uncertain AI evidence can block automatic
+    # approval, but AI can never promote a weaker deterministic verdict to VERIFIED.
+    autonomous_verification_enabled: bool = False
+    autonomous_analysis_version: str = "autonomous-v1"
+    autonomous_contract_version: str = "contract-v1"
+    autonomous_contract_prompt_version: str = "contract-prompt-v1"
+    autonomous_vision_prompt_version: str = "vision-prompt-v1"
+    autonomous_ai_base_url: str = ""
+    autonomous_ai_api_key: str = ""
+    autonomous_contract_model: str = ""
+    autonomous_vlm_model: str = ""
+    autonomous_secondary_vlm_model: str = ""
+    autonomous_ai_timeout_seconds: float = 60.0
+    autonomous_frame_count: int = 12
+    autonomous_max_frame_width: int = 1280
+    autonomous_min_frame_sharpness: float = 20.0
+    autonomous_model_disagreement_threshold: float = 0.20
+    autonomous_hard_flag_confidence: float = 0.90
+    autonomous_task_mismatch_threshold: float = 0.25
+    autonomous_review_task_threshold: float = 0.70
+    autonomous_asset_mismatch_threshold: float = 0.25
+    autonomous_min_coverage: float = 0.85
+    autonomous_live_scene_review_threshold: float = 0.65
+    autonomous_presentation_attack_flag_threshold: float = 0.90
+
     storage_backend: str = "local"
     local_storage_path: str = "./siteproof-evidence"
     storage_endpoint_url: str | None = None
