@@ -10,8 +10,10 @@ from app.services.autonomous_ai_client import (
     AutonomousAIError,
     _extract_json,
     _message_text,
+    _minimize_provider_user_text,
     _retry_delay_seconds,
     _should_retry_status,
+    _validate_provider_base_url,
     _validate_response_size,
 )
 
@@ -65,6 +67,45 @@ def test_retry_policy_is_limited_to_transient_status_codes():
     assert _should_retry_status(404) is False
     assert _retry_delay_seconds(1) == pytest.approx(0.25)
     assert _retry_delay_seconds(2) == pytest.approx(0.50)
+
+
+def test_provider_user_text_minimizes_structured_precise_location_fields():
+    minimized = json.loads(
+        _minimize_provider_user_text(
+            json.dumps(
+                {
+                    "assignmentContext": {
+                        "title": "Gate 3 pothole",
+                        "locationName": "Gate 3",
+                        "locationAddress": "Sensitive exact address",
+                        "expectedLatitude": 12.345,
+                        "expectedLongitude": 67.89,
+                        "allowedRadiusMeters": 30,
+                    },
+                    "frames": [{"frameIndex": 1, "brightness": 100.0}],
+                }
+            )
+        )
+    )
+    context = minimized["assignmentContext"]
+    assert context["title"] == "Gate 3 pothole"
+    assert context["locationName"] == "Gate 3"
+    assert "locationAddress" not in context
+    assert "expectedLatitude" not in context
+    assert "expectedLongitude" not in context
+    assert "allowedRadiusMeters" not in context
+    assert minimized["frames"][0]["frameIndex"] == 1
+
+
+def test_provider_base_url_rejects_non_http_and_embedded_credentials():
+    with pytest.raises(AutonomousAIError, match="HTTP"):
+        _validate_provider_base_url("file:///tmp/provider")
+    with pytest.raises(AutonomousAIError, match="embedded credentials"):
+        _validate_provider_base_url("https://user:pass@provider.example/v1")
+    with pytest.raises(AutonomousAIError, match="query or fragment"):
+        _validate_provider_base_url("https://provider.example/v1?tenant=secret")
+    _validate_provider_base_url("http://localhost:11434/v1")
+    _validate_provider_base_url("https://provider.example/v1")
 
 
 class _FakeHttpClient:
@@ -130,3 +171,25 @@ def test_complete_json_falls_back_when_provider_rejects_response_format(monkeypa
     assert result.payload == {"ok": True}
     assert "response_format" in fake.payloads[0]
     assert "response_format" not in fake.payloads[1]
+
+
+def test_complete_json_sends_minimized_structured_context(monkeypatch):
+    fake = _FakeHttpClient([_provider_success()])
+    monkeypatch.setattr(ai_module.httpx, "Client", lambda **_: fake)
+
+    _configured_client().complete_json(
+        model="vlm-test",
+        system_prompt="system",
+        user_text=json.dumps(
+            {
+                "title": "Transformer",
+                "latitude": 12.3,
+                "longitude": 45.6,
+                "locationAddress": "Sensitive address",
+            }
+        ),
+    )
+
+    sent_text = fake.payloads[0]["messages"][1]["content"][0]["text"]
+    sent = json.loads(sent_text)
+    assert sent == {"title": "Transformer"}
