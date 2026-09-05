@@ -44,6 +44,7 @@ data class SessionCreateResponse(
     val captureMaximumSeconds: Int,
     val allowedRadiusMeters: Int,
     val deadline: String,
+    val semanticChallengeCount: Int = 0,
 )
 
 @JsonClass(generateAdapter = false)
