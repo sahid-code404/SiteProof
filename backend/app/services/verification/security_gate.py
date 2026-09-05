@@ -6,6 +6,7 @@ from dataclasses import replace
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.models.advanced_security import (
     AdvancedProcessStatus,
     AdvancedSecurityResult,
@@ -18,9 +19,11 @@ from app.models.trust import VerificationVerdict
 from app.services.advanced_security_service import ANALYSIS_VERSION as SECURITY_ANALYSIS_VERSION
 from app.services.advanced_signals_service import ANALYSIS_VERSION as SIGNALS_ANALYSIS_VERSION
 from app.services.verification.domain import EngineDecision, HardRuleResult
-
-LEGACY_ENGINE_VERSION = "verification-engine-v1.1"
-SECURITY_ENGINE_VERSION = "verification-engine-v2.0"
+from app.services.verification.versions import (
+    AUTONOMOUS_ENGINE_VERSION,
+    LEGACY_ENGINE_VERSION,
+    SECURITY_ENGINE_VERSION,
+)
 
 
 def security_pipeline_ready(db: Session, session_id: uuid.UUID) -> bool:
@@ -42,7 +45,11 @@ def security_pipeline_ready(db: Session, session_id: uuid.UUID) -> bool:
 
 
 def engine_version_for_session(db: Session, session_id: uuid.UUID) -> str:
-    return SECURITY_ENGINE_VERSION if security_pipeline_ready(db, session_id) else LEGACY_ENGINE_VERSION
+    if not security_pipeline_ready(db, session_id):
+        return LEGACY_ENGINE_VERSION
+    if get_settings().autonomous_verification_enabled:
+        return AUTONOMOUS_ENGINE_VERSION
+    return SECURITY_ENGINE_VERSION
 
 
 def evaluate_security_gate(db: Session, session_id: uuid.UUID) -> list[HardRuleResult]:
