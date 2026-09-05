@@ -184,6 +184,8 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
             <div><span>Two-model consensus</span><strong>{autonomous.semanticConsensusReady ? 'Ready' : 'Not proven'}</strong></div>
             <div><span>Independent provider</span><strong>{autonomous.independentProviderReady ? 'Ready' : 'Not proven'}</strong></div>
             <div><span>Semantic audit chain</span><strong>{autonomous.auditBindingReady ? 'Complete' : 'Incomplete'}</strong></div>
+            <div><span>Frame quality</span><strong>{autonomous.frameQualityReady ? 'Ready' : 'Not proven'}</strong></div>
+            <div><span>Usable semantic frames</span><strong>{percentage(autonomous.frameQuality?.usableRatio)}</strong></div>
             <div><span>Frame diversity</span><strong>{percentage(autonomous.frameHashDiversity)}</strong></div>
             <div><span>Sampled moments</span><strong>{autonomous.sampledFrameCount ?? 0}</strong></div>
           </div>
@@ -209,6 +211,23 @@ export function VerificationReportPanel({ inspectionId }: { inspectionId: string
               <p>The model, prompt, assignment or evidence-hash provenance is incomplete, so automatic approval is blocked.</p>
               {(autonomous.auditBindingIssues?.length ?? 0) > 0 ? (
                 <p>{autonomous.auditBindingIssues?.map(words).join(' · ')}</p>
+              ) : null}
+            </div>
+          ) : null}
+          {autonomous.frameQualityReady === false ? (
+            <div className="notice error">
+              <strong>Sampled video quality insufficient</strong>
+              <p>Automatic approval requires enough sampled moments to be both sharp and acceptably exposed.</p>
+              {typeof autonomous.frameQuality?.usableRatio === 'number' ? (
+                <p>
+                  Usable {percentage(autonomous.frameQuality.usableRatio)}
+                  {typeof autonomous.frameQuality.thresholds?.minUsableRatio === 'number'
+                    ? ` · required ${percentage(autonomous.frameQuality.thresholds.minUsableRatio)}`
+                    : ''}
+                </p>
+              ) : null}
+              {(autonomous.frameQualityIssues?.length ?? 0) > 0 ? (
+                <p>{autonomous.frameQualityIssues?.map(words).join(' · ')}</p>
               ) : null}
             </div>
           ) : null}
