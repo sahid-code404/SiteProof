@@ -19,6 +19,11 @@ import com.siteproof.app.verification.model.ChallengeSubmitRequest
 import com.siteproof.app.verification.model.ChallengeValidationResult
 import com.siteproof.app.verification.model.DeviceCapabilities
 import com.siteproof.app.verification.model.EvidencePackage
+import com.siteproof.app.verification.model.SemanticChallengeCompleteRequest
+import com.siteproof.app.verification.model.SemanticChallengeCompleteResult
+import com.siteproof.app.verification.model.SemanticChallengeIssue
+import com.siteproof.app.verification.model.SemanticChallengeListResponse
+import com.siteproof.app.verification.model.SemanticChallengeStartRequest
 import com.siteproof.app.verification.model.SessionCreateRequest
 import com.siteproof.app.verification.model.SessionCreateResponse
 import com.siteproof.app.verification.model.StartCaptureRequest
@@ -111,6 +116,34 @@ class VerificationRepository(
     suspend fun challengeTimeline(sessionId: String): ChallengeListResponse = api.challenges(sessionId)
 
     suspend fun clearChallengeState(sessionId: String) = challengeDao.clearSession(sessionId)
+
+    suspend fun issueSemanticChallenge(sessionId: String): SemanticChallengeIssue =
+        api.nextSemanticChallenge(sessionId)
+
+    suspend fun startSemanticChallenge(
+        issue: SemanticChallengeIssue,
+        clientStartNs: Long,
+    ): SemanticChallengeIssue = api.startSemanticChallenge(
+        issue.challengeId,
+        SemanticChallengeStartRequest(
+            nonce = issue.nonce,
+            clientMonotonicNs = clientStartNs,
+        ),
+    )
+
+    suspend fun completeSemanticChallenge(
+        issue: SemanticChallengeIssue,
+        clientCompleteNs: Long,
+    ): SemanticChallengeCompleteResult = api.completeSemanticChallenge(
+        issue.challengeId,
+        SemanticChallengeCompleteRequest(
+            nonce = issue.nonce,
+            clientMonotonicNs = clientCompleteNs,
+        ),
+    )
+
+    suspend fun semanticChallengeTimeline(sessionId: String): SemanticChallengeListResponse =
+        api.semanticChallenges(sessionId)
 
     suspend fun captureComplete(sessionId: String, request: CaptureCompleteRequest): VerificationSession =
         api.captureComplete(sessionId, request)
