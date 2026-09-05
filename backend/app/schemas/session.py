@@ -50,6 +50,7 @@ class SessionCreateResponse(APIModel):
     capture_maximum_seconds: int = Field(ge=10, le=90)
     allowed_radius_meters: int = Field(ge=10, le=5000)
     deadline: datetime
+    semantic_challenge_count: int = Field(default=0, ge=0, le=4)
 
 
 class StartCaptureRequest(APIModel):
