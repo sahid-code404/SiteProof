@@ -5,6 +5,8 @@ import pytest
 
 import app.services.autonomous_ai_client as ai_module
 from app.services.autonomous_ai_client import (
+    MAX_PROVIDER_IMAGE_COUNT,
+    MAX_PROVIDER_REQUEST_BYTES,
     MAX_PROVIDER_RESPONSE_BYTES,
     AutonomousAIClient,
     AutonomousAIError,
@@ -14,6 +16,7 @@ from app.services.autonomous_ai_client import (
     _retry_delay_seconds,
     _should_retry_status,
     _validate_provider_base_url,
+    _validate_provider_request,
     _validate_response_size,
 )
 
@@ -106,6 +109,22 @@ def test_provider_base_url_rejects_non_http_and_embedded_credentials():
         _validate_provider_base_url("https://provider.example/v1?tenant=secret")
     _validate_provider_base_url("http://localhost:11434/v1")
     _validate_provider_base_url("https://provider.example/v1")
+
+
+def test_provider_request_rejects_remote_image_urls_and_excess_frames():
+    with pytest.raises(AutonomousAIError, match="inline JPEG"):
+        _validate_provider_request("{}", ["https://example.com/evidence.jpg"])
+    with pytest.raises(AutonomousAIError, match="too many"):
+        _validate_provider_request(
+            "{}",
+            ["data:image/jpeg;base64,AA=="] * (MAX_PROVIDER_IMAGE_COUNT + 1),
+        )
+
+
+def test_provider_request_has_total_payload_bound():
+    oversized_text = "x" * (MAX_PROVIDER_REQUEST_BYTES + 1)
+    with pytest.raises(AutonomousAIError, match="payload safety limit"):
+        _validate_provider_request(oversized_text, ["data:image/jpeg;base64,AA=="])
 
 
 class _FakeHttpClient:
