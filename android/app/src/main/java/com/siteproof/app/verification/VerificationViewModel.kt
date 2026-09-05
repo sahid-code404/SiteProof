@@ -7,6 +7,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.siteproof.app.verification.model.ChallengeIssue
 import com.siteproof.app.verification.model.ChallengeValidationResult
+import com.siteproof.app.verification.model.SemanticChallengeCompleteResult
+import com.siteproof.app.verification.model.SemanticChallengeIssue
 import com.siteproof.app.verification.sensors.ChallengeGuidanceStatus
 import com.siteproof.app.verification.sensors.ChallengeMovementGuidance
 import java.io.IOException
@@ -51,6 +53,33 @@ sealed interface VerificationUiState {
     data class ChallengeResultState(
         val prepared: VerificationCaptureCoordinator.Prepared,
         val result: ChallengeValidationResult,
+        val elapsedMs: Long,
+    ) : VerificationUiState
+    data class SemanticChallengeLoading(
+        val prepared: VerificationCaptureCoordinator.Prepared,
+        val elapsedMs: Long,
+    ) : VerificationUiState
+    data class SemanticChallengeActive(
+        val prepared: VerificationCaptureCoordinator.Prepared,
+        val challenge: SemanticChallengeIssue,
+        val remainingMs: Long,
+        val elapsedMs: Long,
+        val canComplete: Boolean,
+    ) : VerificationUiState
+    data class SemanticChallengeChecking(
+        val prepared: VerificationCaptureCoordinator.Prepared,
+        val challenge: SemanticChallengeIssue,
+        val elapsedMs: Long,
+    ) : VerificationUiState
+    data class SemanticChallengeNetworkWait(
+        val prepared: VerificationCaptureCoordinator.Prepared,
+        val challenge: SemanticChallengeIssue?,
+        val elapsedMs: Long,
+        val message: String,
+    ) : VerificationUiState
+    data class SemanticChallengeResultState(
+        val prepared: VerificationCaptureCoordinator.Prepared,
+        val result: SemanticChallengeCompleteResult,
         val elapsedMs: Long,
     ) : VerificationUiState
     data class CaptureFinishing(
@@ -142,8 +171,6 @@ class VerificationViewModel(
 
     fun startCapture() {
         val ready = _state.value as? VerificationUiState.Ready ?: return
-        // Change state synchronously before any network/GPS/camera suspension point. A second tap
-        // can no longer launch another start. Coordinator also serializes start with a Mutex.
         _state.value = VerificationUiState.StartingCapture(ready.prepared)
         startJob?.cancel()
         startJob = viewModelScope.launch {
@@ -168,7 +195,7 @@ class VerificationViewModel(
                     challengeJob?.cancel()
                     coordinator.abort("TIMEOUT")
                     _state.value = VerificationUiState.Error(
-                        "Live verification reached its server-authorized safety time limit before the challenge sequence finished.",
+                        "Live verification reached its server-authorized safety time limit before the proof sequence finished.",
                     )
                     break
                 }
@@ -180,6 +207,11 @@ class VerificationViewModel(
                     is VerificationUiState.ChallengeChecking -> current.copy(elapsedMs = encodedElapsed)
                     is VerificationUiState.ChallengeNetworkWait -> current.copy(elapsedMs = encodedElapsed)
                     is VerificationUiState.ChallengeResultState -> current.copy(elapsedMs = encodedElapsed)
+                    is VerificationUiState.SemanticChallengeLoading -> current.copy(elapsedMs = encodedElapsed)
+                    is VerificationUiState.SemanticChallengeActive -> current.copy(elapsedMs = encodedElapsed)
+                    is VerificationUiState.SemanticChallengeChecking -> current.copy(elapsedMs = encodedElapsed)
+                    is VerificationUiState.SemanticChallengeNetworkWait -> current.copy(elapsedMs = encodedElapsed)
+                    is VerificationUiState.SemanticChallengeResultState -> current.copy(elapsedMs = encodedElapsed)
                     else -> current
                 }
                 delay(250)
@@ -198,12 +230,12 @@ class VerificationViewModel(
                     prepared = prepared,
                     challenge = placeholderChallenge(),
                     elapsedMs = coordinator.videoElapsedMs(),
-                    message = "Connection is required to receive the next unpredictable challenge.",
+                    message = "Connection is required to receive the next unpredictable movement challenge.",
                 )
             } else {
                 failChallengeProtocol(
                     error,
-                    "The server could not start the next challenge. This live proof was aborted for safety.",
+                    "The server could not start the next movement challenge. This live proof was aborted for safety.",
                 )
             }
         }
@@ -282,12 +314,12 @@ class VerificationViewModel(
                     prepared = prepared,
                     challenge = challenge,
                     elapsedMs = coordinator.videoElapsedMs(),
-                    message = "Connection lost. Your current challenge evidence has been saved. Reconnect to continue verification.",
+                    message = "Connection lost. Your current movement evidence has been saved. Reconnect to continue verification.",
                 )
             } else {
                 failChallengeProtocol(
                     error,
-                    "Challenge evidence was rejected by the server. This live proof was aborted rather than reusing stale evidence.",
+                    "Movement evidence was rejected by the server. This live proof was aborted rather than reusing stale evidence.",
                 )
             }
         }
@@ -312,12 +344,12 @@ class VerificationViewModel(
                 if (error is IOException) {
                     _state.value = waiting.copy(
                         elapsedMs = coordinator.videoElapsedMs(),
-                        message = "Still offline. Challenge evidence remains saved on this device.",
+                        message = "Still offline. Movement evidence remains saved on this device.",
                     )
                 } else {
                     failChallengeProtocol(
                         error,
-                        "The saved challenge can no longer be accepted by the server. Start a new live verification.",
+                        "The saved movement can no longer be accepted by the server. Start a new live verification.",
                     )
                 }
             }
@@ -342,12 +374,161 @@ class VerificationViewModel(
         )
         if (result.sequenceComplete) {
             delay(700)
-            finishAfterChallenges(prepared)
+            if (prepared.session.semanticChallengeCount > 0) {
+                issueNextSemanticChallenge(prepared)
+            } else {
+                finishAfterChallenges(prepared)
+            }
             return
         }
         if (result.result != "PASS" && result.retryAllowed) return
         delay(800)
         issueNextChallenge(prepared)
+    }
+
+    private suspend fun issueNextSemanticChallenge(prepared: VerificationCaptureCoordinator.Prepared) {
+        _state.value = VerificationUiState.SemanticChallengeLoading(
+            prepared,
+            coordinator.videoElapsedMs(),
+        )
+        try {
+            val challenge = coordinator.beginNextSemanticChallenge()
+            runSemanticChallengeWindow(prepared, challenge)
+        } catch (error: Exception) {
+            if (error is IOException) {
+                _state.value = VerificationUiState.SemanticChallengeNetworkWait(
+                    prepared = prepared,
+                    challenge = null,
+                    elapsedMs = coordinator.videoElapsedMs(),
+                    message = "Connection is required to receive the next unpredictable visual proof instruction.",
+                )
+            } else {
+                failChallengeProtocol(
+                    error,
+                    "The server could not start the next visual proof challenge. This live proof was aborted for safety.",
+                )
+            }
+        }
+    }
+
+    private fun runSemanticChallengeWindow(
+        prepared: VerificationCaptureCoordinator.Prepared,
+        challenge: SemanticChallengeIssue,
+    ) {
+        challengeJob?.cancel()
+        challengeJob = viewModelScope.launch {
+            val serverRemaining = runCatching {
+                Duration.between(
+                    Instant.parse(challenge.serverTime),
+                    Instant.parse(challenge.expiresAt),
+                ).toMillis()
+            }.getOrDefault(25_000L).coerceIn(2_000L, 60_000L)
+            val localDeadline = SystemClock.elapsedRealtime() + serverRemaining
+            while (true) {
+                val now = SystemClock.elapsedRealtime()
+                val remaining = (localDeadline - now).coerceAtLeast(0L)
+                val proofElapsed = coordinator.semanticChallengeElapsedMs()
+                _state.value = VerificationUiState.SemanticChallengeActive(
+                    prepared = prepared,
+                    challenge = challenge,
+                    remainingMs = remaining,
+                    elapsedMs = coordinator.videoElapsedMs(),
+                    canComplete = proofElapsed >= SEMANTIC_CLIENT_MINIMUM_MS,
+                )
+                if (remaining <= 0L) {
+                    failChallengeProtocol(
+                        IllegalStateException("Visual proof challenge expired before it was completed."),
+                        "The visual proof challenge expired. Start a new verification.",
+                    )
+                    return@launch
+                }
+                delay(100)
+            }
+        }
+    }
+
+    fun completeSemanticChallenge() {
+        val current = _state.value as? VerificationUiState.SemanticChallengeActive ?: return
+        if (!current.canComplete) return
+        challengeJob?.cancel()
+        challengeJob = viewModelScope.launch {
+            _state.value = VerificationUiState.SemanticChallengeChecking(
+                current.prepared,
+                current.challenge,
+                coordinator.videoElapsedMs(),
+            )
+            try {
+                handleSemanticChallengeResult(
+                    current.prepared,
+                    coordinator.completeCurrentSemanticChallenge(),
+                )
+            } catch (error: Exception) {
+                if (error is IOException) {
+                    _state.value = VerificationUiState.SemanticChallengeNetworkWait(
+                        prepared = current.prepared,
+                        challenge = current.challenge,
+                        elapsedMs = coordinator.videoElapsedMs(),
+                        message = "Connection lost while sealing this visual proof window. Reconnect to continue without re-recording it.",
+                    )
+                } else {
+                    failChallengeProtocol(
+                        error,
+                        "The visual proof window could not be accepted by the server. This capture was aborted for safety.",
+                    )
+                }
+            }
+        }
+    }
+
+    fun retrySemanticChallengeConnection() {
+        val waiting = _state.value as? VerificationUiState.SemanticChallengeNetworkWait ?: return
+        challengeJob?.cancel()
+        challengeJob = viewModelScope.launch {
+            if (waiting.challenge == null) {
+                issueNextSemanticChallenge(waiting.prepared)
+                return@launch
+            }
+            _state.value = VerificationUiState.SemanticChallengeChecking(
+                waiting.prepared,
+                waiting.challenge,
+                coordinator.videoElapsedMs(),
+            )
+            try {
+                handleSemanticChallengeResult(
+                    waiting.prepared,
+                    coordinator.retryCurrentSemanticCompletion(),
+                )
+            } catch (error: Exception) {
+                if (error is IOException) {
+                    _state.value = waiting.copy(
+                        elapsedMs = coordinator.videoElapsedMs(),
+                        message = "Still offline. The visual proof completion remains pending on this device.",
+                    )
+                } else {
+                    failChallengeProtocol(
+                        error,
+                        "The pending visual proof can no longer be accepted. Start a new live verification.",
+                    )
+                }
+            }
+        }
+    }
+
+    private suspend fun handleSemanticChallengeResult(
+        prepared: VerificationCaptureCoordinator.Prepared,
+        result: SemanticChallengeCompleteResult,
+    ) {
+        _state.value = VerificationUiState.SemanticChallengeResultState(
+            prepared,
+            result,
+            coordinator.videoElapsedMs(),
+        )
+        delay(650)
+        if (result.sequenceComplete) {
+            finishAfterChallenges(prepared)
+        } else {
+            issueNextSemanticChallenge(prepared)
+        }
     }
 
     private suspend fun failChallengeProtocol(error: Exception, fallback: String) {
@@ -477,6 +658,11 @@ class VerificationViewModel(
         is VerificationUiState.ChallengeChecking,
         is VerificationUiState.ChallengeNetworkWait,
         is VerificationUiState.ChallengeResultState,
+        is VerificationUiState.SemanticChallengeLoading,
+        is VerificationUiState.SemanticChallengeActive,
+        is VerificationUiState.SemanticChallengeChecking,
+        is VerificationUiState.SemanticChallengeNetworkWait,
+        is VerificationUiState.SemanticChallengeResultState,
         is VerificationUiState.CaptureFinishing,
         -> true
         else -> false
@@ -490,6 +676,11 @@ class VerificationViewModel(
         is VerificationUiState.ChallengeChecking -> value.prepared
         is VerificationUiState.ChallengeNetworkWait -> value.prepared
         is VerificationUiState.ChallengeResultState -> value.prepared
+        is VerificationUiState.SemanticChallengeLoading -> value.prepared
+        is VerificationUiState.SemanticChallengeActive -> value.prepared
+        is VerificationUiState.SemanticChallengeChecking -> value.prepared
+        is VerificationUiState.SemanticChallengeNetworkWait -> value.prepared
+        is VerificationUiState.SemanticChallengeResultState -> value.prepared
         is VerificationUiState.CaptureFinishing -> value.prepared
         else -> null
     }
@@ -515,5 +706,9 @@ class VerificationViewModel(
         uploadJob?.cancel()
         coordinator.release()
         super.onCleared()
+    }
+
+    private companion object {
+        const val SEMANTIC_CLIENT_MINIMUM_MS = 1_800L
     }
 }
