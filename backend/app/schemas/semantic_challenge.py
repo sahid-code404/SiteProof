@@ -21,6 +21,7 @@ class SemanticChallengeCompleteRequest(APIModel):
 class SemanticChallengeIssueResponse(APIModel):
     challenge_id: uuid.UUID
     sequence_number: int
+    attempt_number: int
     total_challenges: int
     type: SemanticChallengeType
     instruction: str
@@ -34,6 +35,7 @@ class SemanticChallengeIssueResponse(APIModel):
 class SemanticChallengeCompleteResponse(APIModel):
     challenge_id: uuid.UUID
     sequence_number: int
+    attempt_number: int
     type: SemanticChallengeType
     status: SemanticChallengeStatus
     window_start_ms: int
@@ -45,6 +47,7 @@ class SemanticChallengeCompleteResponse(APIModel):
 class SemanticChallengeTimelineItem(APIModel):
     id: uuid.UUID
     sequence_number: int
+    attempt_number: int
     type: SemanticChallengeType
     instruction: str
     target: dict[str, Any]
