@@ -146,7 +146,16 @@ def create_verification_session(
         client_wall_clock=client_time,
         client_monotonic_ns=payload.client_monotonic_ns,
         clock_offset_ms=offset_ms,
+        # Freeze both the physical capture contract and the admin-authored semantic assignment.
+        # Later edits to an inspection must never silently change what an already-started session
+        # was required to prove.
         site_snapshot={
+            "title": inspection.title,
+            "description": inspection.description,
+            "inspectionType": inspection.inspection_type.value,
+            "instructions": inspection.instructions,
+            "locationName": inspection.location_name,
+            "locationAddress": inspection.location_address,
             "latitude": inspection.expected_latitude,
             "longitude": inspection.expected_longitude,
             "allowedRadiusMeters": inspection.allowed_radius_meters,
