@@ -4,8 +4,10 @@ from types import SimpleNamespace
 
 import app.services.semantic_challenges as semantic_module
 import app.services.session_capture as capture_module
+import app.services.session_creation as creation_module
 from app.core.config import Settings
 from app.models.semantic_challenge import SemanticCaptureChallenge, SemanticChallengeStatus
+from app.models.verification import VerificationSession
 from tests.phase3_helpers import (
     create_ready_inspection,
     create_session,
@@ -35,6 +37,7 @@ def _enable_semantic_protocol(monkeypatch) -> Settings:
     settings = _enabled_settings()
     monkeypatch.setattr(semantic_module, "get_settings", lambda: settings)
     monkeypatch.setattr(capture_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(creation_module, "get_settings", lambda: settings)
     return settings
 
 
@@ -114,6 +117,33 @@ def test_semantic_challenges_are_disabled_by_default(client, db):
     response = _issue(client, inspector_headers, session_id)
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "SEMANTIC_CHALLENGES_DISABLED"
+
+
+def test_session_freezes_semantic_challenge_count(client, db, monkeypatch):
+    settings = _enable_semantic_protocol(monkeypatch)
+    identities = seed_identities(db)
+    admin_headers = login(client, identities["admin"])
+    inspector_headers = login(client, identities["inspector"])
+    inspection_id = create_ready_inspection(
+        client,
+        admin_headers,
+        inspector_headers,
+        identities["profile"].id,
+    )
+
+    created = create_session(client, inspector_headers, inspection_id)
+    assert created.status_code == 201, created.text
+    assert created.json()["semanticChallengeCount"] == 1
+    session_id = created.json()["sessionId"]
+    row = db.get(VerificationSession, uuid.UUID(session_id))
+    assert row is not None
+    assert row.site_snapshot["semanticChallengeCount"] == 1
+
+    # Turning the feature flag off after session creation must not weaken this session's frozen
+    # proof contract. Existing sessions continue to require their originally assigned challenge.
+    settings.autonomous_verification_enabled = False
+    assert semantic_module.semantic_challenges_enabled(settings, row) is True
+    assert semantic_module.semantic_challenge_required_count(settings, row) == 1
 
 
 def test_next_is_idempotent_and_does_not_preload_future_semantic_challenges(client, db, monkeypatch):
