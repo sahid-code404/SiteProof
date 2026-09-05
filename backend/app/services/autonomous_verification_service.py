@@ -346,6 +346,50 @@ def _frame_metadata(frames: list[SampledFrame]) -> list[dict[str, Any]]:
     ]
 
 
+def _frame_quality_summary(frames: list[SampledFrame]) -> dict[str, Any]:
+    settings = get_settings()
+    total = len(frames)
+    if total == 0:
+        return {
+            "total": 0,
+            "sharpCount": 0,
+            "exposureAcceptableCount": 0,
+            "usableCount": 0,
+            "sharpRatio": 0.0,
+            "exposureAcceptableRatio": 0.0,
+            "usableRatio": 0.0,
+        }
+
+    min_sharpness = max(0.0, settings.autonomous_min_frame_sharpness)
+    min_brightness = max(0.0, min(255.0, settings.autonomous_min_frame_brightness))
+    max_brightness = max(min_brightness, min(255.0, settings.autonomous_max_frame_brightness))
+    sharp_count = sum(1 for frame in frames if frame.sharpness >= min_sharpness)
+    exposure_count = sum(
+        1 for frame in frames if min_brightness <= frame.brightness <= max_brightness
+    )
+    usable_count = sum(
+        1
+        for frame in frames
+        if frame.sharpness >= min_sharpness
+        and min_brightness <= frame.brightness <= max_brightness
+    )
+    return {
+        "total": total,
+        "sharpCount": sharp_count,
+        "exposureAcceptableCount": exposure_count,
+        "usableCount": usable_count,
+        "sharpRatio": round(sharp_count / total, 6),
+        "exposureAcceptableRatio": round(exposure_count / total, 6),
+        "usableRatio": round(usable_count / total, 6),
+        "thresholds": {
+            "minSharpness": min_sharpness,
+            "minBrightness": min_brightness,
+            "maxBrightness": max_brightness,
+            "minUsableRatio": settings.autonomous_min_usable_frame_ratio,
+        },
+    }
+
+
 def _run_vlm(
     *,
     client: AutonomousAIClient,
@@ -616,11 +660,13 @@ def analyze_autonomous_verification(
         return result
 
     storage = storage or get_storage_service()
+    frame_quality: dict[str, Any] = {}
     try:
         with tempfile.TemporaryDirectory(prefix="siteproof-autonomous-") as directory:
             video_path = Path(directory) / "evidence.mp4"
             storage.copy_to_file(video.storage_key, video_path)
             frames = _sample_video(video_path)
+            frame_quality = _frame_quality_summary(frames)
             primary = _run_vlm(
                 client=client,
                 model=settings.autonomous_vlm_model,
@@ -644,6 +690,7 @@ def analyze_autonomous_verification(
         result.observations_json = {
             "contractWarning": contract_warning,
             "failureType": type(exc).__name__,
+            "frameQuality": frame_quality,
         }
         result.raw_response_hashes_json = raw_hashes
         result.analyzed_at = utc_now()
@@ -678,6 +725,7 @@ def analyze_autonomous_verification(
     result.model_disagreement = aggregate["modelDisagreement"]
     result.observations_json = {
         "contractWarning": contract_warning,
+        "frameQuality": frame_quality,
         **aggregate["observations"],
     }
     result.raw_response_hashes_json = raw_hashes
@@ -695,6 +743,7 @@ def analyze_autonomous_verification(
             "taskMatch": round(result.task_match_score or 0.0, 4),
             "coverage": round(result.evidence_coverage_score or 0.0, 4),
             "presentationAttack": round(result.presentation_attack_score or 0.0, 4),
+            "usableFrameRatio": frame_quality.get("usableRatio"),
             "mandatoryFailureCount": len(result.mandatory_failures_json or []),
             "modelDisagreement": result.model_disagreement,
         },
