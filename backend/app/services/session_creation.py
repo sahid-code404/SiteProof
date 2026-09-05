@@ -22,7 +22,20 @@ from app.services.session_common import (
 )
 
 
-def _capture_contract(session: VerificationSession, inspection: Inspection) -> tuple[int, int, int, datetime]:
+def _configured_semantic_challenge_count(settings: object) -> int:
+    enabled = bool(
+        getattr(settings, "autonomous_verification_enabled", False)
+        and getattr(settings, "autonomous_semantic_challenges_enabled", False)
+    )
+    if not enabled:
+        return 0
+    return max(1, min(4, int(getattr(settings, "autonomous_semantic_challenge_count", 2))))
+
+
+def _capture_contract(
+    session: VerificationSession,
+    inspection: Inspection,
+) -> tuple[int, int, int, datetime, int]:
     settings = get_settings()
     snapshot = session.site_snapshot or {}
     required_seconds = int(snapshot.get("captureDurationSeconds", inspection.capture_duration_seconds))
@@ -36,7 +49,10 @@ def _capture_contract(session: VerificationSession, inspection: Inspection) -> t
         max(settings.capture_max_seconds, required_seconds + 15),
         settings.vision_max_duration_seconds,
     )
-    return required_seconds, maximum_seconds, allowed_radius, deadline
+    # Semantic requirements are frozen when the session is created. Legacy sessions deliberately
+    # default to zero rather than silently inheriting a later server configuration change.
+    semantic_count = max(0, min(4, int(snapshot.get("semanticChallengeCount", 0) or 0)))
+    return required_seconds, maximum_seconds, allowed_radius, deadline, semantic_count
 
 
 def _response(
@@ -46,7 +62,10 @@ def _response(
     server_time: datetime,
     clock_offset_ms: float | None,
 ) -> SessionCreateResponse:
-    required_seconds, maximum_seconds, allowed_radius, deadline = _capture_contract(session, inspection)
+    required_seconds, maximum_seconds, allowed_radius, deadline, semantic_count = _capture_contract(
+        session,
+        inspection,
+    )
     return SessionCreateResponse(
         session_id=session.id,
         inspection_id=inspection.id,
@@ -58,6 +77,7 @@ def _response(
         capture_maximum_seconds=maximum_seconds,
         allowed_radius_meters=allowed_radius,
         deadline=deadline,
+        semantic_challenge_count=semantic_count,
     )
 
 
@@ -133,6 +153,7 @@ def create_verification_session(
 
     client_time = aware(payload.client_time) if payload.client_time else None
     offset_ms = (now - client_time).total_seconds() * 1000.0 if client_time else None
+    semantic_challenge_count = _configured_semantic_challenge_count(settings)
     session = VerificationSession(
         organization_id=current_user.organization_id,
         inspection_id=inspection.id,
@@ -147,8 +168,8 @@ def create_verification_session(
         client_monotonic_ns=payload.client_monotonic_ns,
         clock_offset_ms=offset_ms,
         # Freeze both the physical capture contract and the admin-authored semantic assignment.
-        # Later edits to an inspection must never silently change what an already-started session
-        # was required to prove.
+        # Later edits to an inspection or server feature flags must never silently change what an
+        # already-started session was required to prove.
         site_snapshot={
             "title": inspection.title,
             "description": inspection.description,
@@ -160,6 +181,7 @@ def create_verification_session(
             "longitude": inspection.expected_longitude,
             "allowedRadiusMeters": inspection.allowed_radius_meters,
             "captureDurationSeconds": inspection.capture_duration_seconds,
+            "semanticChallengeCount": semantic_challenge_count,
             "deadline": aware(inspection.deadline).isoformat(),
         },
         created_by_user_id=current_user.id,
@@ -177,6 +199,7 @@ def create_verification_session(
         metadata={
             "inspectionId": str(inspection.id),
             "captureDurationSeconds": inspection.capture_duration_seconds,
+            "semanticChallengeCount": semantic_challenge_count,
         },
     )
     try:
